@@ -47,6 +47,7 @@ class DryRunDocument(TypedDict):
     model: str
     ir: str
     data: str
+    draws: str
     output: str
     engine_command: list[str]
 
@@ -69,17 +70,18 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
     if source_data_path != run_data_path:
         shutil.copyfile(source_data_path, run_data_path)
 
+    draws_path = output_dir / "posterior.ndjson"
     command = EngineCommand(
         argv=(
             request.engine,
             "sample",
+            "--model",
             str(ir_path),
             "--data",
             str(run_data_path),
-            "-o",
-            str(output_dir),
             *request.engine_args,
-        )
+        ),
+        stdout_path=draws_path,
     )
     return PreparedSampleRun(
         model_name=loaded_model.name,
@@ -96,6 +98,7 @@ def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
         "model": run.model_name,
         "ir": str(run.ir_path),
         "data": str(run.data_path),
+        "draws": str(run.engine_command.stdout_path),
         "output": str(run.output_dir),
         "engine_command": list(run.engine_command.argv),
     }

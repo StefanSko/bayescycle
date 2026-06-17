@@ -50,14 +50,14 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
         "data": str(run_data_path),
+        "draws": str(output_dir / "posterior.ndjson"),
         "engine_command": [
             "bayesite",
             "sample",
+            "--model",
             str(ir_path),
             "--data",
             str(run_data_path),
-            "-o",
-            str(output_dir),
             "--seed",
             "123",
         ],

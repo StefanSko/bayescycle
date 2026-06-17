@@ -34,7 +34,13 @@ run/data.json
 and invokes the engine as:
 
 ```bash
-bayesite sample run/model.ir.json --data run/data.json -o run/
+bayesite sample --model run/model.ir.json --data run/data.json
+```
+
+Engine stdout is written to:
+
+```text
+run/posterior.ndjson
 ```
 
 Use `--dry-run` to prepare the run directory and print the planned engine command
