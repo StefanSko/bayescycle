@@ -125,6 +125,70 @@ def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(
     assert printed["dims"] == str(dims_path)
 
 
+def test_sample_force_removes_stale_dims_sidecar_when_model_has_no_dims(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dims_model_file = tmp_path / "dims_model.py"
+    dims_model_file.write_text(
+        "from jaxstanv5 import Dim, Observed, Param, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "predictor = Dim('predictor')\n"
+        "\n"
+        "@model\n"
+        "class WithDims:\n"
+        "    beta = Param(Normal(0.0, 1.0), size=2, dims=(predictor,))\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    plain_model_file = tmp_path / "plain_model.py"
+    plain_model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Plain:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    output_dir = tmp_path / "run"
+
+    first_code = main(
+        [
+            "sample",
+            str(dims_model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--dry-run",
+        ]
+    )
+    assert first_code == 0
+    assert (output_dir / "dims.json").exists()
+    capsys.readouterr()
+
+    second_code = main(
+        [
+            "sample",
+            str(plain_model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--force",
+            "--dry-run",
+        ]
+    )
+
+    assert second_code == 0
+    assert not (output_dir / "dims.json").exists()
+    assert "dims" not in json.loads(capsys.readouterr().out)
+
+
 def test_sample_rejects_dims_sidecar_rank_mismatch(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

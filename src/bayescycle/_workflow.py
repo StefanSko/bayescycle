@@ -121,9 +121,10 @@ def _write_optional_dims_sidecar(
         sidecar = dims_sidecar_for_model(model_cls, meta)
     except ValueError as exc:
         raise WorkflowError(f"invalid model dimension metadata: {exc}") from exc
-    if sidecar is None:
-        return None
     dims_path = output_dir / "dims.json"
+    if sidecar is None:
+        dims_path.unlink(missing_ok=True)
+        return None
     write_dims_sidecar(dims_path, sidecar)
     return dims_path
 
