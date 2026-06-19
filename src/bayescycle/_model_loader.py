@@ -29,6 +29,7 @@ class LoadedModel:
     """A resolved model selected from a Python module."""
 
     name: str
+    model_cls: type[object]
     meta: ModelMeta
 
 
@@ -79,7 +80,11 @@ def _load_named_model(module: ModuleType, name: str) -> LoadedModel:
     value = namespace[name]
     if not _is_model_object(value):
         raise ModelLoadError(f"object {name!r} is not a jaxstanv5 @model declaration")
-    return LoadedModel(name=name, meta=cast(ModelObject, value)._model_meta)
+    return LoadedModel(
+        name=name,
+        model_cls=cast(type[object], value),
+        meta=cast(ModelObject, value)._model_meta,
+    )
 
 
 def _load_only_model(module: ModuleType) -> LoadedModel:
@@ -89,7 +94,13 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
         if name.startswith("_"):
             continue
         if _declared_in_module(value, module) and _is_model_object(value):
-            matches.append(LoadedModel(name=name, meta=cast(ModelObject, value)._model_meta))
+            matches.append(
+                LoadedModel(
+                    name=name,
+                    model_cls=cast(type[object], value),
+                    meta=cast(ModelObject, value)._model_meta,
+                )
+            )
 
     if len(matches) == 1:
         return matches[0]
@@ -106,7 +117,7 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
 
 
 def _is_model_object(value: object) -> bool:
-    return isinstance(getattr(value, "_model_meta", None), ModelMeta)
+    return isinstance(value, type) and isinstance(getattr(value, "_model_meta", None), ModelMeta)
 
 
 def _declared_in_module(value: object, module: ModuleType) -> bool:

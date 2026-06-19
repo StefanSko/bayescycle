@@ -29,6 +29,7 @@ By default this prepares:
 ```text
 run/model.ir.json
 run/data.json
+run/dims.json       # optional; written only when the model declares dimension metadata
 ```
 
 and invokes the engine as:
@@ -69,6 +70,9 @@ uv run pytest
 
 ## Boundary invariant
 
-`bayescycle` may execute Python authoring code and depend on `jaxstanv5`. It must
-not contain inference algorithms, distribution math, IR evaluation, or sampler
-logic. Those belong in Bayesite or `jaxstanv5`.
+`bayescycle` may execute Python authoring code and depend on `jaxstanv5`. It may
+serialize authoring-side metadata that `jaxstanv5` explicitly exposes into the
+run directory, such as optional dimension labels in `dims.json`. It must not
+invent model semantics, infer labels from shapes/names, contain inference
+algorithms, distribution math, IR evaluation, or sampler logic. Those belong in
+Bayesite or `jaxstanv5`.

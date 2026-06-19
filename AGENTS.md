@@ -10,6 +10,7 @@ It owns:
 - loading a Python model file
 - serializing `jaxstanv5` IR
 - preparing a run directory
+- serializing narrow run-directory metadata explicitly exposed by `jaxstanv5`
 - invoking the Bayesite engine CLI
 
 It does not own model semantics, distribution math, inference algorithms,
@@ -29,6 +30,7 @@ Avoid:
 - hidden global configuration
 - broad workflow frameworks
 - engine semantics in Python
+- inventing model semantics that `jaxstanv5` did not expose
 - untyped dictionaries in core code
 - speculative abstractions
 
