@@ -5,10 +5,12 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from jaxstanv5.ir import canonical_bytes
+from jaxstanv5.model import ModelMeta
 
+from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._engine import EngineCommand
 from bayescycle._model_loader import load_model
 
@@ -37,6 +39,7 @@ class PreparedSampleRun:
     model_name: str
     ir_path: Path
     data_path: Path
+    dims_path: Path | None
     output_dir: Path
     engine_command: EngineCommand
 
@@ -50,6 +53,7 @@ class DryRunDocument(TypedDict):
     draws: str
     output: str
     engine_command: list[str]
+    dims: NotRequired[str]
 
 
 def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
@@ -70,6 +74,8 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
     if source_data_path != run_data_path:
         shutil.copyfile(source_data_path, run_data_path)
 
+    dims_path = _write_optional_dims_sidecar(output_dir, loaded_model.model_cls, loaded_model.meta)
+
     draws_path = output_dir / "posterior.ndjson"
     command = EngineCommand(
         argv=(
@@ -87,6 +93,7 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
         model_name=loaded_model.name,
         ir_path=ir_path,
         data_path=run_data_path,
+        dims_path=dims_path,
         output_dir=output_dir,
         engine_command=command,
     )
@@ -94,7 +101,7 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
 
 def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
     """Return a serializable dry-run summary."""
-    return {
+    document: DryRunDocument = {
         "model": run.model_name,
         "ir": str(run.ir_path),
         "data": str(run.data_path),
@@ -102,6 +109,23 @@ def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
         "output": str(run.output_dir),
         "engine_command": list(run.engine_command.argv),
     }
+    if run.dims_path is not None:
+        document["dims"] = str(run.dims_path)
+    return document
+
+
+def _write_optional_dims_sidecar(
+    output_dir: Path, model_cls: type[object], meta: ModelMeta
+) -> Path | None:
+    try:
+        sidecar = dims_sidecar_for_model(model_cls, meta)
+    except ValueError as exc:
+        raise WorkflowError(f"invalid model dimension metadata: {exc}") from exc
+    if sidecar is None:
+        return None
+    dims_path = output_dir / "dims.json"
+    write_dims_sidecar(dims_path, sidecar)
+    return dims_path
 
 
 def _ensure_output_dir(path: Path, *, force: bool) -> None:

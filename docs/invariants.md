@@ -7,6 +7,9 @@
 - Sampling is delegated to the Bayesite engine CLI.
 - Run-directory preparation and command orchestration are the only core
   responsibilities.
+- Run-directory metadata sidecars are allowed only when they serialize metadata
+  explicitly exposed by `jaxstanv5`; `bayescycle` must not invent model
+  semantics such as dimension labels.
 
 ## Boundaries
 

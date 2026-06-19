@@ -48,7 +48,7 @@ wheels = [
 [[package]]
 name = "jaxstanv5"
 version = "0.1.0"
-source = { git = "https://github.com/StefanSko/jaxstanv5.git#5cdc0ee1bfad317f6c1c243eec2cb6edfe7269c8" }
+source = { git = "https://github.com/StefanSko/jaxstanv5.git#0ffe43ea55a351cc84e7a27e0317ea2b18e5b54f" }
 
 [[package]]
 name = "packaging"
