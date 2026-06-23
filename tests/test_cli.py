@@ -222,6 +222,42 @@ def test_sample_invokes_engine_with_explicit_out_instead_of_stdout_capture(
     assert (output_dir / "posterior.ndjson").read_text() == "posterior written by --out\n"
 
 
+def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    stale_posterior = output_dir / "posterior.ndjson"
+    stale_posterior.write_text("stale draws\n", encoding="utf-8")
+    fake_engine = tmp_path / "failing_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "\n"
+        "print('engine failed before writing --out', file=sys.stderr)\n"
+        "raise SystemExit(19)\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--force",
+            "--engine",
+            str(fake_engine),
+        ]
+    )
+
+    assert code == 19
+    assert not stale_posterior.exists()
+
+
 def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
