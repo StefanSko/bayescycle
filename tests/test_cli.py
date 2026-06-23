@@ -328,8 +328,7 @@ def test_diagnose_invokes_engine_with_run_directory_paths(tmp_path: Path) -> Non
 
     assert code == 0
     assert (run_dir / "diagnostics.json").read_text(encoding="utf-8") == (
-        f"diagnose --fit {run_dir / 'posterior.ndjson'} "
-        f"--out {run_dir / 'diagnostics.json'}\n"
+        f"diagnose --fit {run_dir / 'posterior.ndjson'} --out {run_dir / 'diagnostics.json'}\n"
     )
 
 
@@ -384,9 +383,7 @@ def test_posterior_predictive_invokes_engine_with_run_directory_paths(tmp_path: 
     _write_run_artifacts(run_dir)
     fake_engine = _write_fake_out_engine(tmp_path)
 
-    code = main(
-        ["posterior-predictive", str(run_dir), "--seed", "8", "--engine", str(fake_engine)]
-    )
+    code = main(["posterior-predictive", str(run_dir), "--seed", "8", "--engine", str(fake_engine)])
 
     assert code == 0
     assert (run_dir / "posterior_predictive.ndjson").read_text(encoding="utf-8") == (
