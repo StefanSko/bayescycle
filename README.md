@@ -66,6 +66,20 @@ so the run directory always contains `run/posterior.ndjson`.
 bayescycle sample model.py --data data.json -o run/ -- --experimental-engine-flag
 ```
 
+Run-directory follow-up phases can be orchestrated without repeating owned paths:
+
+```bash
+bayescycle diagnose run/
+bayescycle posterior-predictive run/ --seed 456
+```
+
+These invoke Bayesite with `run/posterior.ndjson` as the fit input and write:
+
+```text
+run/diagnostics.json
+run/posterior_predictive.ndjson
+```
+
 ## Development
 
 ```bash

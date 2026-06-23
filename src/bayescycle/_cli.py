@@ -13,11 +13,16 @@ from bayescycle import __version__
 from bayescycle._engine import run_engine
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._workflow import (
+    DiagnoseRequest,
+    PosteriorPredictiveRequest,
     SampleRequest,
     SamplerSettings,
     WorkflowError,
     dry_run_document,
+    prepare_diagnose_run,
+    prepare_posterior_predictive_run,
     prepare_sample_run,
+    run_command_dry_run_document,
 )
 
 
@@ -30,6 +35,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     command = cast(str, namespace.command)
     if command == "sample":
         return _sample(namespace)
+    if command == "diagnose":
+        return _diagnose(namespace)
+    if command == "posterior-predictive":
+        return _posterior_predictive(namespace)
     parser.print_help(sys.stderr)
     return 2
 
@@ -63,6 +72,33 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="prepare IR/data files and print the planned engine command",
     )
+
+    diagnose = subparsers.add_parser(
+        "diagnose",
+        description="Run Bayesite diagnostics for an existing bayescycle run directory.",
+    )
+    diagnose.add_argument("run_dir", type=Path, help="bayescycle run directory")
+    diagnose.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    diagnose.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate run files and print the planned engine command",
+    )
+
+    posterior_predictive = subparsers.add_parser(
+        "posterior-predictive",
+        description="Generate posterior predictive draws for an existing bayescycle run directory.",
+    )
+    posterior_predictive.add_argument("run_dir", type=Path, help="bayescycle run directory")
+    posterior_predictive.add_argument("--seed", required=True, help="seed forwarded to Bayesite")
+    posterior_predictive.add_argument(
+        "--engine", default="bayesite", help="Bayesite executable to invoke"
+    )
+    posterior_predictive.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate run files and print the planned engine command",
+    )
     return parser
 
 
@@ -91,6 +127,48 @@ def _sample(namespace: argparse.Namespace) -> int:
     except (ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _diagnose(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        prepared = prepare_diagnose_run(
+            DiagnoseRequest(
+                run_dir=cast(Path, namespace.run_dir),
+                engine=cast(str, namespace.engine),
+            )
+        )
+        if cast(bool, namespace.dry_run):
+            print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
+            return 0
+        return run_engine(prepared.engine_command)
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _posterior_predictive(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        prepared = prepare_posterior_predictive_run(
+            PosteriorPredictiveRequest(
+                run_dir=cast(Path, namespace.run_dir),
+                engine=cast(str, namespace.engine),
+                seed=cast(str, namespace.seed),
+            )
+        )
+        if cast(bool, namespace.dry_run):
+            print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
+            return 0
+        return run_engine(prepared.engine_command)
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _reject_forwarded_engine_args(engine_args: tuple[str, ...]) -> None:
+    if engine_args:
+        raise WorkflowError("engine passthrough after -- is only supported for sample")
 
 
 def _split_engine_args(argv: Sequence[str] | None) -> tuple[list[str], list[str]]:

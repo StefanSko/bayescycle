@@ -69,8 +69,34 @@ class PreparedSampleRun:
     engine_command: EngineCommand
 
 
+@dataclass(frozen=True)
+class DiagnoseRequest:
+    """Request to run diagnostics for an existing run directory."""
+
+    run_dir: Path
+    engine: str
+
+
+@dataclass(frozen=True)
+class PosteriorPredictiveRequest:
+    """Request to run posterior predictive generation for an existing run directory."""
+
+    run_dir: Path
+    engine: str
+    seed: str
+
+
+@dataclass(frozen=True)
+class PreparedRunDirectoryCommand:
+    """A follow-up command produced from an existing run directory."""
+
+    run_dir: Path
+    output_path: Path
+    engine_command: EngineCommand
+
+
 class DryRunDocument(TypedDict):
-    """JSON document printed for ``--dry-run``."""
+    """JSON document printed for sample ``--dry-run``."""
 
     model: str
     ir: str
@@ -79,6 +105,14 @@ class DryRunDocument(TypedDict):
     output: str
     engine_command: list[str]
     dims: NotRequired[str]
+
+
+class RunCommandDryRunDocument(TypedDict):
+    """JSON document printed for run-directory command ``--dry-run``."""
+
+    run: str
+    output: str
+    engine_command: list[str]
 
 
 def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
@@ -130,7 +164,7 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
 
 
 def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
-    """Return a serializable dry-run summary."""
+    """Return a serializable sample dry-run summary."""
     document: DryRunDocument = {
         "model": run.model_name,
         "ir": str(run.ir_path),
@@ -144,6 +178,75 @@ def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
     return document
 
 
+def prepare_diagnose_run(request: DiagnoseRequest) -> PreparedRunDirectoryCommand:
+    """Build a Bayesite diagnose command from an existing run directory."""
+    run_dir = request.run_dir.expanduser().resolve()
+    fit_path = run_dir / "posterior.ndjson"
+    output_path = run_dir / "diagnostics.json"
+    _require_run_artifacts((fit_path,))
+    command = EngineCommand(
+        argv=(
+            request.engine,
+            "diagnose",
+            "--fit",
+            str(fit_path),
+            "--out",
+            str(output_path),
+        ),
+        output_paths=(output_path,),
+    )
+    return PreparedRunDirectoryCommand(
+        run_dir=run_dir,
+        output_path=output_path,
+        engine_command=command,
+    )
+
+
+def prepare_posterior_predictive_run(
+    request: PosteriorPredictiveRequest,
+) -> PreparedRunDirectoryCommand:
+    """Build a Bayesite posterior-predictive command from an existing run directory."""
+    run_dir = request.run_dir.expanduser().resolve()
+    model_path = run_dir / "model.ir.json"
+    data_path = run_dir / "data.json"
+    fit_path = run_dir / "posterior.ndjson"
+    output_path = run_dir / "posterior_predictive.ndjson"
+    _require_run_artifacts((model_path, data_path, fit_path))
+    command = EngineCommand(
+        argv=(
+            request.engine,
+            "posterior-predictive",
+            "--model",
+            str(model_path),
+            "--data",
+            str(data_path),
+            "--fit",
+            str(fit_path),
+            "--seed",
+            request.seed,
+            "--out",
+            str(output_path),
+        ),
+        output_paths=(output_path,),
+    )
+    return PreparedRunDirectoryCommand(
+        run_dir=run_dir,
+        output_path=output_path,
+        engine_command=command,
+    )
+
+
+def run_command_dry_run_document(
+    command: PreparedRunDirectoryCommand,
+) -> RunCommandDryRunDocument:
+    """Return a serializable dry-run summary for a run-directory command."""
+    return {
+        "run": str(command.run_dir),
+        "output": str(command.output_path),
+        "engine_command": list(command.engine_command.argv),
+    }
+
+
 def _reject_reserved_engine_args(engine_args: tuple[str, ...], draws_path: Path) -> None:
     for arg in engine_args:
         if arg == "--out" or arg.startswith("--out="):
@@ -152,6 +255,19 @@ def _reject_reserved_engine_args(engine_args: tuple[str, ...], draws_path: Path)
                 f"bayescycle writes draws to {draws_path}. "
                 "Use Bayesite directly for custom output or streaming."
             )
+
+
+def _require_run_artifacts(paths: tuple[Path, ...]) -> None:
+    missing = tuple(path for path in paths if not path.is_file())
+    if not missing:
+        return
+    run_dir = missing[0].parent
+    names = ", ".join(path.name for path in missing)
+    plural = "s" if len(missing) != 1 else ""
+    raise WorkflowError(
+        f"missing required run artifact{plural} in {run_dir}: {names}. "
+        f"Run `bayescycle sample ... -o {run_dir}` first."
+    )
 
 
 def _write_optional_dims_sidecar(

@@ -30,6 +30,42 @@ def _write_input_data(tmp_path: Path) -> Path:
     return data_file
 
 
+def _write_run_artifacts(
+    run_dir: Path,
+    *,
+    model: bool = True,
+    data: bool = True,
+    posterior: bool = True,
+) -> None:
+    run_dir.mkdir()
+    if model:
+        (run_dir / "model.ir.json").write_text('{"jaxstanv5_ir": 1}\n', encoding="utf-8")
+    if data:
+        (run_dir / "data.json").write_text('{"y": 0.25}\n', encoding="utf-8")
+    if posterior:
+        (run_dir / "posterior.ndjson").write_text('{"draws_format": "test"}\n', encoding="utf-8")
+
+
+def _write_fake_out_engine(tmp_path: Path) -> Path:
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        "try:\n"
+        "    out_index = args.index('--out')\n"
+        "except ValueError:\n"
+        "    print('missing --out', file=sys.stderr)\n"
+        "    raise SystemExit(11)\n"
+        "Path(args[out_index + 1]).write_text(' '.join(args) + '\\n')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+    return fake_engine
+
+
 def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -256,6 +292,121 @@ def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -
 
     assert code == 19
     assert not stale_posterior.exists()
+
+
+def test_diagnose_dry_run_uses_run_directory_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, data=False)
+
+    code = main(["diagnose", str(run_dir), "--dry-run"])
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "engine_command": [
+            "bayesite",
+            "diagnose",
+            "--fit",
+            str(run_dir / "posterior.ndjson"),
+            "--out",
+            str(run_dir / "diagnostics.json"),
+        ],
+        "output": str(run_dir / "diagnostics.json"),
+        "run": str(run_dir),
+    }
+
+
+def test_diagnose_invokes_engine_with_run_directory_paths(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, data=False)
+    fake_engine = _write_fake_out_engine(tmp_path)
+
+    code = main(["diagnose", str(run_dir), "--engine", str(fake_engine)])
+
+    assert code == 0
+    assert (run_dir / "diagnostics.json").read_text(encoding="utf-8") == (
+        f"diagnose --fit {run_dir / 'posterior.ndjson'} --out {run_dir / 'diagnostics.json'}\n"
+    )
+
+
+def test_diagnose_reports_missing_posterior(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, data=False, posterior=False)
+
+    code = main(["diagnose", str(run_dir), "--dry-run"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "missing required run artifact" in err
+    assert "posterior.ndjson" in err
+
+
+def test_posterior_predictive_dry_run_uses_run_directory_artifacts_and_seed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir)
+
+    code = main(["posterior-predictive", str(run_dir), "--seed", "8", "--dry-run"])
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "engine_command": [
+            "bayesite",
+            "posterior-predictive",
+            "--model",
+            str(run_dir / "model.ir.json"),
+            "--data",
+            str(run_dir / "data.json"),
+            "--fit",
+            str(run_dir / "posterior.ndjson"),
+            "--seed",
+            "8",
+            "--out",
+            str(run_dir / "posterior_predictive.ndjson"),
+        ],
+        "output": str(run_dir / "posterior_predictive.ndjson"),
+        "run": str(run_dir),
+    }
+
+
+def test_posterior_predictive_invokes_engine_with_run_directory_paths(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir)
+    fake_engine = _write_fake_out_engine(tmp_path)
+
+    code = main(["posterior-predictive", str(run_dir), "--seed", "8", "--engine", str(fake_engine)])
+
+    assert code == 0
+    assert (run_dir / "posterior_predictive.ndjson").read_text(encoding="utf-8") == (
+        f"posterior-predictive --model {run_dir / 'model.ir.json'} "
+        f"--data {run_dir / 'data.json'} --fit {run_dir / 'posterior.ndjson'} "
+        f"--seed 8 --out {run_dir / 'posterior_predictive.ndjson'}\n"
+    )
+
+
+def test_posterior_predictive_reports_missing_required_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, posterior=False)
+
+    code = main(["posterior-predictive", str(run_dir), "--seed", "8", "--dry-run"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "missing required run artifacts" in err
+    assert "model.ir.json" in err
+    assert "posterior.ndjson" in err
 
 
 def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(

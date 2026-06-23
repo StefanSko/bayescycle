@@ -92,17 +92,17 @@ draws: v0-provisional chains 2 draws 200
 parameters: mu
 ```
 
-Bayesite owns sampler diagnostics. Run bayesite diagnose on the posterior stream and print a compact chain/rhat/ESS summary.
+Bayesite owns sampler diagnostics. Ask bayescycle to run Bayesite diagnose on the run directory and print a compact chain/rhat/ESS summary.
 
 ```bash
 . examples/full-stack-smoke-lib.sh
 ensure_bayesite
-"$BAYESITE_BIN" diagnose --fit "$RUN/posterior.ndjson" --out "$WORK/diagnostics.json"
+uv --quiet run bayescycle diagnose "$RUN" --engine "$BAYESITE_BIN"
 python3 - <<'PY'
 import json
 from pathlib import Path
 
-d = json.loads(Path("examples/_showboat_work/diagnostics.json").read_text())
+d = json.loads(Path("examples/_showboat_work/run/diagnostics.json").read_text())
 print("diagnostics:", d["diagnostics_format"])
 print("chains:", d["source_chain_count"], "draws:", d["source_draw_count"])
 print("mu rhat:", round(d["rhat"]["mu"], 3), "ess:", round(d["ess"]["mu"], 1))
@@ -129,12 +129,9 @@ For a model-checking plot, generate posterior predictive replicated y values fro
 ```bash
 . examples/full-stack-smoke-lib.sh
 ensure_bayesite
-"$BAYESITE_BIN" posterior-predictive \
-  --model "$RUN/model.ir.json" \
-  --data "$RUN/data.json" \
-  --fit "$RUN/posterior.ndjson" \
+uv --quiet run bayescycle posterior-predictive "$RUN" \
   --seed 8 \
-  --out "$RUN/posterior_predictive.ndjson"
+  --engine "$BAYESITE_BIN"
 python3 - <<'PY'
 import json
 from pathlib import Path
