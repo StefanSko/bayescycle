@@ -81,6 +81,8 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
             str(ir_path),
             "--data",
             str(run_data_path),
+            "--out",
+            str(output_dir / "posterior.ndjson"),
             "--seed",
             "123",
         ],

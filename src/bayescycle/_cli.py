@@ -14,6 +14,7 @@ from bayescycle._engine import run_engine
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._workflow import (
     SampleRequest,
+    SamplerSettings,
     WorkflowError,
     dry_run_document,
     prepare_sample_run,
@@ -52,6 +53,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--data", required=True, type=Path, help="JSON data file for the engine")
     sample.add_argument("-o", "--output", required=True, type=Path, help="run directory")
     sample.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    sample.add_argument("--seed", help="sampler seed forwarded to Bayesite")
+    sample.add_argument("--chains", help="chain count forwarded to Bayesite")
+    sample.add_argument("--warmup", help="warmup draw count forwarded to Bayesite")
+    sample.add_argument("--draws", help="posterior draw count forwarded to Bayesite")
     sample.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     sample.add_argument(
         "--dry-run",
@@ -69,6 +74,12 @@ def _sample(namespace: argparse.Namespace) -> int:
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             engine=cast(str, namespace.engine),
+            sampler=SamplerSettings(
+                seed=cast(str | None, namespace.seed),
+                chains=cast(str | None, namespace.chains),
+                warmup=cast(str | None, namespace.warmup),
+                draws=cast(str | None, namespace.draws),
+            ),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )

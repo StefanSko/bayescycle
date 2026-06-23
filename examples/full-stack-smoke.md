@@ -61,7 +61,10 @@ uv --quiet run bayescycle sample \
   --data "$WORK/data.json" \
   -o "$RUN" \
   --engine "$BAYESITE_BIN" \
-  -- --seed 7 --chains 2 --warmup 100 --draws 100
+  --seed 7 \
+  --chains 2 \
+  --warmup 100 \
+  --draws 100
 find "$RUN" -maxdepth 1 -type f -exec basename {} \; | sort
 python3 - <<'PY'
 import json
