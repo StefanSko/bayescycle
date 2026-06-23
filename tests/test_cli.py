@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 import bayescycle._dims as dims_module
 from bayescycle._cli import main
+
+
+def _write_simple_model(tmp_path: Path) -> Path:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    return model_file
+
+
+def _write_input_data(tmp_path: Path) -> Path:
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    return data_file
 
 
 def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
@@ -67,6 +88,136 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
         "model": "Simple",
         "output": str(output_dir),
     }
+
+
+def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--seed",
+            "7",
+            "--chains",
+            "2",
+            "--warmup",
+            "100",
+            "--draws",
+            "100",
+            "--dry-run",
+            "--",
+            "--experimental-engine-flag",
+        ]
+    )
+
+    assert code == 0
+    ir_path = output_dir / "model.ir.json"
+    run_data_path = output_dir / "data.json"
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["draws"] == str(output_dir / "posterior.ndjson")
+    assert printed["engine_command"] == [
+        "bayesite",
+        "sample",
+        "--model",
+        str(ir_path),
+        "--data",
+        str(run_data_path),
+        "--seed",
+        "7",
+        "--chains",
+        "2",
+        "--warmup",
+        "100",
+        "--draws",
+        "100",
+        "--out",
+        str(output_dir / "posterior.ndjson"),
+        "--experimental-engine-flag",
+    ]
+
+
+@pytest.mark.parametrize("engine_args", [("--out", "elsewhere.ndjson"), ("--out=-",)])
+def test_sample_rejects_forwarded_out_engine_arg(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    engine_args: tuple[str, ...],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+            "--",
+            *engine_args,
+        ]
+    )
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "forwarded engine args may not include --out" in err
+    assert "posterior.ndjson" in err
+
+
+def test_sample_invokes_engine_with_explicit_out_instead_of_stdout_capture(
+    tmp_path: Path,
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        "if args[:1] != ['sample']:\n"
+        "    raise SystemExit(10)\n"
+        "try:\n"
+        "    out_index = args.index('--out')\n"
+        "except ValueError:\n"
+        "    print('missing --out', file=sys.stderr)\n"
+        "    raise SystemExit(11)\n"
+        "Path(args[out_index + 1]).write_text('posterior written by --out\\n')\n"
+        "print('stdout is not the posterior artifact')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--engine",
+            str(fake_engine),
+            "--seed",
+            "7",
+        ]
+    )
+
+    assert code == 0
+    assert (output_dir / "posterior.ndjson").read_text() == "posterior written by --out\n"
 
 
 def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(
