@@ -2,7 +2,9 @@ set -euo pipefail
 
 WORK="examples/_showboat_work"
 RUN="$WORK/run"
-BAYESITE_BIN="${BAYESITE_BIN:-../bayesite/target/debug/bayesite}"
+if [ -z "${BAYESITE_BIN:-}" ]; then
+  BAYESITE_BIN="$(command -v bayesite || true)"
+fi
 BAYESITE_VIZ_SOURCE="${BAYESITE_VIZ_SOURCE:-git+https://github.com/StefanSko/bayesite-viz.git@a280945}"
 
 reset_workdir() {
@@ -11,9 +13,11 @@ reset_workdir() {
 }
 
 ensure_bayesite() {
-  if [ ! -x "$BAYESITE_BIN" ]; then
-    cargo build --quiet --manifest-path ../bayesite/Cargo.toml --bin bayesite
+  if [ -n "$BAYESITE_BIN" ] && [ -x "$BAYESITE_BIN" ]; then
+    return
   fi
+  printf 'bayesite executable not found; install the Bayesite CLI release or set BAYESITE_BIN\n' >&2
+  return 1
 }
 
 bayesite_idata() {
