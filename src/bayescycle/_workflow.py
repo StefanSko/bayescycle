@@ -116,6 +116,7 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
             str(draws_path),
             *request.engine_args,
         ),
+        output_paths=(draws_path,),
     )
     return PreparedSampleRun(
         model_name=loaded_model.name,
