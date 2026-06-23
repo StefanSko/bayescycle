@@ -35,10 +35,10 @@ run/dims.json       # optional; written only when the model declares dimension m
 and invokes the engine as:
 
 ```bash
-bayesite sample --model run/model.ir.json --data run/data.json
+bayesite sample --model run/model.ir.json --data run/data.json --out run/posterior.ndjson
 ```
 
-Engine stdout is written to:
+The engine is asked to write draws to:
 
 ```text
 run/posterior.ndjson
@@ -53,10 +53,17 @@ If a Python file declares more than one model, choose one explicitly:
 bayescycle sample model.py --model LogisticRegression --data data.json -o run/
 ```
 
-Additional engine flags can be forwarded after `--`:
+Common sampler settings are first-class workflow options:
 
 ```bash
-bayescycle sample model.py --data data.json -o run/ -- --seed 123
+bayescycle sample model.py --data data.json -o run/ --seed 123 --chains 2 --warmup 100 --draws 100
+```
+
+Additional engine flags can be forwarded after `--`. The engine `--out` flag is reserved
+so the run directory always contains `run/posterior.ndjson`.
+
+```bash
+bayescycle sample model.py --data data.json -o run/ -- --experimental-engine-flag
 ```
 
 ## Development

@@ -20,6 +20,29 @@ class WorkflowError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class SamplerSettings:
+    """Common sampler CLI settings forwarded without interpreting semantics."""
+
+    seed: str | None
+    chains: str | None
+    warmup: str | None
+    draws: str | None
+
+    def to_engine_args(self) -> tuple[str, ...]:
+        """Return Bayesite CLI arguments for explicitly requested settings."""
+        args: list[str] = []
+        if self.seed is not None:
+            args.extend(("--seed", self.seed))
+        if self.chains is not None:
+            args.extend(("--chains", self.chains))
+        if self.warmup is not None:
+            args.extend(("--warmup", self.warmup))
+        if self.draws is not None:
+            args.extend(("--draws", self.draws))
+        return tuple(args)
+
+
+@dataclass(frozen=True)
 class SampleRequest:
     """Loose CLI sampling input normalized into a typed request."""
 
@@ -28,6 +51,7 @@ class SampleRequest:
     output_dir: Path
     model_name: str | None
     engine: str
+    sampler: SamplerSettings
     engine_args: tuple[str, ...]
     force: bool
 
@@ -41,6 +65,7 @@ class PreparedSampleRun:
     data_path: Path
     dims_path: Path | None
     output_dir: Path
+    draws_path: Path
     engine_command: EngineCommand
 
 
@@ -59,6 +84,8 @@ class DryRunDocument(TypedDict):
 def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
     """Load model metadata, write IR/data files, and build the engine command."""
     output_dir = request.output_dir.expanduser().resolve()
+    draws_path = output_dir / "posterior.ndjson"
+    _reject_reserved_engine_args(request.engine_args, draws_path)
     _ensure_output_dir(output_dir, force=request.force)
 
     source_data_path = request.data_path.expanduser().resolve()
@@ -76,7 +103,6 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
 
     dims_path = _write_optional_dims_sidecar(output_dir, loaded_model.model_cls, loaded_model.meta)
 
-    draws_path = output_dir / "posterior.ndjson"
     command = EngineCommand(
         argv=(
             request.engine,
@@ -85,9 +111,12 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
             str(ir_path),
             "--data",
             str(run_data_path),
+            *request.sampler.to_engine_args(),
+            "--out",
+            str(draws_path),
             *request.engine_args,
         ),
-        stdout_path=draws_path,
+        output_paths=(draws_path,),
     )
     return PreparedSampleRun(
         model_name=loaded_model.name,
@@ -95,6 +124,7 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
         data_path=run_data_path,
         dims_path=dims_path,
         output_dir=output_dir,
+        draws_path=draws_path,
         engine_command=command,
     )
 
@@ -105,13 +135,23 @@ def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
         "model": run.model_name,
         "ir": str(run.ir_path),
         "data": str(run.data_path),
-        "draws": str(run.engine_command.stdout_path),
+        "draws": str(run.draws_path),
         "output": str(run.output_dir),
         "engine_command": list(run.engine_command.argv),
     }
     if run.dims_path is not None:
         document["dims"] = str(run.dims_path)
     return document
+
+
+def _reject_reserved_engine_args(engine_args: tuple[str, ...], draws_path: Path) -> None:
+    for arg in engine_args:
+        if arg == "--out" or arg.startswith("--out="):
+            raise WorkflowError(
+                "forwarded engine args may not include --out; "
+                f"bayescycle writes draws to {draws_path}. "
+                "Use Bayesite directly for custom output or streaming."
+            )
 
 
 def _write_optional_dims_sidecar(

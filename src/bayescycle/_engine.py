@@ -12,11 +12,12 @@ class EngineCommand:
     """A concrete engine command ready for subprocess execution."""
 
     argv: tuple[str, ...]
-    stdout_path: Path
+    output_paths: tuple[Path, ...] = ()
 
 
 def run_engine(command: EngineCommand) -> int:
-    """Run the Bayesite engine command, writing stdout to the run artifact."""
-    with command.stdout_path.open("wb") as stdout:
-        completed = subprocess.run(command.argv, check=False, stdout=stdout)  # noqa: S603
+    """Run the Bayesite engine command after clearing owned output artifacts."""
+    for path in command.output_paths:
+        path.unlink(missing_ok=True)
+    completed = subprocess.run(command.argv, check=False)  # noqa: S603
     return completed.returncode
