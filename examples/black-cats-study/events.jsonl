@@ -1,0 +1,1 @@
+{"schema_version":1,"event_id":"E0001","type":"study_created","study_id":"black-cats","cycle":1,"phase":"estimand","created_at":"2026-06-24T00:00:00Z","actor":"agent","payload":{"title":"Austin shelter cat adoption timing","toolchain_profile":"jaxstanv5-bayesite-v1"}}

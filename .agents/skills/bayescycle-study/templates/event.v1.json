@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "event_id": "E0001",
+  "type": "study_created",
+  "study_id": "replace-me",
+  "cycle": 1,
+  "phase": "estimand",
+  "created_at": "replace-with-iso-8601",
+  "actor": "human-or-agent",
+  "payload": {}
+}

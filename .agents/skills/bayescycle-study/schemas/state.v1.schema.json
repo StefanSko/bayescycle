@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bayescycle.local/schemas/study-state-v1.schema.json",
+  "title": "Bayescycle study state v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "study_id",
+    "title",
+    "cycle",
+    "phase",
+    "gate",
+    "toolchain",
+    "approved",
+    "open_questions",
+    "decisions",
+    "artifacts",
+    "runs",
+    "invalidated",
+    "notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "study_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "cycle": { "type": "integer", "minimum": 1 },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "estimand",
+        "generative_model",
+        "estimator_plan",
+        "simulation",
+        "fit",
+        "critique",
+        "revision"
+      ]
+    },
+    "gate": {
+      "type": "string",
+      "enum": ["open", "awaiting_human", "approved", "blocked"]
+    },
+    "toolchain": {
+      "type": "object",
+      "required": ["profile"],
+      "additionalProperties": { "type": "string" },
+      "properties": {
+        "profile": { "type": "string", "minLength": 1 },
+        "model_authoring": { "type": "string" },
+        "engine": { "type": "string" },
+        "visualization": { "type": "string" }
+      }
+    },
+    "approved": {
+      "type": "object",
+      "required": [
+        "scientific_question",
+        "estimand",
+        "generative_model",
+        "estimator_plan",
+        "simulation_tests",
+        "real_fit",
+        "model_criticism"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "scientific_question": { "$ref": "#/$defs/nullableArtifactRef" },
+        "estimand": { "$ref": "#/$defs/nullableArtifactRef" },
+        "generative_model": { "$ref": "#/$defs/nullableArtifactRef" },
+        "estimator_plan": { "$ref": "#/$defs/nullableArtifactRef" },
+        "simulation_tests": { "$ref": "#/$defs/nullableArtifactRef" },
+        "real_fit": { "$ref": "#/$defs/nullableArtifactRef" },
+        "model_criticism": { "$ref": "#/$defs/nullableArtifactRef" }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/question" }
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "runs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/run" }
+    },
+    "invalidated": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  },
+  "$defs": {
+    "nullableArtifactRef": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["id", "path"],
+          "additionalProperties": true,
+          "properties": {
+            "id": { "type": "string" },
+            "path": { "type": "string" },
+            "approved_at": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "question": {
+      "type": "object",
+      "required": ["id", "phase", "text", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "phase": { "type": "string" },
+        "text": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "answered", "closed"] },
+        "blocks_phase": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["id", "phase", "status", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "phase": { "type": "string" },
+        "status": { "type": "string", "enum": ["accepted", "superseded", "rejected"] },
+        "text": { "type": "string" },
+        "supersedes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "kind", "phase", "path", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "phase": { "type": "string" },
+        "path": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["proposed", "approved", "rejected", "superseded", "invalidated"]
+        },
+        "producer_profile": { "type": "string" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["id", "kind", "path", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "path": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "running",
+            "completed",
+            "diagnostics_pending",
+            "diagnostics_passed",
+            "diagnostics_failed",
+            "invalidated"
+          ]
+        }
+      }
+    }
+  }
+}

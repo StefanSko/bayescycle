@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "study_id": "replace-me",
+  "title": "Replace me",
+  "cycle": 1,
+  "phase": "estimand",
+  "gate": "awaiting_human",
+  "toolchain": {
+    "profile": "jaxstanv5-bayesite-v1",
+    "model_authoring": "jaxstanv5",
+    "engine": "bayesite",
+    "visualization": "bayesite-viz"
+  },
+  "approved": {
+    "scientific_question": null,
+    "estimand": null,
+    "generative_model": null,
+    "estimator_plan": null,
+    "simulation_tests": null,
+    "real_fit": null,
+    "model_criticism": null
+  },
+  "open_questions": [],
+  "decisions": [],
+  "artifacts": [],
+  "runs": [],
+  "invalidated": [],
+  "notes": []
+}

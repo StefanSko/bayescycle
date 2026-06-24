@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "study_id": "black-cats",
+  "title": "Austin shelter cat adoption timing",
+  "cycle": 1,
+  "phase": "estimand",
+  "gate": "awaiting_human",
+  "toolchain": {
+    "profile": "jaxstanv5-bayesite-v1",
+    "model_authoring": "jaxstanv5",
+    "engine": "bayesite",
+    "visualization": "bayesite-viz"
+  },
+  "approved": {
+    "scientific_question": null,
+    "estimand": null,
+    "generative_model": null,
+    "estimator_plan": null,
+    "simulation_tests": null,
+    "real_fit": null,
+    "model_criticism": null
+  },
+  "open_questions": [
+    {
+      "id": "Q0001",
+      "phase": "estimand",
+      "text": "What should count as a black cat for cycle 1?",
+      "status": "open",
+      "blocks_phase": "estimand",
+      "options": [
+        "exact color == Black",
+        "any color label containing Black",
+        "defer until data audit"
+      ]
+    },
+    {
+      "id": "Q0002",
+      "phase": "estimand",
+      "text": "Should transfer outcomes be treated as censoring, competing events, or excluded?",
+      "status": "open",
+      "blocks_phase": "estimand",
+      "options": [
+        "censoring",
+        "competing event",
+        "exclude transfers"
+      ]
+    }
+  ],
+  "decisions": [],
+  "artifacts": [],
+  "runs": [],
+  "invalidated": [],
+  "notes": [
+    {
+      "id": "N0001",
+      "text": "Seed study for dogfooding the bayescycle-study skill."
+    }
+  ]
+}

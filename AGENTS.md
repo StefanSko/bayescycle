@@ -16,6 +16,11 @@ It owns:
 It does not own model semantics, distribution math, inference algorithms,
 plotting, reports, or artifact/session management.
 
+The optional `.agents/skills/bayescycle-study/` directory is an agent protocol
+asset, not core runtime. It may document how agents should use `bayescycle`, but
+it must not expand `src/bayescycle` into a study notebook, reporting system, or
+artifact database without an explicit architecture decision.
+
 ## Architecture
 
 Prefer:
