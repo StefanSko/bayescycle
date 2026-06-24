@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bayescycle.local/schemas/study-event-v1.schema.json",
+  "title": "Bayescycle study event v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "type",
+    "study_id",
+    "cycle",
+    "phase",
+    "created_at",
+    "actor",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "event_id": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "minLength": 1 },
+    "study_id": { "type": "string", "minLength": 1 },
+    "cycle": { "type": "integer", "minimum": 1 },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "estimand",
+        "generative_model",
+        "estimator_plan",
+        "simulation",
+        "fit",
+        "critique",
+        "revision"
+      ]
+    },
+    "created_at": { "type": "string" },
+    "actor": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" }
+  }
+}

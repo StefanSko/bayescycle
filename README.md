@@ -80,6 +80,19 @@ run/diagnostics.json
 run/posterior_predictive.ndjson
 ```
 
+## Agentic study workflow
+
+The optional `.agents/skills/bayescycle-study/` skill defines a lightweight,
+human-gated Bayesian study protocol. It keeps canonical study state in JSON,
+records proposed state transitions as patches, treats Bayesite NDJSON as
+telemetry rather than scientific state, uses DAGs as scaffolding for causal
+generative models, and makes visualization a required phase-gate concern through
+`bayesite-viz` artifacts.
+
+The skill is intentionally outside `src/bayescycle`: it may use the CLI, but the
+Python package remains a narrow deterministic workflow harness. See
+[`docs/agentic-workflow.md`](docs/agentic-workflow.md).
+
 ## Development
 
 ```bash

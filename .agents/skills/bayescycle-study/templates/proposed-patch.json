@@ -1,0 +1,13 @@
+[
+  {
+    "op": "add",
+    "path": "/artifacts/-",
+    "value": {
+      "id": "A0001",
+      "kind": "phase_report",
+      "phase": "estimand",
+      "path": "artifacts/0001-estimand.md",
+      "status": "proposed"
+    }
+  }
+]
