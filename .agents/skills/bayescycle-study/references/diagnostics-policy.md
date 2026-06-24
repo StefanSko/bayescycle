@@ -1,7 +1,8 @@
 # Diagnostics policy
 
 Diagnostics are evidence for workflow and computation quality. They are not the
-scientific state itself.
+scientific state itself. See `mcmc-diagnostics.md` for the light intuition behind
+these checks.
 
 ## Raw telemetry
 
@@ -52,12 +53,14 @@ If reported, flag as errors:
 - chain failures
 - nonzero divergences for final inference unless explicitly justified
 - R-hat above the project threshold
-- ESS below the project threshold
+- ESS below the project threshold for important parameters or the approved estimand
 - max treedepth saturation that changes posterior interpretation
+- warmup/adaptation draws used as posterior draws
 - missing or inconsistent seeds for recovery runs
 
 If thresholds are not in state, ask the human to choose defaults before treating
-borderline diagnostics as pass/fail.
+borderline diagnostics as pass/fail. Do not rely only on raw-parameter diagnostics
+when the reported result is a derived estimand, contrast, or prediction.
 
 ## Severity levels
 

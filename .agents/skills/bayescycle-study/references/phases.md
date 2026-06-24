@@ -93,7 +93,8 @@ Allowed work:
 
 - prepare immutable data snapshots
 - run `bayescycle sample`
-- run diagnostics
+- run diagnostics before posterior interpretation
+- check diagnostics for the approved estimand or derived quantity when practical
 - summarize posterior estimand only if diagnostics pass or failures are stated
 
 Visualization expectation: bayesite-viz diagnostic plots and posterior estimand

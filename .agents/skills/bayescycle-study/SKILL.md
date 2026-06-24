@@ -52,8 +52,8 @@ For every phase invocation:
 4. Read the active adapter named by `state.toolchain.profile` from `adapters/`.
 5. Read `references/phases.md`, `references/state-schema.md`,
    `references/artifact-contracts.md`, `references/diagnostics-policy.md`,
-   `references/visualization-policy.md`, and `references/dag-generative-models.md`
-   when the task touches those concerns.
+   `references/mcmc-diagnostics.md`, `references/visualization-policy.md`, and
+   `references/dag-generative-models.md` when the task touches those concerns.
 6. Use `schemas/state.v1.schema.json` and `schemas/event.v1.schema.json` as the
    machine-readable contracts when validating or proposing state changes.
 
@@ -125,6 +125,7 @@ Before approving fit or critique artifacts, check for:
 
 - divergences or failed chains
 - bad R-hat / ESS if reported
+- diagnostic review for the approved estimand or derived quantity when practical
 - missing diagnostics for a run that claims to be fit
 - missing required bayesite-viz visual reports or an explicit waiver
 - real-data fits before simulation/recovery approval
