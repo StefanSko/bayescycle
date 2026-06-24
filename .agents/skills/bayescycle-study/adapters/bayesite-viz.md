@@ -119,6 +119,21 @@ A phase report should include the exact commands used and human interpretation
 of what the plots show. The agent may summarize, but the human approves the
 visual interpretation.
 
+## Public contracts used
+
+- `bayesite-idata <run-dir> -o <fit.nc>` for run-directory export
+- `bayesite-viz <verb> <fit.nc> -o <artifact>` for plots
+- stdout path-only output contract for agent capture
+
+## Forbidden assumptions
+
+- Do not make `bayesite-viz` discover bayescycle run directories implicitly.
+- Do not parse Bayesite NDJSON inside plotting commands; use the exporter
+  boundary.
+- Do not treat visual artifacts as approval; they are evidence for human review.
+- If this adapter conflicts with `bayesite-viz` invariants, the `bayesite-viz`
+  repository wins and the agent must stop and ask.
+
 ## Failure handling
 
 If `bayesite-idata` cannot export the run, do not skip visualization silently.

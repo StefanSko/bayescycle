@@ -22,6 +22,10 @@ Agent protocol:
 The skill may use the `bayescycle` CLI, but the CLI does not know about chats,
 phase gates, decisions, or study notebooks.
 
+The skill composes independent tools through public contracts only. If the skill
+conflicts with a tool repository's `AGENTS.md`, invariants, or documented public
+contract, the tool repository wins and the agent should stop for human review.
+
 ## Study layout
 
 A study keeps canonical state in JSON and rich prose in artifacts:

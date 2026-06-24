@@ -22,6 +22,16 @@ Treat the current chat as non-authoritative. The authoritative study memory is:
 If an earlier chat claim is not reflected in those files, ask whether to record
 it instead of acting on it.
 
+## Tool invariant precedence
+
+This skill is an anti-corruption layer across independent tools. It may compose
+workflows through public contracts, but it must not weaken the invariants of
+`jaxstanv5`, Bayesite, `bayescycle`, or `bayesite-viz`.
+
+If this skill conflicts with a tool repository's `AGENTS.md`, documented
+invariants, or public contract, the tool repository wins. Stop and ask before
+changing code, relying on private APIs, or encoding cross-repository assumptions.
+
 ## Study directory
 
 The user should provide a study directory, for example:

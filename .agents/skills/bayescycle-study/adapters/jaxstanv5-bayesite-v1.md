@@ -113,11 +113,29 @@ Bayesite use is allowed as an exploratory implementation detail. Record the
 exact command in the artifact and do not treat the output as approved until the
 human gate accepts it.
 
+## Public contracts used
+
+- `bayescycle sample ...`
+- `bayescycle diagnose ...`
+- `bayescycle posterior-predictive ...`
+- run-directory files documented by `bayescycle`
+- `bayesite-idata <run-dir> -o <fit.nc>`
+- `bayesite-viz <verb> <fit.nc> -o <artifact>`
+
+## Forbidden assumptions
+
+- Do not inspect `jaxstanv5` private APIs.
+- Do not parse or depend on Bayesite private runtime internals.
+- Do not infer model semantics from file names, shapes, or array labels.
+- Do not treat Bayesite stdout/stderr as posterior semantics unless summarized by
+  an explicit diagnostics artifact.
+- Do not assume `bayesite-viz` owns run-directory discovery; use `bayesite-idata`
+  as the exporter boundary.
+
 ## Boundary rules
 
-- Do not infer model semantics from file names, shapes, or array labels.
+- If this adapter conflicts with a tool repository's `AGENTS.md` or invariants,
+  the tool repository wins and the agent must stop and ask.
 - Do not add plotting/reporting behavior to `src/bayescycle` for this workflow.
-- Do not treat engine stdout/stderr as posterior semantics unless summarized by
-  an explicit diagnostics artifact.
 - Do not mutate real-data fit state after changing model/data artifacts without
   invalidating downstream artifacts.
