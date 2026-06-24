@@ -56,6 +56,18 @@ The skill runs one phase at a time:
 Each phase starts by re-reading `state.json`; prior conversation is
 non-authoritative unless recorded in state or approved artifacts.
 
+## DAGs and generative models
+
+For causal questions, the `generative_model` phase uses DAG reasoning as the
+structural scaffold: identify exposure/treatment `X`, outcome `Y`, paths,
+backdoor paths, candidate adjustment sets, mediators, colliders, descendants,
+and unmeasured-confounding risks. The DAG is not the full model; it is followed
+by probability distributions, priors, measurement, censoring, and observation
+status.
+
+The `estimator_plan` phase then consumes the DAG to justify adjustment and to
+warn against bad controls and Table 2 interpretations.
+
 ## Toolchain profiles
 
 The current concrete adapter is `jaxstanv5-bayesite-v1`:

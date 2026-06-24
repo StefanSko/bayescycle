@@ -12,6 +12,8 @@ Allowed work:
 
 - inspect data schema and metadata
 - propose candidate scientific questions and estimands
+- identify whether the estimand is causal, descriptive, predictive, or decision-oriented
+- for causal candidates, identify exposure/treatment `X`, outcome `Y`, and effect type
 - identify human decisions needed to define observation status and scope
 
 Forbidden work:
@@ -24,8 +26,8 @@ Visualization expectation: schema/missingness/event-status visuals or a stated
 reason they are not applicable. These visuals clarify measurement; they do not
 answer the scientific question before the estimand is approved.
 
-Exit criterion: one approved estimand and any adjustment/standardization target
-needed to interpret it.
+Exit criterion: one approved estimand, causal/descriptive status, and any
+adjustment/standardization target needed to interpret it.
 
 ## 2. generative_model
 
@@ -35,13 +37,15 @@ Allowed work:
 
 - propose DAGs or structural relationships
 - identify observed, latent, missing, censored, and future variables
+- classify forks, pipes, colliders, descendants, and bad controls for causal estimands
+- list backdoor paths and candidate adjustment sets when the estimand is causal
 - propose priors through prior predictive implications
 
 Visualization expectation: DAG/generative graph and observation-process visual
-when the model involves missingness, censoring, or competing events.
+when the model is causal or involves missingness, censoring, or competing events.
 
-Exit criterion: approved generative story, variables, observation process, and
-scientific assumptions.
+Exit criterion: approved generative story, variables, observation process, DAG
+assumptions when causal, and scientific assumptions.
 
 ## 3. estimator_plan
 
@@ -52,12 +56,16 @@ Allowed work:
 
 - specify likelihood/conditioning structure
 - specify posterior summaries that target the estimand
+- for causal estimands, justify the chosen adjustment set using the DAG
+- state which mediators, colliders, descendants, or proxies are intentionally excluded
 - define fake-data recovery criteria
 
 Visualization expectation: planned recovery and posterior predictive checks are
-listed, with pass/fail criteria tied to the estimand and scientific failures.
+listed, with pass/fail criteria tied to the estimand, DAG assumptions, and
+scientific failures.
 
-Exit criterion: approved estimator plan with explicit estimand mapping.
+Exit criterion: approved estimator plan with explicit estimand mapping and, for
+causal estimands, an adjustment-set justification.
 
 ## 4. simulation
 
@@ -66,9 +74,10 @@ Goal: test plumbing before real-data inference.
 Allowed work:
 
 - simulate fake data from the approved generative model
+- for causal estimands, simulate according to the approved DAG skeleton
 - run prior predictive checks
 - run recovery checks for known parameters/estimands
-- compare against intentionally wrong estimators when useful
+- compare against intentionally wrong estimators or bad-control adjustment when useful
 
 Visualization expectation: prior predictive and recovery visual reports are
 produced or explicitly waived by the human.
@@ -100,9 +109,10 @@ Allowed work:
 
 - posterior predictive checks
 - residual and calibration checks
-- sensitivity checks
+- sensitivity checks, including unmeasured-confounding sensitivity when relevant
 - diagnostic review
 - identify model failures and revised assumptions
+- revisit DAG assumptions, bad controls, and selection/censoring paths
 
 Visualization expectation: posterior predictive and sensitivity visuals are
 reviewed by the human, with failures tied back to the scientific question.

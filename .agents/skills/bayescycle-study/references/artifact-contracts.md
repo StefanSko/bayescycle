@@ -33,7 +33,24 @@ observation status decisions, and interpretation.
 
 Markdown and optional diagrams/code. Contains variables, causal/generative
 relationships, observation process, missing/censoring treatment, and prior
-predictive implications.
+predictive implications. For causal estimands, it must reference DAG assumptions
+or explicitly state why DAG reasoning is not applicable.
+
+### `dag_assumptions`
+
+Markdown. Contains exposure/treatment, outcome, DAG sketch, paths, backdoor
+paths, forks/pipes/colliders/descendants, candidate adjustment sets, bad
+controls, and unmeasured-confounding risks.
+
+### `adjustment_set_report`
+
+Markdown. Consumes a DAG artifact and justifies the chosen adjustment set for the
+approved estimand. Should state which causal paths are intentionally left open.
+
+### `bad_controls_report`
+
+Markdown. Lists mediators, colliders, descendants of colliders, selection nodes,
+or proxies that should not be conditioned on for the approved estimand.
 
 ### `estimator_plan`
 
@@ -120,6 +137,8 @@ Changing an approved artifact invalidates downstream artifacts:
 
 - estimand change invalidates generative model and later artifacts
 - generative model change invalidates estimator plan and later artifacts
+- DAG/adjustment-set change invalidates estimator plan and later artifacts for
+  causal estimands
 - estimator plan change invalidates simulation, fit, and critique
 - model code/data change after recovery invalidates recovery-to-fit continuity
 - failed diagnostics block fit approval unless explicitly waived

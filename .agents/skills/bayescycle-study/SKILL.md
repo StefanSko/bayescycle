@@ -51,8 +51,9 @@ For every phase invocation:
 3. Read approved artifacts needed for the current phase.
 4. Read the active adapter named by `state.toolchain.profile` from `adapters/`.
 5. Read `references/phases.md`, `references/state-schema.md`,
-   `references/artifact-contracts.md`, `references/diagnostics-policy.md`, and
-   `references/visualization-policy.md` when the task touches those concerns.
+   `references/artifact-contracts.md`, `references/diagnostics-policy.md`,
+   `references/visualization-policy.md`, and `references/dag-generative-models.md`
+   when the task touches those concerns.
 6. Use `schemas/state.v1.schema.json` and `schemas/event.v1.schema.json` as the
    machine-readable contracts when validating or proposing state changes.
 
@@ -74,6 +75,11 @@ it. If a human decision is needed, stop and ask.
 Visualization is cross-cutting, not a final reporting add-on. At every phase
 gate, explicitly state the visualization status: `not_applicable`, `planned`,
 `produced`, `reviewed`, or `blocked`.
+
+For causal questions, DAG reasoning is cross-cutting too: the `estimand` phase
+must identify whether the target is causal, the `generative_model` phase must
+state DAG assumptions, the `estimator_plan` phase must justify adjustment, and
+`simulation` must recover the estimand under the assumed DAG.
 
 ## State mutation policy
 

@@ -1,10 +1,11 @@
 # Black cats study seed
 
 This is a minimal study directory for dogfooding the `bayescycle-study` skill.
-It starts at the `estimand` phase with two blocking human questions:
+It starts at the `estimand` phase with three blocking human questions:
 
 1. What counts as a black cat?
 2. How should transfer outcomes be interpreted?
+3. Is the first-cycle question causal, descriptive, predictive, or decision-oriented?
 
 Use from the repository root with a fresh agent invocation such as:
 

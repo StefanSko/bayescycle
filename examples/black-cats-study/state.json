@@ -44,6 +44,19 @@
         "competing event",
         "exclude transfers"
       ]
+    },
+    {
+      "id": "Q0003",
+      "phase": "estimand",
+      "text": "Is the first-cycle black-cat question causal, descriptive, predictive, or decision-oriented?",
+      "status": "open",
+      "blocks_phase": "estimand",
+      "options": [
+        "causal effect of black coat color on adoption timing",
+        "descriptive association between black coat label and adoption timing",
+        "predictive feature for adoption timing",
+        "decision-oriented shelter intervention question"
+      ]
     }
   ],
   "decisions": [],
