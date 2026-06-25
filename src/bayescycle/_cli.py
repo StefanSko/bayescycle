@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import cast
 
 from bayescycle import __version__
-from bayescycle._engine import run_engine
+from bayescycle._engine import EngineCommand, run_engine
+from bayescycle._inproc import InProcessBackendError, run_in_process_sample
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._workflow import (
     DiagnoseRequest,
@@ -61,11 +62,19 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sample.add_argument("--data", required=True, type=Path, help="JSON data file for the engine")
     sample.add_argument("-o", "--output", required=True, type=Path, help="run directory")
+    sample.add_argument(
+        "--backend",
+        choices=("bayesite", "jaxstanv5"),
+        default="bayesite",
+        help="sampling backend to use",
+    )
     sample.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
     sample.add_argument("--seed", help="sampler seed forwarded to Bayesite")
     sample.add_argument("--chains", help="chain count forwarded to Bayesite")
     sample.add_argument("--warmup", help="warmup draw count forwarded to Bayesite")
     sample.add_argument("--draws", help="posterior draw count forwarded to Bayesite")
+    sample.add_argument("--max-treedepth", dest="max_tree_depth", help="maximum NUTS tree depth")
+    sample.add_argument("--target-accept", dest="target_accept", help="target NUTS acceptance rate")
     sample.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     sample.add_argument(
         "--dry-run",
@@ -109,12 +118,15 @@ def _sample(namespace: argparse.Namespace) -> int:
             data_path=cast(Path, namespace.data),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
+            backend=cast(str, namespace.backend),
             engine=cast(str, namespace.engine),
             sampler=SamplerSettings(
                 seed=cast(str | None, namespace.seed),
                 chains=cast(str | None, namespace.chains),
                 warmup=cast(str | None, namespace.warmup),
                 draws=cast(str | None, namespace.draws),
+                max_tree_depth=cast(str | None, namespace.max_tree_depth),
+                target_accept=cast(str | None, namespace.target_accept),
             ),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
@@ -123,8 +135,10 @@ def _sample(namespace: argparse.Namespace) -> int:
         if cast(bool, namespace.dry_run):
             print(json.dumps(dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.engine_command)
-    except (ModelLoadError, WorkflowError, OSError) as exc:
+        if isinstance(prepared.execution, EngineCommand):
+            return run_engine(prepared.execution)
+        return run_in_process_sample(prepared.execution)
+    except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
 

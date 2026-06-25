@@ -1,0 +1,49 @@
+# Bayescycle run-directory v0
+
+The bayescycle run directory is the neutral artifact contract shared by workflow
+backends. A backend may be the Bayesite Rust engine or an in-process Python/JAX
+backend, but completed runs should expose the same explicit files.
+
+The v0 contract is provisional. Consumers must validate format markers before
+parsing artifact contents.
+
+## Required files
+
+```text
+run/
+  model.ir.json       # serialized jaxstanv5 ModelMeta IR
+  data.json           # data snapshot used for the run
+  posterior.ndjson    # retained posterior draws; see posterior-draws-v0.md
+```
+
+## Optional files
+
+```text
+run/
+  dims.json                   # explicit jaxstanv5 dimension metadata sidecar
+  diagnostics.json            # diagnostics report for posterior.ndjson
+  prior_predictive.ndjson     # prior-predictive draws when produced
+  posterior_predictive.ndjson # posterior-predictive draws when produced
+  fit.nc                      # derived ArviZ/NetCDF export, not source state
+```
+
+`dims.json` may only contain dimension labels and coordinates explicitly exposed
+by `jaxstanv5`; bayescycle must not infer labels from names, shapes, or data.
+
+## Ownership
+
+- `bayescycle` owns the run-directory contract and path ergonomics.
+- Sampling backends own sampler execution and sampler facts.
+- Export/visualization tools consume the run directory and may create derived
+  artifacts such as `fit.nc`.
+
+Bayesite currently emits the initial posterior artifact shape used by this
+contract. That does not make the artifact contract sampler-specific: Bayesite is
+one producer/consumer of the bayescycle run-directory v0 contract.
+
+## Compatibility rule
+
+A producer is compatible with the run-directory v0 contract when downstream
+consumers can read the produced run without backend-specific knowledge. At
+minimum, a completed posterior run should be accepted by diagnostics and
+InferenceData export tools that support this contract.
