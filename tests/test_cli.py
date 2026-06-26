@@ -877,6 +877,35 @@ def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
     }
 
 
+def test_posterior_check_reports_missing_required_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, posterior=False)
+
+    code = main(["posterior-check", str(run_dir), "--seed", "8", "--dry-run"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "missing required run artifacts" in err
+    assert "model.ir.json" in err
+    assert "posterior.ndjson" in err
+
+
+def test_posterior_check_jaxstanv5_backend_reports_unsupported(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir)
+
+    code = main(["posterior-check", str(run_dir), "--backend", "jaxstanv5", "--dry-run"])
+
+    assert code == 2
+    assert "not supported on --backend jaxstanv5" in capsys.readouterr().err
+
+
 def test_recover_check_dry_run_uses_fit_truth_targets_and_interval(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
