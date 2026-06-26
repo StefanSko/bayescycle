@@ -342,6 +342,7 @@ def prepare_sample_run[CommandT: DryRunCommand](
     output_dir = request.output_dir.expanduser().resolve()
     draws_path = output_dir / "posterior.ndjson"
     _reject_reserved_engine_args(request.engine_args, draws_path)
+    _reject_in_process_engine_args(request.backend, request.engine_args)
     context = prepare_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -369,6 +370,7 @@ def prepare_prior_predictive_run[CommandT: DryRunCommand](
     output_dir = request.output_dir.expanduser().resolve()
     output_path = output_dir / "prior_predictive.ndjson"
     _reject_reserved_engine_args(request.engine_args, output_path)
+    _reject_in_process_engine_args(request.backend, request.engine_args)
     context = prepare_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -788,6 +790,11 @@ def _validate_bayesite_only(backend: str, command: str) -> None:
     _validate_backend(backend)
     if backend != "bayesite":
         raise WorkflowError(f"bayescycle {command} is not supported on --backend {backend}")
+
+
+def _reject_in_process_engine_args(backend: str, engine_args: tuple[str, ...]) -> None:
+    if backend == "jaxstanv5" and engine_args:
+        raise WorkflowError("engine passthrough after -- is only supported for --backend bayesite")
 
 
 def _reject_reserved_engine_args(engine_args: tuple[str, ...], output_path: Path) -> None:

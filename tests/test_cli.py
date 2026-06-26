@@ -273,6 +273,7 @@ def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
 ) -> None:
     model_file = _write_normal_mean_model(tmp_path)
     data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
 
     code = main(
         [
@@ -281,7 +282,7 @@ def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
             "--data",
             str(data_file),
             "-o",
-            str(tmp_path / "run"),
+            str(output_dir),
             "--backend",
             "jaxstanv5",
             "--dry-run",
@@ -292,6 +293,7 @@ def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
 
     assert code == 2
     assert "passthrough" in capsys.readouterr().err
+    assert not output_dir.exists()
 
 
 def test_sample_jaxstanv5_backend_writes_energy_posterior(
@@ -542,6 +544,35 @@ def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
         "settings": {"draws": 4, "seed": 3},
     }
     assert not (output_dir / "prior_predictive.ndjson").exists()
+
+
+def test_prior_predictive_jaxstanv5_backend_rejects_engine_passthrough_before_writes(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "prior-predictive",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+            "--dry-run",
+            "--",
+            "--experimental-engine-flag",
+        ]
+    )
+
+    assert code == 2
+    assert "passthrough" in capsys.readouterr().err
+    assert not output_dir.exists()
 
 
 def test_prior_predictive_jaxstanv5_backend_writes_v0_stream(tmp_path: Path) -> None:
