@@ -225,7 +225,7 @@ def _draw_line(
         "sample_stats_mode": "per_draw_v2",
         "diverging": _bool_at(result.diagnostics.sampling.is_divergent, chain, draw),
         "tree_depth": _int_at(result.diagnostics.sampling.num_trajectory_expansions, chain, draw),
-        "tree_accept": _finite_float_at(result.diagnostics.sampling.acceptance_rate, chain, draw),
+        "tree_accept": _probability_at(result.diagnostics.sampling.acceptance_rate, chain, draw),
         "energy": _finite_float_at(result.diagnostics.sampling.energy, chain, draw),
     }
 
@@ -277,7 +277,7 @@ def _chain_stats(
             )
         histogram[depth] += 1
     accepts = [
-        _finite_float_at(result.diagnostics.sampling.acceptance_rate, chain, draw)
+        _probability_at(result.diagnostics.sampling.acceptance_rate, chain, draw)
         for draw in range(settings.draws)
     ]
     return {
@@ -375,6 +375,10 @@ def _finite_float_at(array: _ArrayLike, chain: int, draw: int) -> float:
     return _finite_float(_scalar_from_index(array, chain, draw))
 
 
+def _probability_at(array: _ArrayLike, chain: int, draw: int) -> float:
+    return _probability_float(_scalar_from_index(array, chain, draw))
+
+
 def _finite_float(value: SupportsFloat) -> float:
     number = float(value)
     if not math.isfinite(number):
@@ -386,6 +390,18 @@ def _finite_positive_float(value: SupportsFloat) -> float:
     number = _finite_float(value)
     if number <= 0.0:
         raise PosteriorArtifactError("adapted step_size must be positive")
+    return number
+
+
+def _probability_float(value: SupportsFloat) -> float:
+    number = _finite_float(value)
+    tolerance = 1e-6
+    if -tolerance <= number < 0.0:
+        return 0.0
+    if 1.0 < number <= 1.0 + tolerance:
+        return 1.0
+    if number < 0.0 or number > 1.0:
+        raise PosteriorArtifactError("acceptance probability must be in [0, 1]")
     return number
 
 
