@@ -45,6 +45,18 @@ def _write_input_data(tmp_path: Path) -> Path:
     return data_file
 
 
+def _write_empty_data(tmp_path: Path) -> Path:
+    data_file = tmp_path / "empty_data.json"
+    data_file.write_text("{}\n", encoding="utf-8")
+    return data_file
+
+
+def _write_json_file(tmp_path: Path, name: str, content: str = "{}\n") -> Path:
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 def _write_run_artifacts(
     run_dir: Path,
     *,
@@ -434,6 +446,211 @@ def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -
     assert not stale_posterior.exists()
 
 
+def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "prior-predictive",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--seed",
+            "7",
+            "--draws",
+            "9",
+            "--dry-run",
+            "--",
+            "--experimental-engine-flag",
+        ]
+    )
+
+    assert code == 0
+    ir_path = output_dir / "model.ir.json"
+    run_data_path = output_dir / "data.json"
+    assert json.loads(ir_path.read_text(encoding="utf-8"))["jaxstanv5_ir"] == 1
+    assert run_data_path.read_text(encoding="utf-8") == "{}\n"
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "data": str(run_data_path),
+        "engine_command": [
+            "bayesite",
+            "prior-predictive",
+            "--model",
+            str(ir_path),
+            "--data",
+            str(run_data_path),
+            "--seed",
+            "7",
+            "--draws",
+            "9",
+            "--out",
+            str(output_dir / "prior_predictive.ndjson"),
+            "--experimental-engine-flag",
+        ],
+        "ir": str(ir_path),
+        "model": "Simple",
+        "output": str(output_dir),
+        "prior_predictive": str(output_dir / "prior_predictive.ndjson"),
+    }
+    assert not (output_dir / "prior_predictive.ndjson").exists()
+
+
+@pytest.mark.parametrize("engine_args", [("--out", "elsewhere.ndjson"), ("--out=-",)])
+def test_prior_predictive_rejects_forwarded_out_engine_arg(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    engine_args: tuple[str, ...],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+
+    code = main(
+        [
+            "prior-predictive",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+            "--",
+            *engine_args,
+        ]
+    )
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "forwarded engine args may not include --out" in err
+    assert "prior_predictive.ndjson" in err
+
+
+def test_simulate_invokes_engine_with_owned_truth_and_output_paths(tmp_path: Path) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.1}\n')
+    output_dir = tmp_path / "run"
+    fake_engine = _write_fake_out_engine(tmp_path)
+
+    code = main(
+        [
+            "simulate",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "--truth",
+            str(truth_file),
+            "-o",
+            str(output_dir),
+            "--seed",
+            "1",
+            "--engine",
+            str(fake_engine),
+        ]
+    )
+
+    assert code == 0
+    assert (output_dir / "truth.json").read_text(encoding="utf-8") == '{"mu": 0.1}\n'
+    assert (output_dir / "simulated_data.json").read_text(encoding="utf-8") == (
+        f"simulate --model {output_dir / 'model.ir.json'} --data {output_dir / 'data.json'} "
+        f"--truth {output_dir / 'truth.json'} --seed 1 "
+        f"--out {output_dir / 'simulated_data.json'}\n"
+    )
+
+
+def test_recover_dry_run_prepares_scenario_command(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    scenario_file = _write_json_file(tmp_path, "scenario.json", '{"recover_scenario":"v0"}\n')
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "recover",
+            str(model_file),
+            "--scenario",
+            str(scenario_file),
+            "-o",
+            str(output_dir),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "engine_command": [
+            "bayesite",
+            "recover",
+            "--model",
+            str(output_dir / "model.ir.json"),
+            "--scenario",
+            str(output_dir / "scenario.json"),
+            "--out",
+            str(output_dir / "recovery.json"),
+        ],
+        "ir": str(output_dir / "model.ir.json"),
+        "model": "Simple",
+        "output": str(output_dir),
+        "recovery": str(output_dir / "recovery.json"),
+        "scenario": str(output_dir / "scenario.json"),
+    }
+
+
+def test_sbc_dry_run_prepares_scenario_command_with_replicates(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    scenario_file = _write_json_file(tmp_path, "scenario.json", '{"sbc_scenario":"v0"}\n')
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sbc",
+            str(model_file),
+            "--scenario",
+            str(scenario_file),
+            "-o",
+            str(output_dir),
+            "--replicates",
+            "12",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "engine_command": [
+            "bayesite",
+            "sbc",
+            "--model",
+            str(output_dir / "model.ir.json"),
+            "--scenario",
+            str(output_dir / "scenario.json"),
+            "--replicates",
+            "12",
+            "--out",
+            str(output_dir / "sbc.json"),
+        ],
+        "ir": str(output_dir / "model.ir.json"),
+        "model": "Simple",
+        "output": str(output_dir),
+        "sbc": str(output_dir / "sbc.json"),
+        "scenario": str(output_dir / "scenario.json"),
+    }
+
+
 def test_diagnose_dry_run_uses_run_directory_artifacts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -547,6 +764,130 @@ def test_posterior_predictive_reports_missing_required_artifacts(
     assert "missing required run artifacts" in err
     assert "model.ir.json" in err
     assert "posterior.ndjson" in err
+
+
+def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir)
+
+    code = main(["posterior-check", str(run_dir), "--seed", "8", "--dry-run"])
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "engine_command": [
+            "bayesite",
+            "posterior-check",
+            "--model",
+            str(run_dir / "model.ir.json"),
+            "--data",
+            str(run_dir / "data.json"),
+            "--fit",
+            str(run_dir / "posterior.ndjson"),
+            "--seed",
+            "8",
+            "--out",
+            str(run_dir / "posterior_check.json"),
+        ],
+        "output": str(run_dir / "posterior_check.json"),
+        "run": str(run_dir),
+    }
+
+
+def test_recover_check_dry_run_uses_fit_truth_targets_and_interval(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, data=False)
+    truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.0}\n')
+    targets_file = _write_json_file(tmp_path, "targets.json", '{"targets": []}\n')
+
+    code = main(
+        [
+            "recover-check",
+            str(run_dir),
+            "--truth",
+            str(truth_file),
+            "--targets",
+            str(targets_file),
+            "--interval",
+            "0.8",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {
+        "engine_command": [
+            "bayesite",
+            "recover-check",
+            "--fit",
+            str(run_dir / "posterior.ndjson"),
+            "--truth",
+            str(truth_file.resolve()),
+            "--targets",
+            str(targets_file.resolve()),
+            "--interval",
+            "0.8",
+            "--out",
+            str(run_dir / "recovery_check.json"),
+        ],
+        "output": str(run_dir / "recovery_check.json"),
+        "run": str(run_dir),
+    }
+
+
+def test_recover_check_reports_missing_posterior(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, data=False, posterior=False)
+    truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.0}\n')
+
+    code = main(["recover-check", str(run_dir), "--truth", str(truth_file), "--dry-run"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "missing required run artifact" in err
+    assert "posterior.ndjson" in err
+
+
+def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    _write_run_artifacts(run_dir, model=False, data=False)
+    stale_report = run_dir / "recovery_check.json"
+    stale_report.write_text("stale report\n", encoding="utf-8")
+    truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.0}\n')
+    fake_engine = tmp_path / "failing_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "\n"
+        "print('engine failed before writing --out', file=sys.stderr)\n"
+        "raise SystemExit(19)\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(
+        [
+            "recover-check",
+            str(run_dir),
+            "--truth",
+            str(truth_file),
+            "--engine",
+            str(fake_engine),
+        ]
+    )
+
+    assert code == 19
+    assert not stale_report.exists()
 
 
 def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(
