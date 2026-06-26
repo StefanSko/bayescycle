@@ -10,6 +10,7 @@ Bayesite may emit NDJSON such as:
 
 ```text
 runs/fit-0001/posterior.ndjson
+runs/fit-0001/prior_predictive.ndjson
 runs/fit-0001/posterior_predictive.ndjson
 ```
 
@@ -22,11 +23,17 @@ Expected summaries, when available:
 
 ```text
 runs/fit-0001/diagnostics.json
+runs/fit-0001/posterior_check.json
+runs/fit-0001/recovery_check.json
+runs/fit-0001/recovery.json
+runs/fit-0001/sbc.json
 runs/fit-0001/diagnostics.md
 ```
 
-`diagnostics.json` is the preferred machine-readable input for a fresh agent.
-`diagnostics.md` is a human-facing explanation.
+`diagnostics.json`, `posterior_check.json`, `recovery_check.json`,
+`recovery.json`, and `sbc.json` are preferred machine-readable inputs for a
+fresh agent when relevant. They are factual reports, not automatic approval
+verdicts. `diagnostics.md` is a human-facing explanation.
 
 ## Workflow checks
 

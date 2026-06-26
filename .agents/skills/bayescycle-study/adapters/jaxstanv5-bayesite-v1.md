@@ -40,10 +40,24 @@ Run diagnostics for an existing run directory:
 bayescycle diagnose runs/fit-0001
 ```
 
-Generate posterior predictive draws when supported by the engine profile:
+Run simulation-gate commands through bayescycle-owned run directories:
 
 ```bash
+bayescycle prior-predictive models/model.py --data data/inputs.json -o runs/prior-0001 \
+  --seed 123 --draws 500
+bayescycle simulate models/model.py --data data/inputs.json --truth data/truth.json \
+  -o runs/sim-0001 --seed 1
+bayescycle recover models/model.py --scenario scenarios/recover.json -o runs/recover-0001
+bayescycle sbc models/model.py --scenario scenarios/sbc.json -o runs/sbc-0001 --replicates 100
+```
+
+Run diagnostics and follow-up checks for an existing run directory:
+
+```bash
+bayescycle diagnose runs/fit-0001
 bayescycle posterior-predictive runs/fit-0001 --seed 456
+bayescycle posterior-check runs/fit-0001 --seed 456
+bayescycle recover-check runs/fit-0001 --truth data/truth.json --interval 0.8
 ```
 
 ## Standard run directory
@@ -57,7 +71,13 @@ runs/fit-0001/
   dims.json                 # optional, explicit jaxstanv5 metadata only
   posterior.ndjson
   diagnostics.json          # after diagnose
+  prior_predictive.ndjson
   posterior_predictive.ndjson
+  simulated_data.json
+  recovery.json
+  sbc.json
+  recovery_check.json
+  posterior_check.json
   fit.nc                    # optional; produced by bayesite-idata for visualization
 ```
 
@@ -106,18 +126,23 @@ register it or mention it in the data snapshot artifact.
 
 ## Simulation and recovery
 
-Prefer the bayescycle CLI for runs that can be expressed through current
-commands. If the Bayesite binary exposes additional commands such as
-`prior-predictive`, `recover`, or `sbc` before bayescycle wraps them, direct
-Bayesite use is allowed as an exploratory implementation detail. Record the
-exact command in the artifact and do not treat the output as approved until the
-human gate accepts it.
+Use the first-class bayescycle commands for prior predictive, fake-data
+simulation, recovery checks, single-scenario recovery, and SBC. Direct Bayesite
+calls are not needed for the simulation gate in this profile. Record the exact
+bayescycle command in the artifact and do not treat the output as approved until
+the human gate accepts it.
 
 ## Public contracts used
 
 - `bayescycle sample ...`
+- `bayescycle prior-predictive ...`
+- `bayescycle simulate ...`
+- `bayescycle recover ...`
+- `bayescycle sbc ...`
 - `bayescycle diagnose ...`
 - `bayescycle posterior-predictive ...`
+- `bayescycle posterior-check ...`
+- `bayescycle recover-check ...`
 - run-directory files documented by `bayescycle`
 - `bayesite-idata <run-dir> -o <fit.nc>`
 - `bayesite-viz <verb> <fit.nc> -o <artifact>`

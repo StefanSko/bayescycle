@@ -74,14 +74,26 @@ warn against bad controls and Table 2 interpretations.
 
 ## Toolchain profiles
 
-The current concrete adapter is `jaxstanv5-bayesite-v1`:
+The current concrete adapters are `jaxstanv5-bayesite-v1` and
+`jaxstanv5-inproc-v1`:
 
 ```text
 jaxstanv5 model.py -> bayescycle CLI -> Bayesite engine -> run directory
+jaxstanv5 model.py -> bayescycle CLI -> jaxstanv5 in-process backend -> run directory
 ```
 
-The scientific state tracks abstract artifact kinds, so future adapters can swap
-in a different implementation without rewriting the workflow protocol.
+The simulation gate should use first-class `bayescycle` commands rather than
+calling the engine directly:
+
+```bash
+bayescycle prior-predictive models/model.py --data data/inputs.json -o runs/prior-0001
+bayescycle simulate models/model.py --data data/inputs.json --truth data/truth.json -o runs/sim-0001
+bayescycle sample models/model.py --data runs/sim-0001/simulated_data.json -o runs/recover-fit-0001
+bayescycle recover-check runs/recover-fit-0001 --truth data/truth.json
+```
+
+The scientific state tracks abstract artifact kinds, so adapters can swap a
+backend implementation without rewriting the workflow protocol.
 
 ## Visualization
 
