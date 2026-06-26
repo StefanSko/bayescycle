@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from bayescycle._model_loader import LoadedModel
-from bayescycle._settings import ResolvedSamplerSettings
+from bayescycle._settings import ResolvedPriorPredictiveSettings, ResolvedSamplerSettings
 
 JsonObject = dict[str, object]
 
@@ -28,6 +28,20 @@ class BayesiteCommand:
     def dry_run_fields(self) -> JsonObject:
         """Return command fields for dry-run JSON output."""
         return {"engine_command": list(self.argv)}
+
+
+@dataclass(frozen=True)
+class Jaxstanv5PriorPredictiveCommand:
+    """An in-process jaxstanv5 prior-predictive command."""
+
+    loaded_model: LoadedModel
+    data_path: Path
+    output_path: Path
+    settings: ResolvedPriorPredictiveSettings
+
+    def dry_run_fields(self) -> JsonObject:
+        """Return command fields for dry-run JSON output."""
+        return {"backend": "jaxstanv5", "settings": self.settings.as_json()}
 
 
 @dataclass(frozen=True)

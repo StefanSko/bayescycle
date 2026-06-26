@@ -8,7 +8,7 @@ from typing import Protocol, cast
 
 from jaxstanv5.model.bound import BoundModel
 
-from bayescycle._commands import Jaxstanv5SampleCommand
+from bayescycle._commands import Jaxstanv5PriorPredictiveCommand, Jaxstanv5SampleCommand
 
 
 class InProcessBackendError(RuntimeError):
@@ -17,6 +17,17 @@ class InProcessBackendError(RuntimeError):
 
 class _BindableModel(Protocol):
     def bind(self, **values: object) -> BoundModel: ...
+
+
+class _PriorPredictiveFunction(Protocol):
+    def __call__(
+        self,
+        model_cls: object,
+        *,
+        seed: int,
+        num_samples: int,
+        data: dict[str, object] | None = None,
+    ) -> object: ...
 
 
 class _SampleFunction(Protocol):
@@ -85,8 +96,52 @@ def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
     return 0
 
 
+def run_jaxstanv5_prior_predictive(command: Jaxstanv5PriorPredictiveCommand) -> int:
+    """Run jaxstanv5 prior-predictive simulation and write prior_predictive.ndjson."""
+    simulate_prior_predictive = _load_prior_predictive_function()
+    try:
+        from bayescycle._prior_predictive_ndjson import (
+            PriorPredictiveArtifactError,
+            _PriorPredictiveResult,
+            write_prior_predictive_ndjson,
+        )
+    except ImportError as exc:
+        raise InProcessBackendError(
+            "jaxstanv5 in-process backend requires JAX. "
+            "Install with `bayescycle[inproc]` or use `--backend bayesite`."
+        ) from exc
+    command.output_path.unlink(missing_ok=True)
+    data = _load_data(command.data_path)
+    try:
+        result = simulate_prior_predictive(
+            command.loaded_model.model_cls,
+            seed=command.settings.seed,
+            num_samples=command.settings.draws,
+            data=data,
+        )
+        write_prior_predictive_ndjson(
+            command.output_path,
+            result=cast(_PriorPredictiveResult, result),
+            settings=command.settings,
+        )
+    except (PriorPredictiveArtifactError, TypeError, ValueError) as exc:
+        raise InProcessBackendError(str(exc)) from exc
+    return 0
+
+
 # Backward-compatible name while callers migrate to backend capability methods.
 run_in_process_sample = run_jaxstanv5_sample
+
+
+def _load_prior_predictive_function() -> _PriorPredictiveFunction:
+    try:
+        from jaxstanv5.simulation import simulate_prior_predictive
+    except ImportError as exc:
+        raise InProcessBackendError(
+            "jaxstanv5 in-process backend requires JAX. "
+            "Install with `bayescycle[inproc]` or use `--backend bayesite`."
+        ) from exc
+    return cast(_PriorPredictiveFunction, simulate_prior_predictive)
 
 
 def _load_sample_function() -> _SampleFunction:

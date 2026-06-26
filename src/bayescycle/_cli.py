@@ -343,12 +343,12 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        if request.backend != "bayesite":
-            raise WorkflowError(
-                f"bayescycle prior-predictive is not supported on --backend {request.backend}"
+        if request.backend == "bayesite":
+            return _prior_predictive_with_backend(
+                BayesiteBackend(request.engine), request, dry_run=cast(bool, namespace.dry_run)
             )
         return _prior_predictive_with_backend(
-            BayesiteBackend(request.engine), request, dry_run=cast(bool, namespace.dry_run)
+            Jaxstanv5Backend(), request, dry_run=cast(bool, namespace.dry_run)
         )
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)

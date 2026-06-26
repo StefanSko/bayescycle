@@ -39,6 +39,33 @@ class ResolvedSamplerSettings:
 
 
 @dataclass(frozen=True)
+class ResolvedPriorPredictiveSettings:
+    """Typed prior-predictive settings used by the in-process backend."""
+
+    seed: int
+    draws: int
+
+    def as_json(self) -> dict[str, int]:
+        """Return a JSON-ready settings summary."""
+        return {"seed": self.seed, "draws": self.draws}
+
+
+@dataclass(frozen=True)
+class PriorPredictiveSettings:
+    """Prior-predictive CLI settings forwarded or resolved by backend."""
+
+    seed: str | None
+    draws: str | None
+
+    def resolve_for_in_process(self) -> ResolvedPriorPredictiveSettings:
+        """Parse prior-predictive settings for direct Python execution."""
+        return ResolvedPriorPredictiveSettings(
+            seed=parse_nonnegative_int(self.seed, "--seed", default=DEFAULT_SEED),
+            draws=parse_positive_int(self.draws, "--draws", default=DEFAULT_DRAWS),
+        )
+
+
+@dataclass(frozen=True)
 class SamplerSettings:
     """Common sampler CLI settings forwarded or resolved by backend."""
 

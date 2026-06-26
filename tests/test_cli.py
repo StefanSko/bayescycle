@@ -503,6 +503,86 @@ def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
     assert not (output_dir / "prior_predictive.ndjson").exists()
 
 
+def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "prior-predictive",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+            "--seed",
+            "3",
+            "--draws",
+            "4",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    printed.pop("dims", None)
+    assert printed == {
+        "backend": "jaxstanv5",
+        "data": str(output_dir / "data.json"),
+        "ir": str(output_dir / "model.ir.json"),
+        "model": "NormalMean",
+        "output": str(output_dir),
+        "prior_predictive": str(output_dir / "prior_predictive.ndjson"),
+        "settings": {"draws": 4, "seed": 3},
+    }
+    assert not (output_dir / "prior_predictive.ndjson").exists()
+
+
+def test_prior_predictive_jaxstanv5_backend_writes_v0_stream(tmp_path: Path) -> None:
+    pytest.importorskip("jax")
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "prior-predictive",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+            "--seed",
+            "3",
+            "--draws",
+            "4",
+        ]
+    )
+
+    assert code == 0
+    lines = [
+        json.loads(line)
+        for line in (output_dir / "prior_predictive.ndjson").read_text().splitlines()
+    ]
+    assert lines[0]["prior_predictive_format"] == "v0-provisional"
+    assert lines[0]["artifact_kind"] == "prior_predictive_draws"
+    assert lines[0]["draw_count"] == 4
+    assert lines[0]["site_order"] == ["mu", "y"]
+    assert lines[0]["sites"][0]["role"] == "parameter"
+    assert lines[0]["sites"][1]["role"] == "observed"
+    assert lines[1]["draw"] == 0
+    assert set(lines[1]["values"]) == {"mu", "y"}
+    assert lines[-1]["trailer"]["draw_count"] == 4
+
+
 @pytest.mark.parametrize("engine_args", [("--out", "elsewhere.ndjson"), ("--out=-",)])
 def test_prior_predictive_rejects_forwarded_out_engine_arg(
     tmp_path: Path,

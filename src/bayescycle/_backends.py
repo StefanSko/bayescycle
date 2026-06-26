@@ -5,10 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bayescycle._commands import BayesiteCommand, Jaxstanv5SampleCommand
+from bayescycle._commands import (
+    BayesiteCommand,
+    Jaxstanv5PriorPredictiveCommand,
+    Jaxstanv5SampleCommand,
+)
 from bayescycle._engine import run_bayesite_command
 from bayescycle._errors import WorkflowError
-from bayescycle._inproc import run_jaxstanv5_sample
+from bayescycle._inproc import run_jaxstanv5_prior_predictive, run_jaxstanv5_sample
+from bayescycle._settings import PriorPredictiveSettings
 from bayescycle._workflow import (
     PreparedModelRunContext,
     PreparedModelScenarioContext,
@@ -177,6 +182,28 @@ class Jaxstanv5Backend:
     def run_sample(self, command: Jaxstanv5SampleCommand) -> int:
         """Execute an in-process jaxstanv5 sample command."""
         return run_jaxstanv5_sample(command)
+
+    def build_prior_predictive_command(
+        self, context: PreparedModelRunContext, request: PriorPredictiveRequest
+    ) -> Jaxstanv5PriorPredictiveCommand:
+        """Build the in-process jaxstanv5 prior-predictive command."""
+        if request.engine_args:
+            raise WorkflowError(
+                "engine passthrough after -- is only supported for --backend bayesite"
+            )
+        return Jaxstanv5PriorPredictiveCommand(
+            loaded_model=context.loaded_model,
+            data_path=context.data_path,
+            output_path=context.output_dir / "prior_predictive.ndjson",
+            settings=PriorPredictiveSettings(
+                seed=request.seed,
+                draws=request.draws,
+            ).resolve_for_in_process(),
+        )
+
+    def run_prior_predictive(self, command: Jaxstanv5PriorPredictiveCommand) -> int:
+        """Execute an in-process jaxstanv5 prior-predictive command."""
+        return run_jaxstanv5_prior_predictive(command)
 
 
 def _optional_arg(flag: str, value: str | None) -> tuple[str, ...]:
