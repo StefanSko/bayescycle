@@ -12,21 +12,55 @@ from jaxstanv5.model import ModelMeta
 
 from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._engine import EngineCommand
-from bayescycle._model_loader import load_model
+from bayescycle._model_loader import LoadedModel, load_model
 
 
 class WorkflowError(RuntimeError):
     """Raised when a workflow request cannot be prepared."""
 
 
+DEFAULT_SEED = 0
+DEFAULT_CHAINS = 4
+DEFAULT_WARMUP = 1000
+DEFAULT_DRAWS = 1000
+DEFAULT_MAX_TREE_DEPTH = 10
+DEFAULT_TARGET_ACCEPT = 0.8
+MAX_REPORTABLE_I64 = 9_223_372_036_854_775_807
+
+
+@dataclass(frozen=True)
+class ResolvedSamplerSettings:
+    """Typed sampler settings used by the in-process backend."""
+
+    seed: int
+    chains: int
+    warmup: int
+    draws: int
+    max_tree_depth: int
+    target_accept: float
+
+    def as_json(self) -> dict[str, int | float]:
+        """Return a JSON-ready settings summary."""
+        return {
+            "seed": self.seed,
+            "chains": self.chains,
+            "warmup": self.warmup,
+            "draws": self.draws,
+            "max_tree_depth": self.max_tree_depth,
+            "target_accept": self.target_accept,
+        }
+
+
 @dataclass(frozen=True)
 class SamplerSettings:
-    """Common sampler CLI settings forwarded without interpreting semantics."""
+    """Common sampler CLI settings forwarded or resolved by backend."""
 
     seed: str | None
     chains: str | None
     warmup: str | None
     draws: str | None
+    max_tree_depth: str | None
+    target_accept: str | None
 
     def to_engine_args(self) -> tuple[str, ...]:
         """Return Bayesite CLI arguments for explicitly requested settings."""
@@ -39,7 +73,38 @@ class SamplerSettings:
             args.extend(("--warmup", self.warmup))
         if self.draws is not None:
             args.extend(("--draws", self.draws))
+        if self.max_tree_depth is not None:
+            args.extend(("--max-treedepth", self.max_tree_depth))
+        if self.target_accept is not None:
+            args.extend(("--target-accept", self.target_accept))
         return tuple(args)
+
+    def resolve_for_in_process(self) -> ResolvedSamplerSettings:
+        """Parse sampler settings for direct Python execution."""
+        seed = _parse_nonnegative_int(self.seed, "--seed", default=DEFAULT_SEED)
+        chains = _parse_positive_int(self.chains, "--chains", default=DEFAULT_CHAINS)
+        warmup = _parse_positive_int(self.warmup, "--warmup", default=DEFAULT_WARMUP)
+        draws = _parse_positive_int(self.draws, "--draws", default=DEFAULT_DRAWS)
+        if draws < 4:
+            raise WorkflowError(
+                "--draws must be at least 4 because posterior artifacts include diagnostics"
+            )
+        max_tree_depth = _parse_positive_int(
+            self.max_tree_depth, "--max-treedepth", default=DEFAULT_MAX_TREE_DEPTH
+        )
+        if max_tree_depth > 20:
+            raise WorkflowError("--max-treedepth must be in 1..=20")
+        target_accept = _parse_probability(
+            self.target_accept, "--target-accept", default=DEFAULT_TARGET_ACCEPT
+        )
+        return ResolvedSamplerSettings(
+            seed=seed,
+            chains=chains,
+            warmup=warmup,
+            draws=draws,
+            max_tree_depth=max_tree_depth,
+            target_accept=target_accept,
+        )
 
 
 @dataclass(frozen=True)
@@ -50,6 +115,7 @@ class SampleRequest:
     data_path: Path
     output_dir: Path
     model_name: str | None
+    backend: str
     engine: str
     sampler: SamplerSettings
     engine_args: tuple[str, ...]
@@ -57,8 +123,22 @@ class SampleRequest:
 
 
 @dataclass(frozen=True)
+class InProcessSampleCommand:
+    """An in-process jaxstanv5 sampling command."""
+
+    loaded_model: LoadedModel
+    ir_path: Path
+    data_path: Path
+    draws_path: Path
+    settings: ResolvedSamplerSettings
+
+
+type SampleExecution = EngineCommand | InProcessSampleCommand
+
+
+@dataclass(frozen=True)
 class PreparedSampleRun:
-    """A run directory and engine command produced from a sample request."""
+    """A run directory and sample execution produced from a sample request."""
 
     model_name: str
     ir_path: Path
@@ -66,7 +146,7 @@ class PreparedSampleRun:
     dims_path: Path | None
     output_dir: Path
     draws_path: Path
-    engine_command: EngineCommand
+    execution: SampleExecution
 
 
 @dataclass(frozen=True)
@@ -103,7 +183,9 @@ class DryRunDocument(TypedDict):
     data: str
     draws: str
     output: str
-    engine_command: list[str]
+    engine_command: NotRequired[list[str]]
+    backend: NotRequired[str]
+    sampler: NotRequired[dict[str, int | float]]
     dims: NotRequired[str]
 
 
@@ -116,10 +198,13 @@ class RunCommandDryRunDocument(TypedDict):
 
 
 def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
-    """Load model metadata, write IR/data files, and build the engine command."""
+    """Load model metadata, write IR/data files, and build the sample execution."""
+    _validate_sample_backend(request.backend)
     output_dir = request.output_dir.expanduser().resolve()
     draws_path = output_dir / "posterior.ndjson"
     _reject_reserved_engine_args(request.engine_args, draws_path)
+    if request.backend == "jaxstanv5" and request.engine_args:
+        raise WorkflowError("engine passthrough after -- is only supported for --backend bayesite")
     _ensure_output_dir(output_dir, force=request.force)
 
     source_data_path = request.data_path.expanduser().resolve()
@@ -137,21 +222,30 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
 
     dims_path = _write_optional_dims_sidecar(output_dir, loaded_model.model_cls, loaded_model.meta)
 
-    command = EngineCommand(
-        argv=(
-            request.engine,
-            "sample",
-            "--model",
-            str(ir_path),
-            "--data",
-            str(run_data_path),
-            *request.sampler.to_engine_args(),
-            "--out",
-            str(draws_path),
-            *request.engine_args,
-        ),
-        output_paths=(draws_path,),
-    )
+    if request.backend == "bayesite":
+        execution: SampleExecution = EngineCommand(
+            argv=(
+                request.engine,
+                "sample",
+                "--model",
+                str(ir_path),
+                "--data",
+                str(run_data_path),
+                *request.sampler.to_engine_args(),
+                "--out",
+                str(draws_path),
+                *request.engine_args,
+            ),
+            output_paths=(draws_path,),
+        )
+    else:
+        execution = InProcessSampleCommand(
+            loaded_model=loaded_model,
+            ir_path=ir_path,
+            data_path=run_data_path,
+            draws_path=draws_path,
+            settings=request.sampler.resolve_for_in_process(),
+        )
     return PreparedSampleRun(
         model_name=loaded_model.name,
         ir_path=ir_path,
@@ -159,7 +253,7 @@ def prepare_sample_run(request: SampleRequest) -> PreparedSampleRun:
         dims_path=dims_path,
         output_dir=output_dir,
         draws_path=draws_path,
-        engine_command=command,
+        execution=execution,
     )
 
 
@@ -171,8 +265,12 @@ def dry_run_document(run: PreparedSampleRun) -> DryRunDocument:
         "data": str(run.data_path),
         "draws": str(run.draws_path),
         "output": str(run.output_dir),
-        "engine_command": list(run.engine_command.argv),
     }
+    if isinstance(run.execution, EngineCommand):
+        document["engine_command"] = list(run.execution.argv)
+    else:
+        document["backend"] = "jaxstanv5"
+        document["sampler"] = run.execution.settings.as_json()
     if run.dims_path is not None:
         document["dims"] = str(run.dims_path)
     return document
@@ -245,6 +343,56 @@ def run_command_dry_run_document(
         "output": str(command.output_path),
         "engine_command": list(command.engine_command.argv),
     }
+
+
+def _validate_sample_backend(backend: str) -> None:
+    if backend not in {"bayesite", "jaxstanv5"}:
+        raise WorkflowError("--backend must be 'bayesite' or 'jaxstanv5'")
+
+
+def _parse_nonnegative_int(value: str | None, name: str, *, default: int) -> int:
+    parsed = _parse_int(value, name, default=default)
+    if parsed < 0:
+        raise WorkflowError(f"{name} must be non-negative")
+    if parsed > MAX_REPORTABLE_I64:
+        raise WorkflowError(
+            f"{name} must be in 0..={MAX_REPORTABLE_I64} because artifacts report it "
+            "as a JSON integer"
+        )
+    return parsed
+
+
+def _parse_positive_int(value: str | None, name: str, *, default: int) -> int:
+    parsed = _parse_int(value, name, default=default)
+    if parsed < 1:
+        raise WorkflowError(f"{name} must be at least 1")
+    if parsed > MAX_REPORTABLE_I64:
+        raise WorkflowError(
+            f"{name} must be in 1..={MAX_REPORTABLE_I64} because artifacts report it "
+            "as a JSON integer"
+        )
+    return parsed
+
+
+def _parse_int(value: str | None, name: str, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise WorkflowError(f"{name} must be an integer") from exc
+
+
+def _parse_probability(value: str | None, name: str, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise WorkflowError(f"{name} must be a number in (0, 1)") from exc
+    if not 0.0 < parsed < 1.0:
+        raise WorkflowError(f"{name} must be in (0, 1)")
+    return parsed
 
 
 def _reject_reserved_engine_args(engine_args: tuple[str, ...], draws_path: Path) -> None:

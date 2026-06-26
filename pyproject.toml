@@ -8,6 +8,11 @@ dependencies = [
     "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git",
 ]
 
+[project.optional-dependencies]
+inproc = [
+    "jaxstanv5[jax] @ git+https://github.com/StefanSko/jaxstanv5.git",
+]
+
 [project.scripts]
 bayescycle = "bayescycle._cli:main"
 

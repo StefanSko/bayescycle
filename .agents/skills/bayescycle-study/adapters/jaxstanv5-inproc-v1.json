@@ -1,0 +1,47 @@
+{
+  "profile": "jaxstanv5-inproc-v1",
+  "model_authoring": "jaxstanv5",
+  "workflow_cli": "bayescycle",
+  "engine": "jaxstanv5-inprocess",
+  "visualization": "bayesite-viz",
+  "idata_exporter": "bayesite-idata",
+  "run_directory_files": {
+    "model_ir": "model.ir.json",
+    "data": "data.json",
+    "dims": "dims.json",
+    "posterior": "posterior.ndjson",
+    "diagnostics": "diagnostics.json",
+    "posterior_predictive": "posterior_predictive.ndjson",
+    "idata": "fit.nc"
+  },
+  "commands": {
+    "sample": "bayescycle sample <model.py> --data <data.json> -o <run-dir> --backend jaxstanv5 --seed <seed> --chains <chains> --warmup <warmup> --draws <draws>",
+    "diagnose": "bayescycle diagnose <run-dir>",
+    "posterior_predictive": "bayescycle posterior-predictive <run-dir> --seed <seed>",
+    "idata_export": "bayesite-idata <run-dir> -o <run-dir>/fit.nc --validate require",
+    "viz_trace": "bayesite-viz trace <run-dir>/fit.nc -o <artifact.png>",
+    "viz_rank": "bayesite-viz rank <run-dir>/fit.nc -o <artifact.png>",
+    "viz_energies": "bayesite-viz energies <run-dir>/fit.nc -o <artifact.png>",
+    "viz_posterior": "bayesite-viz posterior <run-dir>/fit.nc --kind hist -o <artifact.png>",
+    "viz_ppc": "bayesite-viz ppc <run-dir>/fit.nc --kind dist -o <artifact.png>"
+  },
+  "artifact_kinds": [
+    "model_spec",
+    "data_snapshot",
+    "prior_predictive_run",
+    "recovery_run",
+    "real_fit_run",
+    "diagnostics_report",
+    "dag_assumptions",
+    "adjustment_set_report",
+    "bad_controls_report",
+    "schema_visual_audit",
+    "dag_visualization",
+    "prior_predictive_visual_report",
+    "recovery_visual_report",
+    "fit_diagnostic_visual_report",
+    "posterior_estimand_visual_report",
+    "posterior_predictive_report",
+    "sensitivity_visual_report"
+  ]
+}

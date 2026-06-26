@@ -24,6 +24,21 @@ def _write_simple_model(tmp_path: Path) -> Path:
     return model_file
 
 
+def _write_normal_mean_model(tmp_path: Path) -> Path:
+    model_file = tmp_path / "normal_mean.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, Param, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class NormalMean:\n"
+        "    mu = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(mu, 1.0))\n",
+        encoding="utf-8",
+    )
+    return model_file
+
+
 def _write_input_data(tmp_path: Path) -> Path:
     data_file = tmp_path / "input.json"
     data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
@@ -182,6 +197,131 @@ def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
         str(output_dir / "posterior.ndjson"),
         "--experimental-engine-flag",
     ]
+
+
+def test_sample_dry_run_supports_jaxstanv5_backend(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+            "--seed",
+            "3",
+            "--chains",
+            "1",
+            "--warmup",
+            "5",
+            "--draws",
+            "4",
+            "--max-treedepth",
+            "3",
+            "--target-accept",
+            "0.75",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    printed.pop("dims", None)
+    assert printed == {
+        "backend": "jaxstanv5",
+        "data": str(output_dir / "data.json"),
+        "draws": str(output_dir / "posterior.ndjson"),
+        "ir": str(output_dir / "model.ir.json"),
+        "model": "NormalMean",
+        "output": str(output_dir),
+        "sampler": {
+            "chains": 1,
+            "draws": 4,
+            "max_tree_depth": 3,
+            "seed": 3,
+            "target_accept": 0.75,
+            "warmup": 5,
+        },
+    }
+    assert not (output_dir / "posterior.ndjson").exists()
+
+
+def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--backend",
+            "jaxstanv5",
+            "--dry-run",
+            "--",
+            "--experimental-engine-flag",
+        ]
+    )
+
+    assert code == 2
+    assert "passthrough" in capsys.readouterr().err
+
+
+def test_sample_jaxstanv5_backend_writes_energy_posterior(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("blackjax")
+    pytest.importorskip("jax")
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+            "--seed",
+            "3",
+            "--chains",
+            "1",
+            "--warmup",
+            "5",
+            "--draws",
+            "4",
+            "--max-treedepth",
+            "3",
+        ]
+    )
+
+    assert code == 0
+    lines = [
+        json.loads(line) for line in (output_dir / "posterior.ndjson").read_text().splitlines()
+    ]
+    assert lines[0]["sample_stats_mode"] == "per_draw_v2"
+    assert lines[0]["model_data_fingerprint"].startswith("sha256:")
+    assert "energy" in lines[1]
+    assert lines[-1]["trailer"]["model_data_fingerprint"] == lines[0]["model_data_fingerprint"]
 
 
 @pytest.mark.parametrize("engine_args", [("--out", "elsewhere.ndjson"), ("--out=-",)])
