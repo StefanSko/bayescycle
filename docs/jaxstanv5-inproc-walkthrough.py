@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Build a self-contained HTML walkthrough of the bayescycle jaxstanv5 run.
 
 This regenerates ``jaxstanv5-inproc-walkthrough.html`` from a demo directory that
@@ -44,7 +45,7 @@ def esc(text: str) -> str:
 
 
 def code_block(text: str, lang: str = "") -> str:
-    cls = f" data-lang=\"{esc(lang)}\"" if lang else ""
+    cls = f' data-lang="{esc(lang)}"' if lang else ""
     return f'<pre class="code"{cls}><code>{esc(text)}</code></pre>'
 
 
@@ -185,8 +186,11 @@ def truncate_record(doc: dict, keep: int = 6) -> dict:
             out[k] = v[:keep] + [f"... (+{len(v) - keep} more)"]
         elif isinstance(v, dict):
             out[k] = {
-                kk: (vv[:keep] + [f"... (+{len(vv) - keep} more)"]
-                     if isinstance(vv, list) and len(vv) > keep else vv)
+                kk: (
+                    vv[:keep] + [f"... (+{len(vv) - keep} more)"]
+                    if isinstance(vv, list) and len(vv) > keep
+                    else vv
+                )
                 for kk, vv in v.items()
             }
         else:
@@ -215,14 +219,19 @@ dims_obj = json.loads((RUN / "dims.json").read_text())
 plots = [
     ("trace.png", "Trace", "Per-parameter chains overlaid; well-mixed and stationary."),
     ("rank.png", "Rank", "Rank plots are close to uniform across chains (good mixing)."),
-    ("energies.png", "Energy (BFMI)",
-     "Marginal vs transition energy overlap indicates healthy NUTS exploration."),
-    ("posterior.png", "Posterior marginals",
-     "Histogram marginals for alpha, beta, sigma."),
+    (
+        "energies.png",
+        "Energy (BFMI)",
+        "Marginal vs transition energy overlap indicates healthy NUTS exploration.",
+    ),
+    ("posterior.png", "Posterior marginals", "Histogram marginals for alpha, beta, sigma."),
     ("forest.png", "Forest", "Credible intervals per parameter across chains."),
     ("ess-rhat.png", "ESS / R-hat", "Effective sample size and convergence summary."),
-    ("ppc.png", "Posterior predictive",
-     "Replicated y draws (light) bracket the observed density (dark)."),
+    (
+        "ppc.png",
+        "Posterior predictive",
+        "Replicated y draws (light) bracket the observed density (dark).",
+    ),
 ]
 plot_html = []
 for fname, title, caption in plots:
@@ -232,9 +241,9 @@ for fname, title, caption in plots:
     uri = img_data_uri(p)
     plot_html.append(
         f'<figure class="plot">'
-        f'<h3>{esc(title)}</h3>'
+        f"<h3>{esc(title)}</h3>"
         f'<img alt="{esc(title)}" src="{uri}"/>'
-        f'<figcaption>{esc(caption)}</figcaption>'
+        f"<figcaption>{esc(caption)}</figcaption>"
         f"</figure>"
     )
 plots_section = "\n".join(plot_html)
@@ -276,8 +285,12 @@ dry_run_doc = {
     "dims": "run/dims.json",
     "output": "run/",
     "sampler": {
-        "seed": 123, "chains": 4, "warmup": 300, "draws": 500,
-        "max_tree_depth": 8, "target_accept": 0.85,
+        "seed": 123,
+        "chains": 4,
+        "warmup": 300,
+        "draws": 500,
+        "max_tree_depth": 8,
+        "target_accept": 0.85,
     },
 }
 
@@ -342,8 +355,8 @@ def io_table_html() -> str:
         body += (
             "<tr>"
             f'<td class="mono io-cmd">{esc(cmd)}{note_html}</td>'
-            f'<td>{files(reads, "f-read")}</td>'
-            f'<td>{files(writes, "f-write")}</td>'
+            f"<td>{files(reads, 'f-read')}</td>"
+            f"<td>{files(writes, 'f-write')}</td>"
             "</tr>"
         )
     return (
@@ -361,7 +374,11 @@ def tree_html() -> str:
         ("dims.json", "bayescycle sample &mdash; jaxstanv5 dimension/coord metadata", "f"),
         ("posterior.ndjson", "bayescycle sample &mdash; jaxstanv5/BlackJAX draws + stats", "f"),
         ("diagnostics.json", "bayescycle diagnose &mdash; recomputed R-hat/ESS/sample-stats", "f"),
-        ("posterior_predictive.ndjson", "bayescycle posterior-predictive &mdash; replicated y", "f"),
+        (
+            "posterior_predictive.ndjson",
+            "bayescycle posterior-predictive &mdash; replicated y",
+            "f",
+        ),
         ("fit.nc", "bayesite-idata &mdash; ArviZ InferenceData (NetCDF)", "f"),
         ("viz/", "", "dir"),
         ("*.png", "bayesite-viz &mdash; ArviZ diagnostic plots", "f"),
@@ -386,7 +403,7 @@ def param_table() -> str:
         s = posterior_summary[name]
         rows.append(
             "<tr>"
-            f"<td class=\"mono\">{name}</td>"
+            f'<td class="mono">{name}</td>'
             f"<td>{truth[name]:.3f}</td>"
             f"<td>{s['mean']:.4f}</td>"
             f"<td>{s['sd']:.4f}</td>"
@@ -402,9 +419,7 @@ def param_table() -> str:
         "<thead><tr>"
         "<th>param</th><th>true</th><th>mean</th><th>sd</th>"
         "<th>2.5%</th><th>median</th><th>97.5%</th><th>R-hat</th><th>ESS</th>"
-        "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
 
 
@@ -481,13 +496,13 @@ parts.append(
         "3",
         "Dry-run: prepare the run directory",
         code_block(cmd_sample_dry, "bash")
-        + "<p class=\"lead\">The dry run writes inputs and reports the plan without sampling:</p>"
+        + '<p class="lead">The dry run writes inputs and reports the plan without sampling:</p>'
         + file_chip("stdout", "(dry-run plan)", "printed JSON, not a file")
         + json_block(dry_run_doc)
-        + "<p class=\"lead\">Resulting <span class=\"mono\">model.ir.json</span> (pretty-printed, truncated):</p>"
+        + '<p class="lead">Resulting <span class="mono">model.ir.json</span> (pretty-printed, truncated):</p>'
         + file_chip("write", "run/model.ir.json", "compiled from model.py")
         + code_block(ir_pretty, "json")
-        + "<p class=\"lead\"><span class=\"mono\">dims.json</span> sidecar:</p>"
+        + '<p class="lead"><span class="mono">dims.json</span> sidecar:</p>'
         + file_chip("write", "run/dims.json", "jaxstanv5 metadata")
         + json_block(dims_obj),
         "bayescycle compiles the jaxstanv5 model to canonical IR and copies the data.",
@@ -500,13 +515,13 @@ parts.append(
         "Sample in-process (jaxstanv5 / BlackJAX)",
         code_block(cmd_sample, "bash")
         + file_chip("write", "run/posterior.ndjson", "header + 2000 draws + trailer")
-        + "<p class=\"lead\">Posterior stream header (per_draw_v2, with neutral model/data fingerprint):</p>"
+        + '<p class="lead">Posterior stream header (per_draw_v2, with neutral model/data fingerprint):</p>'
         + file_chip("write", "run/posterior.ndjson", "line 1 &mdash; header")
         + json_block(post_header_display)
-        + "<p class=\"lead\">First draw record (parameter values + per-draw sampler stats):</p>"
+        + '<p class="lead">First draw record (parameter values + per-draw sampler stats):</p>'
         + file_chip("write", "run/posterior.ndjson", "line 2 &mdash; first draw")
         + json_block(post_first_draw_display)
-        + "<p class=\"lead\">Trailer (per-chain step sizes, tree-depth histograms, R-hat, ESS):</p>"
+        + '<p class="lead">Trailer (per-chain step sizes, tree-depth histograms, R-hat, ESS):</p>'
         + file_chip("write", "run/posterior.ndjson", "last line &mdash; trailer")
         + json_block(post_trailer),
         "4 chains &times; 500 draws &rarr; 2000 posterior draws written to "
@@ -521,8 +536,8 @@ parts.append(
         file_chip("derived", "run/posterior.ndjson", "summary computed from draws")
         + param_table()
         + f'<p class="lead">Divergences across all chains: '
-        f'<strong>{divergences}</strong>. Energy range: '
-        f'<strong>{min(energies):.1f}</strong> &ndash; <strong>{max(energies):.1f}</strong>.</p>',
+        f"<strong>{divergences}</strong>. Energy range: "
+        f"<strong>{min(energies):.1f}</strong> &ndash; <strong>{max(energies):.1f}</strong>.</p>",
         "All three parameters are recovered tightly around their true values.",
     )
 )
@@ -546,10 +561,10 @@ parts.append(
         code_block(cmd_ppc, "bash")
         + file_chip("read", "run/model.ir.json, run/data.json, run/posterior.ndjson", "inputs")
         + file_chip("write", "run/posterior_predictive.ndjson", "header + 2000 draws + trailer")
-        + "<p class=\"lead\">Header (truncated):</p>"
+        + '<p class="lead">Header (truncated):</p>'
         + file_chip("write", "run/posterior_predictive.ndjson", "line 1 &mdash; header")
         + json_block(ppc_header_display)
-        + "<p class=\"lead\">Summary:</p>"
+        + '<p class="lead">Summary:</p>'
         + file_chip("derived", "run/posterior_predictive.ndjson", "computed from draws")
         + json_block(ppc_summary),
         "2000 replicated datasets of 1000 y-values each, conditioned on the fit.",

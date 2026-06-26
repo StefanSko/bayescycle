@@ -8,7 +8,7 @@ from typing import Protocol, cast
 
 from jaxstanv5.model.bound import BoundModel
 
-from bayescycle._workflow import InProcessSampleCommand
+from bayescycle._commands import Jaxstanv5SampleCommand
 
 
 class InProcessBackendError(RuntimeError):
@@ -33,7 +33,7 @@ class _SampleFunction(Protocol):
     ) -> object: ...
 
 
-def run_in_process_sample(command: InProcessSampleCommand) -> int:
+def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
     """Run jaxstanv5 sampling in this Python process and write posterior.ndjson."""
     sample = _load_sample_function()
     try:
@@ -83,6 +83,10 @@ def run_in_process_sample(command: InProcessSampleCommand) -> int:
     except (PosteriorArtifactError, TypeError, ValueError) as exc:
         raise InProcessBackendError(str(exc)) from exc
     return 0
+
+
+# Backward-compatible name while callers migrate to backend capability methods.
+run_in_process_sample = run_jaxstanv5_sample
 
 
 def _load_sample_function() -> _SampleFunction:

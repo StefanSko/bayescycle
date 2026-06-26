@@ -10,15 +10,18 @@ from pathlib import Path
 from typing import cast
 
 from bayescycle import __version__
-from bayescycle._engine import EngineCommand, run_engine
-from bayescycle._inproc import InProcessBackendError, run_in_process_sample
+from bayescycle._backends import BayesiteBackend, Jaxstanv5Backend
+from bayescycle._commands import DryRunCommand
+from bayescycle._engine import run_engine
+from bayescycle._errors import WorkflowError
+from bayescycle._inproc import InProcessBackendError
 from bayescycle._model_loader import ModelLoadError
+from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
     DiagnoseRequest,
     PosteriorPredictiveRequest,
+    SampleBackend,
     SampleRequest,
-    SamplerSettings,
-    WorkflowError,
     dry_run_document,
     prepare_diagnose_run,
     prepare_posterior_predictive_run,
@@ -54,7 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sample = subparsers.add_parser(
         "sample",
-        description="Compile a Python model file to IR and invoke the Bayesite engine.",
+        description="Compile a Python model file to IR and invoke the selected backend.",
     )
     sample.add_argument("model_path", type=Path, help="Python file containing a jaxstanv5 @model")
     sample.add_argument(
@@ -131,16 +134,26 @@ def _sample(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        prepared = prepare_sample_run(request)
-        if cast(bool, namespace.dry_run):
-            print(json.dumps(dry_run_document(prepared), indent=2, sort_keys=True))
-            return 0
-        if isinstance(prepared.execution, EngineCommand):
-            return run_engine(prepared.execution)
-        return run_in_process_sample(prepared.execution)
+        if request.backend == "bayesite":
+            return _sample_with_backend(
+                BayesiteBackend(request.engine), request, dry_run=cast(bool, namespace.dry_run)
+            )
+        return _sample_with_backend(
+            Jaxstanv5Backend(), request, dry_run=cast(bool, namespace.dry_run)
+        )
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _sample_with_backend[CommandT: DryRunCommand](
+    backend: SampleBackend[CommandT], request: SampleRequest, *, dry_run: bool
+) -> int:
+    prepared = prepare_sample_run(request, backend)
+    if dry_run:
+        print(json.dumps(dry_run_document(prepared), indent=2, sort_keys=True))
+        return 0
+    return backend.run_sample(prepared.command)
 
 
 def _diagnose(namespace: argparse.Namespace) -> int:
@@ -155,7 +168,7 @@ def _diagnose(namespace: argparse.Namespace) -> int:
         if cast(bool, namespace.dry_run):
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.engine_command)
+        return run_engine(prepared.command)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -174,7 +187,7 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
         if cast(bool, namespace.dry_run):
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.engine_command)
+        return run_engine(prepared.command)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
