@@ -989,6 +989,17 @@ def test_workflow_plan_loads_mixed_toml_config(
     }
 
 
+def test_workflow_plan_missing_config_reports_standard_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["workflow-plan", "--config", str(tmp_path / "missing.toml")])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("bayescycle: cannot read backend plan config")
+
+
 def test_diagnose_dry_run_uses_run_directory_artifacts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

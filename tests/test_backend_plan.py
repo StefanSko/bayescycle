@@ -114,6 +114,11 @@ def test_mixed_toml_plan_resolves(tmp_path: Path) -> None:
     }
 
 
+def test_missing_toml_plan_fails_with_workflow_error(tmp_path: Path) -> None:
+    with pytest.raises(WorkflowError, match="cannot read backend plan config"):
+        resolve_backend_plan_file(tmp_path / "missing.toml")
+
+
 def test_partial_mixed_toml_plan_fails(tmp_path: Path) -> None:
     config = tmp_path / "workflow.toml"
     config.write_text(

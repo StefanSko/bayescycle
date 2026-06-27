@@ -126,6 +126,8 @@ def resolve_backend_plan_file(path: Path) -> ResolvedBackendPlan:
     try:
         with config_path.open("rb") as f:
             document = cast(dict[str, object], tomllib.load(f))
+    except OSError as exc:
+        raise WorkflowError(f"cannot read backend plan config {config_path}: {exc}") from exc
     except tomllib.TOMLDecodeError as exc:
         raise WorkflowError(f"invalid backend plan config {config_path}: {exc}") from exc
     if not isinstance(document, dict):
