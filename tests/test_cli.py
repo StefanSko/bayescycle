@@ -721,6 +721,35 @@ def test_prior_predictive_rejects_forwarded_out_engine_arg(
     assert "prior_predictive.ndjson" in err
 
 
+def test_simulate_jaxstanv5_backend_reports_unsupported_without_engine_preflight(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.1}\n')
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "simulate",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "--truth",
+            str(truth_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+        ]
+    )
+
+    assert code == 2
+    assert "not supported on --backend jaxstanv5" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
 def test_simulate_stale_engine_fails_before_output_dir_creation(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

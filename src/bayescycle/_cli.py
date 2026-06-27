@@ -419,7 +419,8 @@ def _simulate(namespace: argparse.Namespace) -> int:
             force=cast(bool, namespace.force),
         )
         dry_run = cast(bool, namespace.dry_run)
-        _preflight_bayesite_unless_dry_run(request.engine, dry_run, "simulate", "simulate")
+        if request.backend == "bayesite":
+            _preflight_bayesite_unless_dry_run(request.engine, dry_run, "simulate", "simulate")
         backend = BayesiteBackend(request.engine)
         prepared = prepare_simulate_run(request, backend)
         if dry_run:
@@ -444,7 +445,8 @@ def _recover(namespace: argparse.Namespace) -> int:
             force=cast(bool, namespace.force),
         )
         dry_run = cast(bool, namespace.dry_run)
-        _preflight_bayesite_unless_dry_run(request.engine, dry_run, "recover", "recover")
+        if request.backend == "bayesite":
+            _preflight_bayesite_unless_dry_run(request.engine, dry_run, "recover", "recover")
         backend = BayesiteBackend(request.engine)
         prepared = prepare_recover_run(request, backend)
         if dry_run:
@@ -470,7 +472,8 @@ def _sbc(namespace: argparse.Namespace) -> int:
             force=cast(bool, namespace.force),
         )
         dry_run = cast(bool, namespace.dry_run)
-        _preflight_bayesite_unless_dry_run(request.engine, dry_run, "sbc", "sbc")
+        if request.backend == "bayesite":
+            _preflight_bayesite_unless_dry_run(request.engine, dry_run, "sbc", "sbc")
         backend = BayesiteBackend(request.engine)
         prepared = prepare_sbc_run(request, backend)
         if dry_run:
