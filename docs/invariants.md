@@ -21,6 +21,8 @@
 - Concrete data crossing workflow-stage boundaries uses
   `bayescycle.data.json.v1`; backend-native data files are adapter-private
   materializations.
+- Multi-stage backend intent is resolved as a single backend plan or a complete
+  explicit mixed plan before any run-directory writes.
 - The Bayesite engine command is data, represented before it is executed.
 - Backend stdout/stderr and exit status are not interpreted as sampler semantics
   unless a later explicit diagnostics phase is added.

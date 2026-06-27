@@ -87,6 +87,11 @@ The run-directory contract is documented in [`docs/run-directory-v0.md`](docs/ru
 initial backend that emits this contract, but the contract is owned by
 `bayescycle` rather than by a specific sampler.
 
+A mixed-backend planning walkthrough is available as
+[`docs/mixed-backend-workflow.html`](docs/mixed-backend-workflow.html). It shows
+single-backend defaults, explicit mixed TOML plans, and the canonical data
+artifact handoff from Bayesite simulation to a jaxstanv5 recovery fit.
+
 A fully worked end-to-end walkthrough of the complete workflow (the simulation
 gate &mdash; prior predictive, simulate, recover, sbc &mdash; followed by the
 real fit, diagnostics, posterior check, and ArviZ visualization, with the
@@ -110,7 +115,13 @@ unsupported-profile error rather than falling back silently.
 
 `simulate` writes `runs/sim-0001/simulated_data.json` as canonical
 `bayescycle.data.json.v1`, so a downstream sample command can use it with the
-same backend or with `--backend jaxstanv5` through the adapter boundary.
+same backend or with `--backend jaxstanv5` through the adapter boundary. For
+multi-stage intent, validate the backend plan before creating run directories:
+
+```bash
+bayescycle workflow-plan --backend bayesite
+bayescycle workflow-plan --config workflow.toml
+```
 
 Run-directory follow-up phases can be orchestrated without repeating owned paths:
 

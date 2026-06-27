@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import cast
 
 from bayescycle import __version__
+from bayescycle._backend_plan import (
+    BackendPlanRequest,
+    resolve_backend_plan,
+    resolve_backend_plan_file,
+)
 from bayescycle._backends import BayesiteBackend, Jaxstanv5Backend
 from bayescycle._commands import DryRunCommand
 from bayescycle._engine import run_engine
@@ -72,6 +77,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _posterior_check(namespace)
     if command == "recover-check":
         return _recover_check(namespace)
+    if command == "workflow-plan":
+        return _workflow_plan(namespace)
     parser.print_help(sys.stderr)
     return 2
 
@@ -100,7 +107,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="bayesite",
         help="sampling backend to use",
     )
-    sample.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    sample.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     sample.add_argument("--seed", help="sampler seed forwarded to Bayesite")
     sample.add_argument("--chains", help="chain count forwarded to Bayesite")
     sample.add_argument("--warmup", help="warmup draw count forwarded to Bayesite")
@@ -130,7 +137,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="prior-predictive backend to use",
     )
     prior_predictive.add_argument(
-        "--engine", default="bayesite", help="Bayesite executable to invoke"
+        "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
     prior_predictive.add_argument("--seed", help="seed forwarded to the backend")
     prior_predictive.add_argument("--draws", help="prior-predictive draw count")
@@ -157,7 +164,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="bayesite",
         help="simulation backend to use",
     )
-    simulate.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    simulate.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     simulate.add_argument("--seed", help="seed forwarded to Bayesite")
     simulate.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     simulate.add_argument(
@@ -179,7 +186,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="bayesite",
         help="recovery backend to use",
     )
-    recover.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    recover.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     recover.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     recover.add_argument(
         "--dry-run",
@@ -200,7 +207,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="bayesite",
         help="SBC backend to use",
     )
-    sbc.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    sbc.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     sbc.add_argument("--replicates", help="replicate count overriding the scenario")
     sbc.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     sbc.add_argument(
@@ -214,7 +221,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Run Bayesite diagnostics for an existing bayescycle run directory.",
     )
     diagnose.add_argument("run_dir", type=Path, help="bayescycle run directory")
-    diagnose.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    diagnose.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     diagnose.add_argument(
         "--dry-run",
         action="store_true",
@@ -228,7 +235,7 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_predictive.add_argument("run_dir", type=Path, help="bayescycle run directory")
     posterior_predictive.add_argument("--seed", required=True, help="seed forwarded to Bayesite")
     posterior_predictive.add_argument(
-        "--engine", default="bayesite", help="Bayesite executable to invoke"
+        "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
     posterior_predictive.add_argument(
         "--dry-run",
@@ -249,7 +256,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="posterior-check backend to use",
     )
     posterior_check.add_argument(
-        "--engine", default="bayesite", help="Bayesite executable to invoke"
+        "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
     posterior_check.add_argument(
         "--dry-run",
@@ -271,12 +278,34 @@ def _build_parser() -> argparse.ArgumentParser:
         default="bayesite",
         help="recover-check backend to use",
     )
-    recover_check.add_argument("--engine", default="bayesite", help="Bayesite executable to invoke")
+    recover_check.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     recover_check.add_argument(
         "--dry-run",
         action="store_true",
         help="validate run files and print the planned engine command",
     )
+
+    workflow_plan = subparsers.add_parser(
+        "workflow-plan",
+        description="Resolve a multi-stage backend plan before creating run directories.",
+    )
+    workflow_plan.add_argument(
+        "--backend",
+        choices=("bayesite", "jaxstanv5"),
+        help="single backend to use for all workflow stages",
+    )
+    workflow_plan.add_argument(
+        "--simulate-backend",
+        choices=("bayesite", "jaxstanv5"),
+        help="backend for the simulate stage in an explicit complete mixed plan",
+    )
+    workflow_plan.add_argument(
+        "--recover-backend",
+        choices=("bayesite", "jaxstanv5"),
+        help="backend for the recovery/sample stage in an explicit complete mixed plan",
+    )
+    workflow_plan.add_argument("--engine", help="Bayesite executable for selected bayesite stages")
+    workflow_plan.add_argument("--config", type=Path, help="TOML backend-plan config")
     return parser
 
 
@@ -289,13 +318,16 @@ def _add_model_selection_args(parser: argparse.ArgumentParser) -> None:
 
 def _sample(namespace: argparse.Namespace) -> int:
     try:
+        explicit_engine = cast(str | None, namespace.engine)
+        backend_name = cast(str, namespace.backend)
+        _reject_engine_for_non_bayesite(backend_name, explicit_engine)
         request = SampleRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
-            backend=cast(str, namespace.backend),
-            engine=cast(str, namespace.engine),
+            backend=backend_name,
+            engine=explicit_engine or "bayesite",
             sampler=SamplerSettings(
                 seed=cast(str | None, namespace.seed),
                 chains=cast(str | None, namespace.chains),
@@ -331,13 +363,16 @@ def _sample_with_backend[CommandT: DryRunCommand](
 
 def _prior_predictive(namespace: argparse.Namespace) -> int:
     try:
+        explicit_engine = cast(str | None, namespace.engine)
+        backend_name = cast(str, namespace.backend)
+        _reject_engine_for_non_bayesite(backend_name, explicit_engine)
         request = PriorPredictiveRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
-            backend=cast(str, namespace.backend),
-            engine=cast(str, namespace.engine),
+            backend=backend_name,
+            engine=explicit_engine or "bayesite",
             seed=cast(str | None, namespace.seed),
             draws=cast(str | None, namespace.draws),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
@@ -374,7 +409,7 @@ def _simulate(namespace: argparse.Namespace) -> int:
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
-            engine=cast(str, namespace.engine),
+            engine=cast(str | None, namespace.engine) or "bayesite",
             seed=cast(str | None, namespace.seed),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
@@ -398,7 +433,7 @@ def _recover(namespace: argparse.Namespace) -> int:
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
-            engine=cast(str, namespace.engine),
+            engine=cast(str | None, namespace.engine) or "bayesite",
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
@@ -421,7 +456,7 @@ def _sbc(namespace: argparse.Namespace) -> int:
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
-            engine=cast(str, namespace.engine),
+            engine=cast(str | None, namespace.engine) or "bayesite",
             replicates=cast(str | None, namespace.replicates),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
@@ -443,7 +478,7 @@ def _diagnose(namespace: argparse.Namespace) -> int:
         prepared = prepare_diagnose_run(
             DiagnoseRequest(
                 run_dir=cast(Path, namespace.run_dir),
-                engine=cast(str, namespace.engine),
+                engine=cast(str | None, namespace.engine) or "bayesite",
             )
         )
         if cast(bool, namespace.dry_run):
@@ -461,7 +496,7 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
         prepared = prepare_posterior_predictive_run(
             PosteriorPredictiveRequest(
                 run_dir=cast(Path, namespace.run_dir),
-                engine=cast(str, namespace.engine),
+                engine=cast(str | None, namespace.engine) or "bayesite",
                 seed=cast(str, namespace.seed),
             )
         )
@@ -476,12 +511,15 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
 
 def _posterior_check(namespace: argparse.Namespace) -> int:
     try:
+        explicit_engine = cast(str | None, namespace.engine)
+        backend_name = cast(str, namespace.backend)
+        _reject_engine_for_non_bayesite(backend_name, explicit_engine)
         prepared = prepare_posterior_check_run(
             PosteriorCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
                 seed=cast(str | None, namespace.seed),
-                backend=cast(str, namespace.backend),
-                engine=cast(str, namespace.engine),
+                backend=backend_name,
+                engine=explicit_engine or "bayesite",
                 engine_args=tuple(cast(list[str], namespace.engine_args)),
             )
         )
@@ -496,14 +534,17 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
 
 def _recover_check(namespace: argparse.Namespace) -> int:
     try:
+        explicit_engine = cast(str | None, namespace.engine)
+        backend_name = cast(str, namespace.backend)
+        _reject_engine_for_non_bayesite(backend_name, explicit_engine)
         prepared = prepare_recover_check_run(
             RecoverCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
                 truth_path=cast(Path, namespace.truth),
                 targets_path=cast(Path | None, namespace.targets),
                 interval=cast(str | None, namespace.interval),
-                backend=cast(str, namespace.backend),
-                engine=cast(str, namespace.engine),
+                backend=backend_name,
+                engine=explicit_engine or "bayesite",
                 engine_args=tuple(cast(list[str], namespace.engine_args)),
             )
         )
@@ -516,9 +557,51 @@ def _recover_check(namespace: argparse.Namespace) -> int:
         return 2
 
 
+def _workflow_plan(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        config = cast(Path | None, namespace.config)
+        has_cli_plan = any(
+            value is not None
+            for value in (
+                cast(str | None, namespace.backend),
+                cast(str | None, namespace.simulate_backend),
+                cast(str | None, namespace.recover_backend),
+            )
+        )
+        if config is not None:
+            if has_cli_plan or cast(str | None, namespace.engine) is not None:
+                raise WorkflowError(
+                    "--config cannot be combined with CLI backend plan or --engine options"
+                )
+            resolved = resolve_backend_plan_file(config)
+        else:
+            resolved = resolve_backend_plan(
+                BackendPlanRequest(
+                    backend=cast(str | None, namespace.backend),
+                    simulate_backend=cast(str | None, namespace.simulate_backend),
+                    recover_backend=cast(str | None, namespace.recover_backend),
+                    engine=cast(str | None, namespace.engine),
+                )
+            )
+        print(json.dumps(resolved.as_json(), indent=2, sort_keys=True))
+        return 0
+    except WorkflowError as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
 def _reject_forwarded_engine_args(engine_args: tuple[str, ...]) -> None:
     if engine_args:
         raise WorkflowError("engine passthrough after -- is only supported for sample")
+
+
+def _reject_engine_for_non_bayesite(backend: str, explicit_engine: str | None) -> None:
+    if backend != "bayesite" and explicit_engine is not None:
+        raise WorkflowError(
+            "--engine configures the bayesite backend, but no bayesite backend stage was selected. "
+            "Did you mean --backend bayesite?"
+        )
 
 
 def _split_engine_args(argv: Sequence[str] | None) -> tuple[list[str], list[str]]:
