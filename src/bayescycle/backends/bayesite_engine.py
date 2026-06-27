@@ -22,10 +22,10 @@ class BayesiteCommandRequirement:
 
 @dataclass(frozen=True)
 class BayesiteEngineInfo:
-    """Resolved Bayesite engine executable and advertised help text."""
+    """Resolved Bayesite engine executable and advertised commands."""
 
     executable: Path
-    help_text: str
+    commands: tuple[str, ...]
 
 
 def preflight_bayesite_engine(
@@ -33,11 +33,11 @@ def preflight_bayesite_engine(
 ) -> BayesiteEngineInfo:
     """Validate a Bayesite engine path and required command support."""
     executable = _resolve_engine(engine)
-    help_text = _engine_help_text(executable)
+    commands = _engine_commands(executable)
     for requirement in requirements:
-        if not _supports_command(help_text, requirement.command):
+        if requirement.command not in commands:
             raise WorkflowError(_missing_command_message(executable, requirement))
-    return BayesiteEngineInfo(executable=executable, help_text=help_text)
+    return BayesiteEngineInfo(executable=executable, commands=commands)
 
 
 def _resolve_engine(engine: str) -> Path:
@@ -68,8 +68,20 @@ def _resolve_engine(engine: str) -> Path:
     return candidate
 
 
-def _engine_help_text(executable: Path) -> str:
-    return _run_engine_for_text(executable, "--help")
+def _engine_commands(executable: Path) -> tuple[str, ...]:
+    probe_text = "\n".join(
+        (
+            _run_engine_for_text(executable, "--help"),
+            _run_engine_for_text(executable, "__bayescycle_capability_probe__"),
+        )
+    )
+    commands = tuple(dict.fromkeys(_usage_commands(probe_text)))
+    if not commands:
+        raise WorkflowError(
+            f"Bayesite engine did not advertise any supported commands: {executable}\n\n"
+            "The binary may be stale or not the Bayesite CLI expected by bayescycle."
+        )
+    return commands
 
 
 def _run_engine_for_text(executable: Path, *args: str) -> str:
@@ -86,18 +98,17 @@ def _run_engine_for_text(executable: Path, *args: str) -> str:
         raise WorkflowError(f"cannot execute Bayesite engine {executable}: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
         raise WorkflowError(f"Bayesite engine preflight timed out: {executable}") from exc
-    if completed.returncode != 0:
-        raise WorkflowError(
-            f"Bayesite engine help probe failed for {executable} "
-            f"(exit code {completed.returncode}).\n\n"
-            "The binary may be stale or not the Bayesite CLI expected by bayescycle."
-        )
     return f"{completed.stdout}\n{completed.stderr}"
 
 
-def _supports_command(help_text: str, command: str) -> bool:
-    return (
-        re.search(rf"(?<![A-Za-z0-9-]){re.escape(command)}(?![A-Za-z0-9-])", help_text) is not None
+def _usage_commands(text: str) -> tuple[str, ...]:
+    return tuple(
+        match.group(1)
+        for match in re.finditer(
+            r"^.*?usage:\s*bayesite\s+([A-Za-z0-9-]+)(?=\s|$)",
+            text,
+            flags=re.MULTILINE,
+        )
     )
 
 

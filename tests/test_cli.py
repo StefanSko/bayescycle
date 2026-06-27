@@ -9,9 +9,19 @@ import pytest
 import bayescycle._dims as dims_module
 from bayescycle._cli import main
 
-FAKE_BAYESITE_USAGE = (
-    "usage: bayesite sample diagnose prior-predictive posterior-predictive "
-    "posterior-check simulate recover-check recover sbc"
+FAKE_BAYESITE_USAGE = "\n".join(
+    f"usage: bayesite {command}"
+    for command in (
+        "sample",
+        "diagnose",
+        "prior-predictive",
+        "posterior-predictive",
+        "posterior-check",
+        "simulate",
+        "recover-check",
+        "recover",
+        "sbc",
+    )
 )
 
 

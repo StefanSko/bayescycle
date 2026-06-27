@@ -23,7 +23,10 @@ def _write_engine(tmp_path: Path, usage: str) -> Path:
 
 
 def test_preflight_accepts_required_command(tmp_path: Path) -> None:
-    engine = _write_engine(tmp_path, "usage: bayesite sample simulate recover-check")
+    engine = _write_engine(
+        tmp_path,
+        "usage: bayesite sample\nusage: bayesite simulate\nusage: bayesite recover-check",
+    )
 
     info = preflight_bayesite_engine(
         str(engine), (BayesiteCommandRequirement("simulate", "simulate"),)
@@ -40,9 +43,10 @@ def test_preflight_does_not_invoke_zero_argument_engine_path(tmp_path: Path) -> 
         "from pathlib import Path\n"
         "import sys\n"
         "if sys.argv[1:] == ['--help']:\n"
-        "    print('usage: bayesite sample simulate recover-check')\n"
+        "    print('usage: bayesite sample\\nusage: bayesite simulate')\n"
         "    raise SystemExit(0)\n"
-        f"Path({str(side_effect)!r}).write_text('ran')\n"
+        "if not sys.argv[1:]:\n"
+        f"    Path({str(side_effect)!r}).write_text('ran')\n"
         "raise SystemExit(0)\n",
         encoding="utf-8",
     )
@@ -59,7 +63,10 @@ def test_preflight_accepts_engine_that_lists_commands_only_on_help(tmp_path: Pat
         f"#!{sys.executable}\n"
         "import sys\n"
         "if sys.argv[1:] == ['--help']:\n"
-        "    print('usage: bayesite sample simulate recover-check')\n"
+        "    print("
+        "'usage: bayesite sample\\nusage: bayesite simulate\\n'"
+        "'usage: bayesite recover-check'"
+        ")\n"
         "    raise SystemExit(0)\n"
         "print('missing command', file=sys.stderr)\n"
         "raise SystemExit(2)\n",
@@ -70,7 +77,7 @@ def test_preflight_accepts_engine_that_lists_commands_only_on_help(tmp_path: Pat
     preflight_bayesite_engine(str(engine), (BayesiteCommandRequirement("simulate", "simulate"),))
 
 
-def test_preflight_rejects_nonzero_help_even_if_text_mentions_command(tmp_path: Path) -> None:
+def test_preflight_rejects_help_text_that_only_mentions_command(tmp_path: Path) -> None:
     engine = tmp_path / "bayesite.py"
     engine.write_text(
         f"#!{sys.executable}\n"
@@ -80,7 +87,7 @@ def test_preflight_rejects_nonzero_help_even_if_text_mentions_command(tmp_path: 
     )
     engine.chmod(0o755)
 
-    with pytest.raises(WorkflowError, match="help probe failed"):
+    with pytest.raises(WorkflowError, match="did not advertise|does not support"):
         preflight_bayesite_engine(
             str(engine), (BayesiteCommandRequirement("simulate", "simulate"),)
         )
@@ -95,7 +102,17 @@ def test_preflight_rejects_missing_engine(tmp_path: Path) -> None:
 
 
 def test_preflight_rejects_stale_engine_without_required_command(tmp_path: Path) -> None:
-    engine = _write_engine(tmp_path, "usage: bayesite sample diagnose recover sbc")
+    engine = _write_engine(
+        tmp_path,
+        "\n".join(
+            (
+                "usage: bayesite sample",
+                "usage: bayesite diagnose",
+                "usage: bayesite recover",
+                "usage: bayesite sbc",
+            )
+        ),
+    )
 
     with pytest.raises(WorkflowError, match="does not support required command: simulate"):
         preflight_bayesite_engine(
