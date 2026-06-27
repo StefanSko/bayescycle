@@ -485,6 +485,59 @@ def test_sample_invokes_engine_with_explicit_out_instead_of_stdout_capture(
     assert (output_dir / "posterior.ndjson").read_text() == "posterior written by --out\n"
 
 
+def test_sample_uses_preflight_resolved_engine_after_model_changes_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "other").mkdir()
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "import os\n"
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "os.chdir('other')\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    data_file = _write_input_data(tmp_path)
+    engine_dir = tmp_path / "bin"
+    engine_dir.mkdir()
+    fake_engine = engine_dir / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text('posterior written by resolved engine\\n')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            "run",
+            "--engine",
+            str(Path("bin") / "fake_bayesite.py"),
+        ]
+    )
+
+    assert code == 0
+    assert (tmp_path / "run" / "posterior.ndjson").read_text(encoding="utf-8") == (
+        "posterior written by resolved engine\n"
+    )
+
+
 def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -> None:
     model_file = _write_simple_model(tmp_path)
     data_file = _write_input_data(tmp_path)
