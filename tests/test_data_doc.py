@@ -55,6 +55,18 @@ def test_legacy_plain_json_data_normalizes_to_canonical(tmp_path: Path) -> None:
     }
 
 
+def test_legacy_variables_named_format_and_variables_are_preserved() -> None:
+    doc = normalize_data_doc({"format": 1, "variables": 2})
+
+    assert doc.to_json() == {
+        "format": DATA_DOC_FORMAT,
+        "variables": {
+            "format": {"dtype": "int64", "shape": [], "values": [1]},
+            "variables": {"dtype": "int64", "shape": [], "values": [2]},
+        },
+    }
+
+
 def test_canonical_data_doc_rejects_shape_value_mismatch() -> None:
     with pytest.raises(DataDocError, match="values length 2 does not match shape"):
         normalize_data_doc(

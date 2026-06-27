@@ -130,7 +130,7 @@ def normalize_data_doc(document: JsonValue, *, label: str = "data document") -> 
     """Normalize canonical or legacy JSON data into a canonical ``DataDoc``."""
     if not isinstance(document, dict):
         raise DataDocError(f"{label}: data document must be a JSON object keyed by variable name")
-    if document.get("format") == DATA_DOC_FORMAT or {"format", "variables"}.issubset(document):
+    if document.get("format") == DATA_DOC_FORMAT:
         return parse_data_doc(document, label=label)
     return DataDoc(
         tuple(
