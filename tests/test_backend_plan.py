@@ -95,6 +95,17 @@ def test_backend_stage_support_is_validated() -> None:
         )
 
 
+def test_toml_stage_assignments_require_mixed_mode(tmp_path: Path) -> None:
+    config = tmp_path / "workflow.toml"
+    config.write_text(
+        '[workflow]\n\n[stages.simulate]\nbackend = "bayesite"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkflowError, match=r"mode = 'mixed'"):
+        resolve_backend_plan_file(config)
+
+
 def test_mixed_toml_plan_resolves(tmp_path: Path) -> None:
     config = tmp_path / "workflow.toml"
     config.write_text(

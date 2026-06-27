@@ -138,6 +138,8 @@ def resolve_backend_plan_file(path: Path) -> ResolvedBackendPlan:
         raise WorkflowError("[workflow].mode must be a string")
     engine = _bayesite_engine_from_config(document)
     if mode_value == "single":
+        if "stages" in document:
+            raise WorkflowError("[stages] backend assignments require [workflow].mode = 'mixed'")
         backend_value = workflow.get("backend", "bayesite")
         if not isinstance(backend_value, str):
             raise WorkflowError("[workflow].backend must be a string")
