@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>bayescycle mixed-backend workflow plan</title>
+<style>
+body{font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:900px;margin:32px auto;padding:0 20px;color:#20242a}pre{background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:12px;overflow:auto}.ok{color:#116329;font-weight:700}.bad{color:#b42318;font-weight:700}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}section{margin:28px 0}</style>
+</head>
+<body>
+<h1>Mixed-backend workflows are explicit</h1>
+<p>Bayescycle now separates backend intent from backend-native data files. A workflow plan is resolved before any run directory is created, and stages exchange canonical <code>bayescycle.data.json.v1</code> artifacts.</p>
+
+<section>
+<h2>Default: one backend for every stage</h2>
+<pre><code>uv run bayescycle workflow-plan --backend bayesite --engine /path/to/bayesite</code></pre>
+<p class="ok">Result: simulate and recover both use Bayesite.</p>
+<pre><code>{
+  "mode": "single",
+  "stages": {"simulate": "bayesite", "recover": "bayesite"},
+  "backends": {"bayesite": {"engine": "/path/to/bayesite"}}
+}</code></pre>
+<p>If <code>--backend</code> is omitted, Bayescycle resolves the same single-backend plan using the configured/default backend rather than choosing independent per-stage defaults.</p>
+</section>
+
+<section>
+<h2>Explicit mixed plan with TOML</h2>
+<pre><code>[workflow]
+mode = "mixed"
+
+[stages.simulate]
+backend = "bayesite"
+
+[stages.recover]
+backend = "jaxstanv5"
+
+[backends.bayesite]
+engine = "/Users/me/Projects/bayesite/target/release/bayesite"</code></pre>
+<pre><code>uv run bayescycle workflow-plan --config workflow.toml</code></pre>
+<p class="ok">Result: the plan is mixed only because every stage backend is assigned explicitly.</p>
+</section>
+
+<section>
+<h2>Canonical artifact handoff</h2>
+<p>The Bayesite simulation stage writes a canonical simulated data artifact:</p>
+<pre><code>uv run bayescycle simulate model.py \
+  --data inputs.json \
+  --truth truth.json \
+  -o run-sim/ \
+  --backend bayesite \
+  --engine /Users/me/Projects/bayesite/target/release/bayesite</code></pre>
+<pre><code>run-sim/simulated_data.json  # format: bayescycle.data.json.v1</code></pre>
+<p>The recovery/sample stage can then use jaxstanv5 through its adapter without reading Bayesite-native JSON:</p>
+<pre><code>uv run bayescycle sample model.py \
+  --data run-sim/simulated_data.json \
+  -o run-recover-fit/ \
+  --backend jaxstanv5 \
+  --seed 2 --chains 4 --warmup 400 --draws 500</code></pre>
+<p>The jaxstanv5 adapter materializes the canonical data document as the plain mapping expected by <code>model.bind(...)</code>.</p>
+</section>
+
+<section>
+<h2>Partial plans fail before writes</h2>
+<pre><code>uv run bayescycle workflow-plan --simulate-backend bayesite</code></pre>
+<p class="bad">Failure:</p>
+<pre><code>Partial backend assignment would create an implicit workflow plan.
+
+simulate: bayesite
+recover: inherited from default
+
+Either use --backend for all stages, or provide an explicit complete mixed-backend plan.</code></pre>
+</section>
+
+<section>
+<h2>Backend-specific options do not select backends</h2>
+<pre><code>uv run bayescycle workflow-plan --backend jaxstanv5 --engine /path/to/bayesite</code></pre>
+<p class="bad">Failure: <code>--engine</code> configures Bayesite, but no Bayesite stage was selected. Use <code>--backend bayesite</code> or an explicit mixed plan with a Bayesite stage.</p>
+</section>
+</body>
+</html>

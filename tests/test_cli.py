@@ -278,6 +278,35 @@ def test_sample_dry_run_supports_jaxstanv5_backend(
     assert not (output_dir / "posterior.ndjson").exists()
 
 
+def test_sample_jaxstanv5_backend_rejects_bayesite_engine_option(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_normal_mean_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--backend",
+            "jaxstanv5",
+            "--engine",
+            "/tmp/bayesite",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 2
+    assert "--engine configures the bayesite backend" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
 def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -902,6 +931,61 @@ def test_sbc_dry_run_prepares_scenario_command_with_replicates(
         "output": str(output_dir),
         "sbc": str(output_dir / "sbc.json"),
         "scenario": str(output_dir / "scenario.json"),
+    }
+
+
+def test_workflow_plan_prints_single_backend_plan(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["workflow-plan", "--backend", "bayesite", "--engine", "/tmp/bayesite"])
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "mode": "single",
+        "stages": {"recover": "bayesite", "simulate": "bayesite"},
+        "backends": {"bayesite": {"engine": "/tmp/bayesite"}},
+    }
+
+
+def test_workflow_plan_rejects_partial_mixed_plan(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["workflow-plan", "--simulate-backend", "bayesite"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "Partial backend assignment" in err
+    assert "recover: inherited from default" in err
+
+
+def test_workflow_plan_rejects_engine_without_bayesite(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["workflow-plan", "--backend", "jaxstanv5", "--engine", "/tmp/bayesite"])
+
+    assert code == 2
+    assert "no bayesite backend stage was selected" in capsys.readouterr().err
+
+
+def test_workflow_plan_loads_mixed_toml_config(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = tmp_path / "workflow.toml"
+    config.write_text(
+        '[workflow]\nmode = "mixed"\n\n'
+        '[stages.simulate]\nbackend = "bayesite"\n\n'
+        '[stages.recover]\nbackend = "jaxstanv5"\n',
+        encoding="utf-8",
+    )
+
+    code = main(["workflow-plan", "--config", str(config)])
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "mode": "mixed",
+        "stages": {"recover": "jaxstanv5", "simulate": "bayesite"},
+        "backends": {},
     }
 
 
