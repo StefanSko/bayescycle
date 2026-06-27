@@ -69,9 +69,15 @@ def _resolve_engine(engine: str) -> Path:
 
 
 def _engine_help_text(executable: Path) -> str:
+    help_text = _run_engine_for_text(executable, "--help")
+    bare_text = _run_engine_for_text(executable)
+    return f"{help_text}\n{bare_text}"
+
+
+def _run_engine_for_text(executable: Path, *args: str) -> str:
     try:
         completed = subprocess.run(  # noqa: S603
-            [str(executable)],
+            [str(executable), *args],
             check=False,
             capture_output=True,
             text=True,
