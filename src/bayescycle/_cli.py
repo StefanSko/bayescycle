@@ -50,6 +50,10 @@ from bayescycle._workflow import (
     sbc_dry_run_document,
     simulate_dry_run_document,
 )
+from bayescycle.backends.bayesite_engine import (
+    BayesiteCommandRequirement,
+    preflight_bayesite_engine,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -339,13 +343,11 @@ def _sample(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
+        dry_run = cast(bool, namespace.dry_run)
         if request.backend == "bayesite":
-            return _sample_with_backend(
-                BayesiteBackend(request.engine), request, dry_run=cast(bool, namespace.dry_run)
-            )
-        return _sample_with_backend(
-            Jaxstanv5Backend(), request, dry_run=cast(bool, namespace.dry_run)
-        )
+            _preflight_bayesite_unless_dry_run(request.engine, dry_run, "sample", "sample")
+            return _sample_with_backend(BayesiteBackend(request.engine), request, dry_run=dry_run)
+        return _sample_with_backend(Jaxstanv5Backend(), request, dry_run=dry_run)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -378,13 +380,15 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
+        dry_run = cast(bool, namespace.dry_run)
         if request.backend == "bayesite":
-            return _prior_predictive_with_backend(
-                BayesiteBackend(request.engine), request, dry_run=cast(bool, namespace.dry_run)
+            _preflight_bayesite_unless_dry_run(
+                request.engine, dry_run, "prior-predictive", "prior-predictive"
             )
-        return _prior_predictive_with_backend(
-            Jaxstanv5Backend(), request, dry_run=cast(bool, namespace.dry_run)
-        )
+            return _prior_predictive_with_backend(
+                BayesiteBackend(request.engine), request, dry_run=dry_run
+            )
+        return _prior_predictive_with_backend(Jaxstanv5Backend(), request, dry_run=dry_run)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -414,9 +418,11 @@ def _simulate(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
+        dry_run = cast(bool, namespace.dry_run)
+        _preflight_bayesite_unless_dry_run(request.engine, dry_run, "simulate", "simulate")
         backend = BayesiteBackend(request.engine)
         prepared = prepare_simulate_run(request, backend)
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(simulate_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return backend.run_simulate(prepared.command)
@@ -437,9 +443,11 @@ def _recover(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
+        dry_run = cast(bool, namespace.dry_run)
+        _preflight_bayesite_unless_dry_run(request.engine, dry_run, "recover", "recover")
         backend = BayesiteBackend(request.engine)
         prepared = prepare_recover_run(request, backend)
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(recover_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return backend.run_recover(prepared.command)
@@ -461,9 +469,11 @@ def _sbc(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
+        dry_run = cast(bool, namespace.dry_run)
+        _preflight_bayesite_unless_dry_run(request.engine, dry_run, "sbc", "sbc")
         backend = BayesiteBackend(request.engine)
         prepared = prepare_sbc_run(request, backend)
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(sbc_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return backend.run_sbc(prepared.command)
@@ -475,13 +485,16 @@ def _sbc(namespace: argparse.Namespace) -> int:
 def _diagnose(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        engine = cast(str | None, namespace.engine) or "bayesite"
+        dry_run = cast(bool, namespace.dry_run)
+        _preflight_bayesite_unless_dry_run(engine, dry_run, "diagnose", "diagnose")
         prepared = prepare_diagnose_run(
             DiagnoseRequest(
                 run_dir=cast(Path, namespace.run_dir),
-                engine=cast(str | None, namespace.engine) or "bayesite",
+                engine=engine,
             )
         )
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return run_engine(prepared.command)
@@ -493,14 +506,19 @@ def _diagnose(namespace: argparse.Namespace) -> int:
 def _posterior_predictive(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        engine = cast(str | None, namespace.engine) or "bayesite"
+        dry_run = cast(bool, namespace.dry_run)
+        _preflight_bayesite_unless_dry_run(
+            engine, dry_run, "posterior-predictive", "posterior-predictive"
+        )
         prepared = prepare_posterior_predictive_run(
             PosteriorPredictiveRequest(
                 run_dir=cast(Path, namespace.run_dir),
-                engine=cast(str | None, namespace.engine) or "bayesite",
+                engine=engine,
                 seed=cast(str, namespace.seed),
             )
         )
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return run_engine(prepared.command)
@@ -514,16 +532,22 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
         explicit_engine = cast(str | None, namespace.engine)
         backend_name = cast(str, namespace.backend)
         _reject_engine_for_non_bayesite(backend_name, explicit_engine)
+        engine = explicit_engine or "bayesite"
+        dry_run = cast(bool, namespace.dry_run)
+        if backend_name == "bayesite":
+            _preflight_bayesite_unless_dry_run(
+                engine, dry_run, "posterior-check", "posterior-check"
+            )
         prepared = prepare_posterior_check_run(
             PosteriorCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
                 seed=cast(str | None, namespace.seed),
                 backend=backend_name,
-                engine=explicit_engine or "bayesite",
+                engine=engine,
                 engine_args=tuple(cast(list[str], namespace.engine_args)),
             )
         )
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return run_engine(prepared.command)
@@ -537,6 +561,10 @@ def _recover_check(namespace: argparse.Namespace) -> int:
         explicit_engine = cast(str | None, namespace.engine)
         backend_name = cast(str, namespace.backend)
         _reject_engine_for_non_bayesite(backend_name, explicit_engine)
+        engine = explicit_engine or "bayesite"
+        dry_run = cast(bool, namespace.dry_run)
+        if backend_name == "bayesite":
+            _preflight_bayesite_unless_dry_run(engine, dry_run, "recover-check", "recover-check")
         prepared = prepare_recover_check_run(
             RecoverCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
@@ -544,11 +572,11 @@ def _recover_check(namespace: argparse.Namespace) -> int:
                 targets_path=cast(Path | None, namespace.targets),
                 interval=cast(str | None, namespace.interval),
                 backend=backend_name,
-                engine=explicit_engine or "bayesite",
+                engine=engine,
                 engine_args=tuple(cast(list[str], namespace.engine_args)),
             )
         )
-        if cast(bool, namespace.dry_run):
+        if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
         return run_engine(prepared.command)
@@ -589,6 +617,14 @@ def _workflow_plan(namespace: argparse.Namespace) -> int:
     except WorkflowError as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _preflight_bayesite_unless_dry_run(
+    engine: str, dry_run: bool, command: str, stage: str
+) -> None:
+    if dry_run:
+        return
+    preflight_bayesite_engine(engine, (BayesiteCommandRequirement(command, stage),))
 
 
 def _reject_forwarded_engine_args(engine_args: tuple[str, ...]) -> None:

@@ -71,8 +71,10 @@ bayescycle sample model.py --data data.json -o run/ --backend jaxstanv5 \
 ```
 
 `--engine /path/to/bayesite` remains the Bayesite executable override and only
-applies to `--backend bayesite`. Install the in-process dependencies with
-`bayescycle[inproc]`.
+applies to `--backend bayesite`. Before execution, Bayescycle preflights the
+selected Bayesite binary for existence, executability, and required subcommand
+support so stale engines fail before run-directory writes. Install the
+in-process dependencies with `bayescycle[inproc]`.
 
 Additional engine flags can be forwarded after `--`. The engine `--out` flag is reserved
 so the run directory always contains `run/posterior.ndjson`.

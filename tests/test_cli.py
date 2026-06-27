@@ -9,6 +9,15 @@ import pytest
 import bayescycle._dims as dims_module
 from bayescycle._cli import main
 
+FAKE_BAYESITE_USAGE = (
+    "usage: bayesite sample diagnose prior-predictive posterior-predictive "
+    "posterior-check simulate recover-check recover sbc"
+)
+
+
+def _fake_bayesite_usage_prelude() -> str:
+    return f"if not args:\n    print({FAKE_BAYESITE_USAGE!r})\n    raise SystemExit(0)\n"
+
 
 def _write_simple_model(tmp_path: Path) -> Path:
     model_file = tmp_path / "model.py"
@@ -80,8 +89,7 @@ def _write_fake_out_engine(tmp_path: Path) -> Path:
         "from pathlib import Path\n"
         "import sys\n"
         "\n"
-        "args = sys.argv[1:]\n"
-        "try:\n"
+        "args = sys.argv[1:]\n" + _fake_bayesite_usage_prelude() + "try:\n"
         "    out_index = args.index('--out')\n"
         "except ValueError:\n"
         "    print('missing --out', file=sys.stderr)\n"
@@ -407,6 +415,32 @@ def test_sample_rejects_forwarded_out_engine_arg(
     assert "posterior.ndjson" in err
 
 
+def test_sample_missing_engine_fails_before_output_dir_creation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--engine",
+            str(tmp_path / "missing-bayesite"),
+        ]
+    )
+
+    assert code == 2
+    assert "Bayesite engine does not exist" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
 def test_sample_invokes_engine_with_explicit_out_instead_of_stdout_capture(
     tmp_path: Path,
 ) -> None:
@@ -419,8 +453,7 @@ def test_sample_invokes_engine_with_explicit_out_instead_of_stdout_capture(
         "from pathlib import Path\n"
         "import sys\n"
         "\n"
-        "args = sys.argv[1:]\n"
-        "if args[:1] != ['sample']:\n"
+        "args = sys.argv[1:]\n" + _fake_bayesite_usage_prelude() + "if args[:1] != ['sample']:\n"
         "    raise SystemExit(10)\n"
         "try:\n"
         "    out_index = args.index('--out')\n"
@@ -464,7 +497,9 @@ def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -
         f"#!{sys.executable}\n"
         "import sys\n"
         "\n"
-        "print('engine failed before writing --out', file=sys.stderr)\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "print('engine failed before writing --out', file=sys.stderr)\n"
         "raise SystemExit(19)\n",
         encoding="utf-8",
     )
@@ -686,6 +721,44 @@ def test_prior_predictive_rejects_forwarded_out_engine_arg(
     assert "prior_predictive.ndjson" in err
 
 
+def test_simulate_stale_engine_fails_before_output_dir_creation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.1}\n')
+    output_dir = tmp_path / "run"
+    stale_engine = tmp_path / "stale_bayesite.py"
+    stale_engine.write_text(
+        f"#!{sys.executable}\n"
+        "print('usage: bayesite sample diagnose prior-predictive recover sbc')\n",
+        encoding="utf-8",
+    )
+    stale_engine.chmod(0o755)
+
+    code = main(
+        [
+            "simulate",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "--truth",
+            str(truth_file),
+            "-o",
+            str(output_dir),
+            "--engine",
+            str(stale_engine),
+        ]
+    )
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "does not support required command: simulate" in err
+    assert "required by stage: simulate" in err
+    assert not output_dir.exists()
+
+
 def test_simulate_invokes_engine_with_owned_truth_and_canonical_output(tmp_path: Path) -> None:
     model_file = _write_simple_model(tmp_path)
     data_file = _write_empty_data(tmp_path)
@@ -697,8 +770,7 @@ def test_simulate_invokes_engine_with_owned_truth_and_canonical_output(tmp_path:
         "from pathlib import Path\n"
         "import sys\n"
         "\n"
-        "args = sys.argv[1:]\n"
-        "if args[:1] != ['simulate']:\n"
+        "args = sys.argv[1:]\n" + _fake_bayesite_usage_prelude() + "if args[:1] != ['simulate']:\n"
         "    raise SystemExit(10)\n"
         "out_index = args.index('--out')\n"
         "Path(args[out_index + 1]).write_text("
@@ -1247,7 +1319,9 @@ def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> 
         f"#!{sys.executable}\n"
         "import sys\n"
         "\n"
-        "print('engine failed before writing --out', file=sys.stderr)\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "print('engine failed before writing --out', file=sys.stderr)\n"
         "raise SystemExit(19)\n",
         encoding="utf-8",
     )
