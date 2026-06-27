@@ -102,14 +102,36 @@ def _run_engine_for_text(executable: Path, *args: str) -> str:
 
 
 def _usage_commands(text: str) -> tuple[str, ...]:
-    return tuple(
+    usage_commands = tuple(
         match.group(1)
         for match in re.finditer(
             r"^.*?usage:\s*bayesite\s+([A-Za-z0-9-]+)(?=\s|$)",
             text,
-            flags=re.MULTILINE,
+            flags=re.IGNORECASE | re.MULTILINE,
         )
     )
+    return (*usage_commands, *_commands_section_commands(text))
+
+
+def _commands_section_commands(text: str) -> tuple[str, ...]:
+    commands: list[str] = []
+    in_commands = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        lower = stripped.lower()
+        if lower in {"commands:", "subcommands:"}:
+            in_commands = True
+            continue
+        if not in_commands:
+            continue
+        if lower in {"options:", "arguments:", "usage:"}:
+            break
+        if not stripped:
+            continue
+        match = re.match(r"([A-Za-z0-9-]+)(?=\s|$)", stripped)
+        if match is not None and not match.group(1).startswith("-"):
+            commands.append(match.group(1))
+    return tuple(commands)
 
 
 def _missing_command_message(executable: Path, requirement: BayesiteCommandRequirement) -> str:

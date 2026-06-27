@@ -77,6 +77,26 @@ def test_preflight_accepts_engine_that_lists_commands_only_on_help(tmp_path: Pat
     preflight_bayesite_engine(str(engine), (BayesiteCommandRequirement("simulate", "simulate"),))
 
 
+def test_preflight_accepts_clap_style_commands_section(tmp_path: Path) -> None:
+    engine = tmp_path / "bayesite.py"
+    engine.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "if sys.argv[1:] == ['--help']:\n"
+        "    print("
+        "'Usage: bayesite <COMMAND>\\n\\n'"
+        "'Commands:\\n  sample    run sampler\\n  simulate  simulate data\\n\\n'"
+        "'Options:\\n  -h, --help'"
+        ")\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    engine.chmod(0o755)
+
+    preflight_bayesite_engine(str(engine), (BayesiteCommandRequirement("simulate", "simulate"),))
+
+
 def test_preflight_rejects_help_text_that_only_mentions_command(tmp_path: Path) -> None:
     engine = tmp_path / "bayesite.py"
     engine.write_text(
