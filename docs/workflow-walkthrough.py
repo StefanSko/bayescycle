@@ -442,7 +442,7 @@ def tree_html() -> str:
             [
                 (
                     "simulated_data.json",
-                    "bayescycle simulate &mdash; declared inputs + generated observed y",
+                    "bayescycle simulate &mdash; canonical inputs + generated observed y",
                 )
             ],
         ),
