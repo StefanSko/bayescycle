@@ -86,6 +86,12 @@ def _run_engine_for_text(executable: Path, *args: str) -> str:
         raise WorkflowError(f"cannot execute Bayesite engine {executable}: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
         raise WorkflowError(f"Bayesite engine preflight timed out: {executable}") from exc
+    if completed.returncode != 0:
+        raise WorkflowError(
+            f"Bayesite engine help probe failed for {executable} "
+            f"(exit code {completed.returncode}).\n\n"
+            "The binary may be stale or not the Bayesite CLI expected by bayescycle."
+        )
     return f"{completed.stdout}\n{completed.stderr}"
 
 
