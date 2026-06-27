@@ -42,6 +42,10 @@ The header records:
 
 `model_data_fingerprint`, when present, is `sha256:` plus the SHA-256 digest of
 `b"bayescycle-model-data-v1\n" + model_ir_bytes + b"\n" + data_json_bytes`.
+For in-process Bayescycle streams, `data_json_bytes` is the canonical
+`run/data.json` artifact. Bayesite-engine streams currently compute this over the
+adapter materialization passed to the Bayesite binary; consumers should treat the
+fingerprint as an opaque identity string, not as a path contract.
 
 ## Draw facts
 

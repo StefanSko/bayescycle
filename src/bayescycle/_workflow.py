@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import LoadedModel, load_model
 from bayescycle._settings import SamplerSettings
+from bayescycle.data import DataDocError, read_data_doc, write_data_doc
 
 
 @dataclass(frozen=True)
@@ -407,6 +409,7 @@ def prepare_simulate_run[CommandT: DryRunCommand](
         force=request.force,
     )
     truth_path = _copy_required_input(truth_source, output_dir / "truth.json", "truth")
+    _write_data_manifest(output_dir, context.data_path, (output_path,))
     command = backend.build_simulate_command(context, request, truth_path)
     return PreparedSimulateRun(
         model_name=context.model_name,
@@ -484,6 +487,11 @@ def prepare_model_run_context(
 ) -> PreparedModelRunContext:
     """Prepare the shared model/data run directory inputs for model-level commands."""
     source_data_path = _require_input_file(data_path, "data")
+    try:
+        data_doc = read_data_doc(source_data_path)
+    except DataDocError as exc:
+        raise WorkflowError(f"invalid data file: {exc}") from exc
+
     _ensure_output_dir(output_dir, force=force)
 
     loaded_model = load_model(model_path, model_name)
@@ -492,8 +500,8 @@ def prepare_model_run_context(
     ir_path.write_bytes(canonical_bytes(loaded_model.meta))
 
     run_data_path = output_dir / "data.json"
-    if source_data_path != run_data_path:
-        shutil.copyfile(source_data_path, run_data_path)
+    write_data_doc(run_data_path, data_doc)
+    _write_data_manifest(output_dir, run_data_path)
 
     dims_path = _write_optional_dims_sidecar(output_dir, loaded_model.model_cls, loaded_model.meta)
 
@@ -653,6 +661,9 @@ def prepare_posterior_predictive_run(
     fit_path = run_dir / "posterior.ndjson"
     output_path = run_dir / "posterior_predictive.ndjson"
     _require_run_artifacts((model_path, data_path, fit_path))
+    from bayescycle.backends.bayesite import materialize_run_data_for_bayesite
+
+    engine_data_path = materialize_run_data_for_bayesite(run_dir)
     command = BayesiteCommand(
         argv=(
             request.engine,
@@ -660,7 +671,7 @@ def prepare_posterior_predictive_run(
             "--model",
             str(model_path),
             "--data",
-            str(data_path),
+            str(engine_data_path),
             "--fit",
             str(fit_path),
             "--seed",
@@ -687,6 +698,9 @@ def prepare_posterior_check_run(request: PosteriorCheckRequest) -> PreparedRunDi
     output_path = run_dir / "posterior_check.json"
     _reject_reserved_engine_args(request.engine_args, output_path)
     _require_run_artifacts((model_path, data_path, fit_path))
+    from bayescycle.backends.bayesite import materialize_run_data_for_bayesite
+
+    engine_data_path = materialize_run_data_for_bayesite(run_dir)
     seed_args = ("--seed", request.seed) if request.seed is not None else ()
     command = BayesiteCommand(
         argv=(
@@ -695,7 +709,7 @@ def prepare_posterior_check_run(request: PosteriorCheckRequest) -> PreparedRunDi
             "--model",
             str(model_path),
             "--data",
-            str(data_path),
+            str(engine_data_path),
             "--fit",
             str(fit_path),
             *seed_args,
@@ -832,6 +846,25 @@ def _require_run_artifacts(paths: tuple[Path, ...]) -> None:
         f"missing required run artifact{plural} in {run_dir}: {names}. "
         f"Run `bayescycle sample ... -o {run_dir}` first."
     )
+
+
+def _write_data_manifest(
+    output_dir: Path, data_path: Path, additional_data_paths: tuple[Path, ...] = ()
+) -> None:
+    artifacts = {
+        path.name: {
+            "format": "bayescycle.data.json.v1",
+            "path": path.name,
+        }
+        for path in (data_path, *additional_data_paths)
+    }
+    manifest = {
+        "manifest_format": "bayescycle.run-manifest.v1",
+        "artifacts": artifacts,
+    }
+    with (output_dir / "manifest.json").open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
 
 
 def _write_optional_dims_sidecar(

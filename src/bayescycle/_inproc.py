@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Protocol, cast
 
 from jaxstanv5.model.bound import BoundModel
 
 from bayescycle._commands import Jaxstanv5PriorPredictiveCommand, Jaxstanv5SampleCommand
+from bayescycle.data import DataDocError, data_doc_to_plain_json, read_data_doc
 
 
 class InProcessBackendError(RuntimeError):
@@ -157,10 +157,6 @@ def _load_sample_function() -> _SampleFunction:
 
 def _load_data(path: Path) -> dict[str, object]:
     try:
-        with path.open("r", encoding="utf-8") as f:
-            value = json.load(f)
-    except json.JSONDecodeError as exc:
-        raise InProcessBackendError(f"data.json is not valid JSON: {exc.msg}") from exc
-    if not isinstance(value, dict):
-        raise InProcessBackendError("data.json must contain a JSON object")
-    return value
+        return cast(dict[str, object], data_doc_to_plain_json(read_data_doc(path)))
+    except DataDocError as exc:
+        raise InProcessBackendError(f"data.json is not a valid data artifact: {exc}") from exc
