@@ -32,6 +32,27 @@ def test_preflight_accepts_required_command(tmp_path: Path) -> None:
     assert info.executable == engine.resolve(strict=False)
 
 
+def test_preflight_does_not_invoke_zero_argument_engine_path(tmp_path: Path) -> None:
+    side_effect = tmp_path / "zero-args-ran"
+    engine = tmp_path / "bayesite.py"
+    engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "if sys.argv[1:] == ['--help']:\n"
+        "    print('usage: bayesite sample simulate recover-check')\n"
+        "    raise SystemExit(0)\n"
+        f"Path({str(side_effect)!r}).write_text('ran')\n"
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    engine.chmod(0o755)
+
+    preflight_bayesite_engine(str(engine), (BayesiteCommandRequirement("simulate", "simulate"),))
+
+    assert not side_effect.exists()
+
+
 def test_preflight_accepts_engine_that_lists_commands_only_on_help(tmp_path: Path) -> None:
     engine = tmp_path / "bayesite.py"
     engine.write_text(

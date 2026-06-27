@@ -69,9 +69,7 @@ def _resolve_engine(engine: str) -> Path:
 
 
 def _engine_help_text(executable: Path) -> str:
-    help_text = _run_engine_for_text(executable, "--help")
-    bare_text = _run_engine_for_text(executable)
-    return f"{help_text}\n{bare_text}"
+    return _run_engine_for_text(executable, "--help")
 
 
 def _run_engine_for_text(executable: Path, *args: str) -> str:
@@ -82,6 +80,7 @@ def _run_engine_for_text(executable: Path, *args: str) -> str:
             capture_output=True,
             text=True,
             timeout=10,
+            stdin=subprocess.DEVNULL,
         )
     except OSError as exc:
         raise WorkflowError(f"cannot execute Bayesite engine {executable}: {exc}") from exc

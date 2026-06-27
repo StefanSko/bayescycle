@@ -16,7 +16,11 @@ FAKE_BAYESITE_USAGE = (
 
 
 def _fake_bayesite_usage_prelude() -> str:
-    return f"if not args:\n    print({FAKE_BAYESITE_USAGE!r})\n    raise SystemExit(0)\n"
+    return (
+        "if not args or args == ['--help']:\n"
+        f"    print({FAKE_BAYESITE_USAGE!r})\n"
+        "    raise SystemExit(0)\n"
+    )
 
 
 def _write_simple_model(tmp_path: Path) -> Path:
