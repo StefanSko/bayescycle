@@ -126,5 +126,13 @@ def test_partial_mixed_toml_plan_fails(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(WorkflowError, match="Partial backend assignment"):
+    with pytest.raises(WorkflowError, match="assign every stage"):
+        resolve_backend_plan_file(config)
+
+
+def test_empty_mixed_toml_plan_fails(tmp_path: Path) -> None:
+    config = tmp_path / "workflow.toml"
+    config.write_text('[workflow]\nmode = "mixed"\n\n[stages]\n', encoding="utf-8")
+
+    with pytest.raises(WorkflowError, match="assign every stage"):
         resolve_backend_plan_file(config)

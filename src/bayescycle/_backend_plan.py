@@ -153,6 +153,12 @@ def resolve_backend_plan_file(path: Path) -> ResolvedBackendPlan:
         stages = _table(document, "stages", config_path)
         simulate_backend = _stage_backend_from_config(stages, "simulate")
         recover_backend = _stage_backend_from_config(stages, "recover")
+        if simulate_backend is None or recover_backend is None:
+            assignments = {"simulate": simulate_backend, "recover": recover_backend}
+            raise WorkflowError(
+                "Explicit mixed backend config must assign every stage.\n\n"
+                f"{_partial_assignment_lines(assignments)}"
+            )
         return resolve_backend_plan(
             BackendPlanRequest(
                 backend=None,
