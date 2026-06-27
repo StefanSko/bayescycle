@@ -24,6 +24,8 @@
 - Multi-stage backend intent is resolved as a single backend plan or a complete
   explicit mixed plan before any run-directory writes.
 - The Bayesite engine command is data, represented before it is executed.
+- Bayesite engine paths and required subcommands are preflighted before
+  execution creates or rewrites run artifacts.
 - Backend stdout/stderr and exit status are not interpreted as sampler semantics
   unless a later explicit diagnostics phase is added.
 - When bayescycle serializes sampler facts, those facts must be explicitly
