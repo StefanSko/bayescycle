@@ -124,10 +124,10 @@ def _commands_section_commands(text: str) -> tuple[str, ...]:
             continue
         if not in_commands:
             continue
-        if lower in {"options:", "arguments:", "usage:"}:
-            break
         if not stripped:
             continue
+        if not line[0].isspace():
+            break
         match = re.match(r"([A-Za-z0-9-]+)(?=\s|$)", stripped)
         if match is not None and not match.group(1).startswith("-"):
             commands.append(match.group(1))
