@@ -398,6 +398,7 @@ def prepare_simulate_run[CommandT: DryRunCommand](
     output_dir = request.output_dir.expanduser().resolve()
     output_path = output_dir / "simulated_data.json"
     _reject_reserved_engine_args(request.engine_args, output_path)
+    truth_source = _require_input_file(request.truth_path, "truth")
     context = prepare_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -405,7 +406,7 @@ def prepare_simulate_run[CommandT: DryRunCommand](
         output_dir=output_dir,
         force=request.force,
     )
-    truth_path = _copy_required_input(request.truth_path, output_dir / "truth.json", "truth")
+    truth_path = _copy_required_input(truth_source, output_dir / "truth.json", "truth")
     command = backend.build_simulate_command(context, request, truth_path)
     return PreparedSimulateRun(
         model_name=context.model_name,
@@ -482,11 +483,8 @@ def prepare_model_run_context(
     force: bool,
 ) -> PreparedModelRunContext:
     """Prepare the shared model/data run directory inputs for model-level commands."""
+    source_data_path = _require_input_file(data_path, "data")
     _ensure_output_dir(output_dir, force=force)
-
-    source_data_path = data_path.expanduser().resolve()
-    if not source_data_path.is_file():
-        raise WorkflowError(f"data file does not exist: {source_data_path}")
 
     loaded_model = load_model(model_path, model_name)
 
@@ -518,6 +516,7 @@ def prepare_model_scenario_context(
     force: bool,
 ) -> PreparedModelScenarioContext:
     """Prepare shared model/scenario run directory inputs for scenario commands."""
+    scenario_source = _require_input_file(scenario_path, "scenario")
     _ensure_output_dir(output_dir, force=force)
 
     loaded_model = load_model(model_path, model_name)
@@ -526,7 +525,7 @@ def prepare_model_scenario_context(
     ir_path.write_bytes(canonical_bytes(loaded_model.meta))
 
     run_scenario_path = _copy_required_input(
-        scenario_path, output_dir / "scenario.json", "scenario"
+        scenario_source, output_dir / "scenario.json", "scenario"
     )
     dims_path = _write_optional_dims_sidecar(output_dir, loaded_model.model_cls, loaded_model.meta)
 
@@ -807,10 +806,15 @@ def _reject_reserved_engine_args(engine_args: tuple[str, ...], output_path: Path
             )
 
 
-def _copy_required_input(source: Path, destination: Path, label: str) -> Path:
+def _require_input_file(source: Path, label: str) -> Path:
     source_path = source.expanduser().resolve()
     if not source_path.is_file():
         raise WorkflowError(f"{label} file does not exist: {source_path}")
+    return source_path
+
+
+def _copy_required_input(source: Path, destination: Path, label: str) -> Path:
+    source_path = _require_input_file(source, label)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if source_path != destination:
         shutil.copyfile(source_path, destination)

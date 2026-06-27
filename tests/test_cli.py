@@ -676,6 +676,81 @@ def test_simulate_invokes_engine_with_owned_truth_and_output_paths(tmp_path: Pat
     )
 
 
+def test_simulate_missing_truth_does_not_create_output_dir(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_empty_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "simulate",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "--truth",
+            str(tmp_path / "missing-truth.json"),
+            "-o",
+            str(output_dir),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 2
+    assert "truth file does not exist" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+def test_recover_missing_scenario_does_not_create_output_dir(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "recover",
+            str(model_file),
+            "--scenario",
+            str(tmp_path / "missing-scenario.json"),
+            "-o",
+            str(output_dir),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 2
+    assert "scenario file does not exist" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+def test_sample_missing_data_does_not_create_output_dir(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(tmp_path / "missing-data.json"),
+            "-o",
+            str(output_dir),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 2
+    assert "data file does not exist" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
 def test_recover_dry_run_prepares_scenario_command(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
