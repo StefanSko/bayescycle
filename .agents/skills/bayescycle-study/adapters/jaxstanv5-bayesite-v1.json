@@ -12,7 +12,13 @@
     "posterior": "posterior.ndjson",
     "diagnostics": "diagnostics.json",
     "posterior_predictive": "posterior_predictive.ndjson",
-    "idata": "fit.nc"
+    "idata": "fit.nc",
+    "prior_predictive": "prior_predictive.ndjson",
+    "simulated_data": "simulated_data.json",
+    "recovery": "recovery.json",
+    "sbc": "sbc.json",
+    "recovery_check": "recovery_check.json",
+    "posterior_check": "posterior_check.json"
   },
   "commands": {
     "sample": "bayescycle sample <model.py> --data <data.json> -o <run-dir> --seed <seed> --chains <chains> --warmup <warmup> --draws <draws>",
@@ -22,7 +28,13 @@
     "viz_trace": "bayesite-viz trace <run-dir>/fit.nc -o <artifact.png>",
     "viz_rank": "bayesite-viz rank <run-dir>/fit.nc -o <artifact.png>",
     "viz_posterior": "bayesite-viz posterior <run-dir>/fit.nc --kind hist -o <artifact.png>",
-    "viz_ppc": "bayesite-viz ppc <run-dir>/fit.nc --kind dist -o <artifact.png>"
+    "viz_ppc": "bayesite-viz ppc <run-dir>/fit.nc --kind dist -o <artifact.png>",
+    "prior_predictive": "bayescycle prior-predictive <model.py> --data <data.json> -o <run-dir> --seed <seed> --draws <draws>",
+    "simulate": "bayescycle simulate <model.py> --data <data.json> --truth <truth.json> -o <run-dir> --seed <seed>",
+    "recover": "bayescycle recover <model.py> --scenario <scenario.json> -o <run-dir>",
+    "sbc": "bayescycle sbc <model.py> --scenario <scenario.json> -o <run-dir> --replicates <n>",
+    "posterior_check": "bayescycle posterior-check <run-dir> --seed <seed>",
+    "recover_check": "bayescycle recover-check <run-dir> --truth <truth.json> --interval <p>"
   },
   "artifact_kinds": [
     "model_spec",

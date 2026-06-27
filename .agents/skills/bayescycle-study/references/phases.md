@@ -73,10 +73,11 @@ Goal: test plumbing before real-data inference.
 
 Allowed work:
 
-- simulate fake data from the approved generative model
+- simulate fake data from the approved generative model using `bayescycle simulate`
 - for causal estimands, simulate according to the approved DAG skeleton
-- run prior predictive checks
-- run recovery checks for known parameters/estimands
+- run prior predictive checks using `bayescycle prior-predictive`
+- run recovery checks for known parameters/estimands using `bayescycle recover-check`
+- run single-scenario recovery or SBC reports with `bayescycle recover` / `bayescycle sbc`
 - compare against intentionally wrong estimators or bad-control adjustment when useful
 
 Visualization expectation: prior predictive and recovery visual reports are

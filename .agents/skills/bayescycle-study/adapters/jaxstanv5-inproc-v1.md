@@ -36,6 +36,13 @@ bayescycle sample models/model.py --data data/data.json -o runs/fit-0001 \
   --backend jaxstanv5 --seed 123 --chains 4 --warmup 1000 --draws 1000 --dry-run
 ```
 
+Run prior predictive in-process through the same artifact contract:
+
+```bash
+bayescycle prior-predictive models/model.py --data data/inputs.json -o runs/prior-0001 \
+  --backend jaxstanv5 --seed 123 --draws 500
+```
+
 Run diagnostics and derived exports through the same run directory:
 
 ```bash
@@ -43,6 +50,10 @@ bayescycle diagnose runs/fit-0001
 bayesite-idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
 bayesite-viz energies runs/fit-0001/fit.nc -o artifacts/fit-0001-energies.png
 ```
+
+`simulate`, `recover`, `sbc`, `posterior-check`, and `recover-check` are not yet
+served by this profile. If selected with `--backend jaxstanv5`, bayescycle must
+return a clear unsupported-profile error rather than silently falling back.
 
 `posterior.ndjson` includes `sample_stats_mode: "per_draw_v2"` and per-draw
 `energy`, so energy/BFMI visual checks are available after export.
@@ -56,7 +67,13 @@ runs/fit-0001/
   dims.json                 # optional, explicit jaxstanv5 metadata only
   posterior.ndjson
   diagnostics.json          # after diagnose
+  prior_predictive.ndjson
   posterior_predictive.ndjson
+  simulated_data.json       # Bayesite-backed profile only today
+  recovery.json             # Bayesite-backed profile only today
+  sbc.json                  # Bayesite-backed profile only today
+  recovery_check.json       # Bayesite-backed profile only today
+  posterior_check.json      # Bayesite-backed profile only today
   fit.nc                    # optional; produced by bayesite-idata for visualization
 ```
 

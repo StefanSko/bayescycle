@@ -12,7 +12,13 @@
     "posterior": "posterior.ndjson",
     "diagnostics": "diagnostics.json",
     "posterior_predictive": "posterior_predictive.ndjson",
-    "idata": "fit.nc"
+    "idata": "fit.nc",
+    "prior_predictive": "prior_predictive.ndjson",
+    "simulated_data": "simulated_data.json",
+    "recovery": "recovery.json",
+    "sbc": "sbc.json",
+    "recovery_check": "recovery_check.json",
+    "posterior_check": "posterior_check.json"
   },
   "commands": {
     "sample": "bayescycle sample <model.py> --data <data.json> -o <run-dir> --backend jaxstanv5 --seed <seed> --chains <chains> --warmup <warmup> --draws <draws>",
@@ -23,7 +29,11 @@
     "viz_rank": "bayesite-viz rank <run-dir>/fit.nc -o <artifact.png>",
     "viz_energies": "bayesite-viz energies <run-dir>/fit.nc -o <artifact.png>",
     "viz_posterior": "bayesite-viz posterior <run-dir>/fit.nc --kind hist -o <artifact.png>",
-    "viz_ppc": "bayesite-viz ppc <run-dir>/fit.nc --kind dist -o <artifact.png>"
+    "viz_ppc": "bayesite-viz ppc <run-dir>/fit.nc --kind dist -o <artifact.png>",
+    "prior_predictive": "bayescycle prior-predictive <model.py> --data <data.json> -o <run-dir> --backend jaxstanv5 --seed <seed> --draws <draws>",
+    "unsupported_simulate": "bayescycle simulate ... --backend jaxstanv5  # unsupported today",
+    "unsupported_recover": "bayescycle recover ... --backend jaxstanv5  # unsupported today",
+    "unsupported_sbc": "bayescycle sbc ... --backend jaxstanv5  # unsupported today"
   },
   "artifact_kinds": [
     "model_spec",

@@ -69,12 +69,14 @@ script if any, and hash if available.
 
 ### `prior_predictive_run`
 
-Run directory or report containing prior predictive simulation output.
+Run directory containing `prior_predictive.ndjson` produced by
+`bayescycle prior-predictive`.
 
 ### `recovery_run`
 
 Run directory or report showing fake-data recovery for known parameters or the
-approved estimand.
+approved estimand. Prefer bayescycle-owned artifacts such as
+`simulated_data.json`, `recovery_check.json`, `recovery.json`, or `sbc.json`.
 
 ### `real_fit_run`
 
