@@ -5,7 +5,7 @@ RUN="$WORK/run"
 if [ -z "${BAYESITE_BIN:-}" ]; then
   BAYESITE_BIN="$(command -v bayesite || true)"
 fi
-BAYESITE_VIZ_SOURCE="${BAYESITE_VIZ_SOURCE:-git+https://github.com/StefanSko/bayesite-viz.git@a280945}"
+BAYESITE_VIZ_SOURCE="${BAYESITE_VIZ_SOURCE:-git+https://github.com/StefanSko/bayesite-viz.git@a2809452d1c753885602fae824d789bb627d5cb6}"
 
 reset_workdir() {
   rm -rf "$WORK"
