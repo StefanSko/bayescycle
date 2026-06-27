@@ -340,21 +340,21 @@ cmd_ppc = "bayescycle posterior-predictive run/ --seed 456"
 cmd_pcheck = "bayescycle posterior-check run/ --seed 789"
 cmd_export = (
     f'BAYESITE_VIZ_SOURCE="{BAYESITE_VIZ_SOURCE}"\n\n'
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-idata run/ -o run/fit.nc --validate require\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz trace     run/fit.nc -o viz/trace.png\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz rank      run/fit.nc -o viz/rank.png\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz energies  run/fit.nc -o viz/energies.png\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz posterior run/fit.nc --kind hist -o viz/posterior.png\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz forest    run/fit.nc -o viz/forest.png\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz ess-rhat  run/fit.nc -o viz/ess-rhat.png\n"
-    'uv run --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
     "  bayesite-viz ppc       run/fit.nc --kind dist -o viz/ppc.png"
 )
 
@@ -914,7 +914,7 @@ parts.append(
         + (
             '<p class="lead small">Until <span class="mono">bayesite-viz</span> is '
             "published as an installable package, the walkthrough uses a pinned "
-            'direct Git dependency through <span class="mono">uv run --with</span>. '
+            'direct Git dependency through <span class="mono">uv run --no-project --with</span>. '
             'This covers both <span class="mono">bayesite-idata</span> export and '
             '<span class="mono">bayesite-viz</span> plotting without assuming a local '
             "checkout.</p>"

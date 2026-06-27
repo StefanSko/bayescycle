@@ -14,6 +14,6 @@ def test_workflow_walkthrough_uses_pinned_bayesite_viz_git_dependency() -> None:
         assert "uv run --project ~/bayesite-viz" not in content
         assert "~/bayesite-viz" not in content
         assert BAYESITE_VIZ_PIN in content
-        assert "uv run --with" in content
+        assert "uv run --no-project --with" in content
         assert "bayesite-idata" in content
         assert "bayesite-viz" in content
