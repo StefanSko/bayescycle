@@ -15,7 +15,7 @@ Expected demo layout (see the commands embedded in the page)::
       data.json                inputs.json  truth.json  targets.json
       recover_scenario.json    sbc_scenario.json
       run-prior/               prior_predictive.ndjson (+ ir/data/dims)
-      run-sim/                 simulated_data.json (+ truth/ir/data/dims)
+      run-sim/                 simulated_data.json (+ truth/ir/data/dims, canonical data)
       run-recover-fit/         posterior.ndjson  recovery_check.json (+ ir/data/dims)
       run-recover/             recovery.json (+ ir/scenario/dims)
       run-sbc/                 sbc.json (+ ir/scenario/dims)
@@ -182,14 +182,17 @@ pp_first_display = truncate(pp_draws[0], keep=4)
 
 # Simulate ---------------------------------------------------------------------
 sim_doc = json.loads((DEMO / "run-sim" / "simulated_data.json").read_text())
-sim_y = sim_doc["y"]["values"] if isinstance(sim_doc["y"], dict) else sim_doc["y"]
+sim_variables = sim_doc.get("variables", sim_doc)
+sim_y_value = sim_variables["y"]
+sim_y = sim_y_value["values"] if isinstance(sim_y_value, dict) else sim_y_value
 sim_summary = {
+    "format": sim_doc.get("format", "legacy-plain-data"),
     "truth_used": TRUTH,
-    "declared_inputs": [k for k in sim_doc if k == "x"],
-    "generated_observed": [k for k in sim_doc if k == "y"],
+    "declared_inputs": [k for k in sim_variables if k == "x"],
+    "generated_observed": [k for k in sim_variables if k == "y"],
     "n": len(sim_y),
     "y_head": [round(v, 4) for v in sim_y[:6]],
-    "note": "plain typed data document; carries no simulation marker so `sample` is provenance-agnostic",
+    "note": "canonical bayescycle data document; adapters materialize backend-native runtime inputs",
 }
 
 # Recovery fit + recover-check -------------------------------------------------
@@ -465,7 +468,10 @@ def tree_html() -> str:
             "run/",
             [
                 ("model.ir.json", "bayescycle sample &mdash; canonical IR compiled from model.py"),
-                ("data.json", "bayescycle sample &mdash; byte-for-byte copy of the input data"),
+                (
+                    "data.json",
+                    "bayescycle sample &mdash; canonical bayescycle.data.json.v1 input snapshot",
+                ),
                 ("dims.json", "bayescycle sample &mdash; jaxstanv5 dimension/coord metadata"),
                 ("posterior.ndjson", "bayescycle sample &mdash; jaxstanv5/BlackJAX draws + stats"),
                 (
@@ -752,7 +758,7 @@ parts.append(
         code_block(cmd_sim, "bash")
         + file_chip("input", "truth.json", "constrained free-value truth")
         + file_chip(
-            "write", "run-sim/simulated_data.json", "declared inputs + generated observed y"
+            "write", "run-sim/simulated_data.json", "canonical inputs + generated observed y"
         )
         + json_block(sim_summary),
         "Fix a known truth and simulate observed data the estimator must recover.",
@@ -767,7 +773,7 @@ parts.append(
         + file_chip(
             "read",
             "run-sim/simulated_data.json",
-            "typed data document, consumed natively by Bayesite",
+            "canonical data document, materialized by the Bayesite adapter",
         )
         + file_chip(
             "write",

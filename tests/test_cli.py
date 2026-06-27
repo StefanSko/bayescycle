@@ -130,7 +130,19 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
     ir_path = output_dir / "model.ir.json"
     run_data_path = output_dir / "data.json"
     assert json.loads(ir_path.read_text(encoding="utf-8"))["jaxstanv5_ir"] == 1
-    assert run_data_path.read_text(encoding="utf-8") == '{"y": 0.25}\n'
+    assert json.loads(run_data_path.read_text(encoding="utf-8")) == {
+        "format": "bayescycle.data.json.v1",
+        "variables": {"y": {"dtype": "float64", "shape": [], "values": [0.25]}},
+    }
+    assert json.loads((output_dir / "manifest.json").read_text(encoding="utf-8")) == {
+        "manifest_format": "bayescycle.run-manifest.v1",
+        "artifacts": {
+            "data.json": {
+                "format": "bayescycle.data.json.v1",
+                "path": "data.json",
+            }
+        },
+    }
     assert not (output_dir / "dims.json").exists()
 
     printed = json.loads(capsys.readouterr().out)
@@ -143,7 +155,7 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
             "--model",
             str(ir_path),
             "--data",
-            str(run_data_path),
+            str(output_dir / ".bayesite" / "data.json"),
             "--out",
             str(output_dir / "posterior.ndjson"),
             "--seed",
@@ -187,7 +199,6 @@ def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
 
     assert code == 0
     ir_path = output_dir / "model.ir.json"
-    run_data_path = output_dir / "data.json"
     printed = json.loads(capsys.readouterr().out)
     assert printed["draws"] == str(output_dir / "posterior.ndjson")
     assert printed["engine_command"] == [
@@ -196,7 +207,7 @@ def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
         "--model",
         str(ir_path),
         "--data",
-        str(run_data_path),
+        str(output_dir / ".bayesite" / "data.json"),
         "--seed",
         "7",
         "--chains",
@@ -478,7 +489,10 @@ def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
     ir_path = output_dir / "model.ir.json"
     run_data_path = output_dir / "data.json"
     assert json.loads(ir_path.read_text(encoding="utf-8"))["jaxstanv5_ir"] == 1
-    assert run_data_path.read_text(encoding="utf-8") == "{}\n"
+    assert json.loads(run_data_path.read_text(encoding="utf-8")) == {
+        "format": "bayescycle.data.json.v1",
+        "variables": {},
+    }
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
         "data": str(run_data_path),
@@ -488,7 +502,7 @@ def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
             "--model",
             str(ir_path),
             "--data",
-            str(run_data_path),
+            str(output_dir / ".bayesite" / "data.json"),
             "--seed",
             "7",
             "--draws",
@@ -643,12 +657,27 @@ def test_prior_predictive_rejects_forwarded_out_engine_arg(
     assert "prior_predictive.ndjson" in err
 
 
-def test_simulate_invokes_engine_with_owned_truth_and_output_paths(tmp_path: Path) -> None:
+def test_simulate_invokes_engine_with_owned_truth_and_canonical_output(tmp_path: Path) -> None:
     model_file = _write_simple_model(tmp_path)
     data_file = _write_empty_data(tmp_path)
     truth_file = _write_json_file(tmp_path, "truth.json", '{"mu": 0.1}\n')
     output_dir = tmp_path / "run"
-    fake_engine = _write_fake_out_engine(tmp_path)
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        "if args[:1] != ['simulate']:\n"
+        "    raise SystemExit(10)\n"
+        "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text("
+        '\'{"y": {"dtype": "float64", "shape": [], "values": [1.5]}}\\n\''
+        ")\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
 
     code = main(
         [
@@ -669,11 +698,18 @@ def test_simulate_invokes_engine_with_owned_truth_and_output_paths(tmp_path: Pat
 
     assert code == 0
     assert (output_dir / "truth.json").read_text(encoding="utf-8") == '{"mu": 0.1}\n'
-    assert (output_dir / "simulated_data.json").read_text(encoding="utf-8") == (
-        f"simulate --model {output_dir / 'model.ir.json'} --data {output_dir / 'data.json'} "
-        f"--truth {output_dir / 'truth.json'} --seed 1 "
-        f"--out {output_dir / 'simulated_data.json'}\n"
-    )
+    assert json.loads((output_dir / "simulated_data.json").read_text(encoding="utf-8")) == {
+        "format": "bayescycle.data.json.v1",
+        "variables": {"y": {"dtype": "float64", "shape": [], "values": [1.5]}},
+    }
+    assert json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))["artifacts"] == {
+        "data.json": {"format": "bayescycle.data.json.v1", "path": "data.json"},
+        "simulated_data.json": {
+            "format": "bayescycle.data.json.v1",
+            "path": "simulated_data.json",
+        },
+    }
+    assert (output_dir / ".bayesite" / "simulated_data.json").is_file()
 
 
 def test_simulate_missing_truth_does_not_create_output_dir(
@@ -748,6 +784,38 @@ def test_sample_missing_data_does_not_create_output_dir(
 
     assert code == 2
     assert "data file does not exist" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+def test_sample_invalid_canonical_data_does_not_create_output_dir(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = tmp_path / "bad-data.json"
+    data_file.write_text(
+        '{"format":"bayescycle.data.json.v1",'
+        '"variables":{"y":{"dtype":"float64","shape":[2],"values":[0.25]}}}\n',
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "invalid data file" in err
+    assert "values length" in err
     assert not output_dir.exists()
 
 
@@ -908,7 +976,7 @@ def test_posterior_predictive_dry_run_uses_run_directory_artifacts_and_seed(
             "--model",
             str(run_dir / "model.ir.json"),
             "--data",
-            str(run_dir / "data.json"),
+            str(run_dir / ".bayesite" / "data.json"),
             "--fit",
             str(run_dir / "posterior.ndjson"),
             "--seed",
@@ -931,7 +999,7 @@ def test_posterior_predictive_invokes_engine_with_run_directory_paths(tmp_path: 
     assert code == 0
     assert (run_dir / "posterior_predictive.ndjson").read_text(encoding="utf-8") == (
         f"posterior-predictive --model {run_dir / 'model.ir.json'} "
-        f"--data {run_dir / 'data.json'} --fit {run_dir / 'posterior.ndjson'} "
+        f"--data {run_dir / '.bayesite' / 'data.json'} --fit {run_dir / 'posterior.ndjson'} "
         f"--seed 8 --out {run_dir / 'posterior_predictive.ndjson'}\n"
     )
 
@@ -970,7 +1038,7 @@ def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
             "--model",
             str(run_dir / "model.ir.json"),
             "--data",
-            str(run_dir / "data.json"),
+            str(run_dir / ".bayesite" / "data.json"),
             "--fit",
             str(run_dir / "posterior.ndjson"),
             "--seed",

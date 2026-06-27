@@ -92,6 +92,10 @@ bayescycle sample models/model.py --data runs/sim-0001/simulated_data.json -o ru
 bayescycle recover-check runs/recover-fit-0001 --truth data/truth.json
 ```
 
+`runs/sim-0001/simulated_data.json` is a canonical `bayescycle.data.json.v1`
+artifact, so a recovery fit can use the same file with the same backend or an
+explicit different backend through adapter materialization.
+
 The scientific state tracks abstract artifact kinds, so adapters can swap a
 backend implementation without rewriting the workflow protocol.
 

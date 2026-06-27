@@ -31,6 +31,21 @@ class BayesiteCommand:
 
 
 @dataclass(frozen=True)
+class BayesiteSimulateCommand:
+    """Bayesite simulate command plus canonical-data postprocessing paths."""
+
+    engine_command: BayesiteCommand
+    native_data_path: Path
+    canonical_data_path: Path
+
+    def dry_run_fields(self) -> JsonObject:
+        """Return command fields for dry-run JSON output."""
+        fields = self.engine_command.dry_run_fields()
+        fields["backend_simulated_data"] = str(self.native_data_path)
+        return fields
+
+
+@dataclass(frozen=True)
 class Jaxstanv5PriorPredictiveCommand:
     """An in-process jaxstanv5 prior-predictive command."""
 

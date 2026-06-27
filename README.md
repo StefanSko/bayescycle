@@ -29,14 +29,16 @@ By default this prepares:
 
 ```text
 run/model.ir.json
-run/data.json
+run/data.json       # canonical bayescycle.data.json.v1 snapshot
+run/manifest.json   # artifact format manifest
 run/dims.json       # optional; written only when the model declares dimension metadata
 ```
 
-and invokes the engine as:
+and invokes the Bayesite adapter, which materializes backend-private engine input
+under `run/.bayesite/`:
 
 ```bash
-bayesite sample --model run/model.ir.json --data run/data.json --out run/posterior.ndjson
+bayesite sample --model run/model.ir.json --data run/.bayesite/data.json --out run/posterior.ndjson
 ```
 
 The engine is asked to write draws to:
@@ -79,8 +81,9 @@ so the run directory always contains `run/posterior.ndjson`.
 bayescycle sample model.py --data data.json -o run/ -- --experimental-engine-flag
 ```
 
-The run-directory contract is documented in [`docs/run-directory-v0.md`](docs/run-directory-v0.md)
-and [`docs/posterior-draws-v0.md`](docs/posterior-draws-v0.md). Bayesite is the
+The run-directory contract is documented in [`docs/run-directory-v0.md`](docs/run-directory-v0.md),
+[`docs/canonical-data-artifacts.md`](docs/canonical-data-artifacts.md), and
+[`docs/posterior-draws-v0.md`](docs/posterior-draws-v0.md). Bayesite is the
 initial backend that emits this contract, but the contract is owned by
 `bayescycle` rather than by a specific sampler.
 
@@ -104,6 +107,10 @@ bayescycle sbc model.py --scenario scenario.json -o runs/sbc-0001 --replicates 1
 `prior-predictive` supports both backends. `simulate`, `recover`, and `sbc` are
 currently Bayesite-backed; selecting `--backend jaxstanv5` returns a clear
 unsupported-profile error rather than falling back silently.
+
+`simulate` writes `runs/sim-0001/simulated_data.json` as canonical
+`bayescycle.data.json.v1`, so a downstream sample command can use it with the
+same backend or with `--backend jaxstanv5` through the adapter boundary.
 
 Run-directory follow-up phases can be orchestrated without repeating owned paths:
 
