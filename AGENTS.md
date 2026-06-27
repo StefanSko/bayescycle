@@ -39,6 +39,12 @@ Avoid:
 - untyped dictionaries in core code
 - speculative abstractions
 
+## Tooling
+
+Use `uv run ...` for Python/project commands so scripts do not depend on a bare
+`python` executable being present on `PATH`. Prefer `uv run python ...` over
+`python ...` in docs, scripts, and ad-hoc validation commands.
+
 ## Validation
 
 Before reporting completion, normally run:
