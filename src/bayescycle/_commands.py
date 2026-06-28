@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bayescycle._artifacts import CanonicalDataArtifact, IrArtifact
 from bayescycle._model_loader import LoadedModel
+from bayescycle._run_artifacts.references import CanonicalDataArtifact, IrArtifact
 from bayescycle._settings import ResolvedPriorPredictiveSettings, ResolvedSamplerSettings
 
 

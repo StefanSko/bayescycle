@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bayescycle.data import (
+from bayescycle._run_artifacts.canonical_data import (
     DATA_DOC_FORMAT,
     DataDocError,
     data_doc_to_bayesite_json,

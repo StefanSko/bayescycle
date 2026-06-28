@@ -5,10 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact
 from bayescycle._commands import BayesiteCommand
 from bayescycle._engine import run_bayesite_command
 from bayescycle._errors import WorkflowError
+from bayescycle._run_artifacts.canonical_data import (
+    DataDocError,
+    read_data_doc,
+    write_bayesite_data_doc,
+    write_data_doc,
+)
+from bayescycle._run_artifacts.references import BackendPrivateArtifact, CanonicalDataArtifact
 from bayescycle._workflow import (
     DiagnoseRequest,
     DiagnoseRunContext,
@@ -27,7 +33,6 @@ from bayescycle._workflow import (
     SbcRequest,
     SimulateRequest,
 )
-from bayescycle.data import DataDocError, read_data_doc, write_bayesite_data_doc, write_data_doc
 
 
 @dataclass(frozen=True)

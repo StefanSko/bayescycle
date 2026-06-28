@@ -13,12 +13,18 @@ from typing import NotRequired, Protocol, TypedDict, cast
 from jaxstanv5.ir import canonical_bytes
 from jaxstanv5.model import ModelMeta
 
-from bayescycle._artifacts import CanonicalDataArtifact, IrArtifact
-from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import LoadedModel, load_model
+from bayescycle._run_artifacts.canonical_data import (
+    DATA_DOC_FORMAT,
+    DataDoc,
+    DataDocError,
+    read_data_doc,
+    write_data_doc,
+)
+from bayescycle._run_artifacts.dimensions import dims_sidecar_for_model, write_dims_sidecar
+from bayescycle._run_artifacts.references import CanonicalDataArtifact, IrArtifact
 from bayescycle._settings import SamplerSettings
-from bayescycle.data import DATA_DOC_FORMAT, DataDoc, DataDocError, read_data_doc, write_data_doc
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import bayescycle._dims as dims_module
+import bayescycle._run_artifacts.dimensions as dims_module
 from bayescycle._cli import (
     ExecutePlan,
     ShowPlan,
@@ -1052,7 +1052,10 @@ def test_simulate_invokes_engine_with_owned_truth_and_canonical_output(tmp_path:
         "variables": {"y": {"dtype": "float64", "shape": [], "values": [1.5]}},
     }
     assert json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))["artifacts"] == {
-        "data.json": {"format": "bayescycle.data.json.v1", "path": "data.json"},
+        "data.json": {
+            "format": "bayescycle.data.json.v1",
+            "path": "data.json",
+        },
         "simulated_data.json": {
             "format": "bayescycle.data.json.v1",
             "path": "simulated_data.json",

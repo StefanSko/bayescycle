@@ -7,8 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact, IrArtifact
 from bayescycle._errors import WorkflowError
+from bayescycle._run_artifacts.references import (
+    BackendPrivateArtifact,
+    CanonicalDataArtifact,
+    IrArtifact,
+)
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
     DiagnoseRequest,
