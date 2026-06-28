@@ -14,8 +14,8 @@
 
 ## Boundaries
 
-- Public input is loose CLI input; normalize it quickly into typed request and
-  prepared-run values.
+- Public input is loose CLI input; normalize it quickly into typed requests,
+  explicit run plans, and materialized commands.
 - The transition from `model.py` to IR is explicit and occurs before engine
   invocation.
 - Concrete data crossing workflow-stage boundaries uses

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -7,20 +8,26 @@ from pathlib import Path
 import pytest
 
 import bayescycle._dims as dims_module
-from bayescycle._cli import ExecutePlan, ShowPlan, _intent_from_flags, _intent_skips_execution, main
+from bayescycle._cli import (
+    ExecutePlan,
+    ShowPlan,
+    _intent_from_namespace,
+    _intent_skips_execution,
+    main,
+)
 
 
-def test_cli_intent_from_flags_maps_plan_flags_to_explicit_intent() -> None:
-    show_plan = _intent_from_flags(show_plan=True)
-    dry_run = _intent_from_flags(dry_run=True)
-    execute = _intent_from_flags()
+def test_cli_intent_from_namespace_maps_plan_flags_to_explicit_intent() -> None:
+    show_plan_intent = _intent_from_namespace(argparse.Namespace(show_plan=True))
+    legacy_plan_intent = _intent_from_namespace(argparse.Namespace(dry_run=True))
+    execute_intent = _intent_from_namespace(argparse.Namespace())
 
-    assert isinstance(show_plan, ShowPlan)
-    assert isinstance(dry_run, ShowPlan)
-    assert isinstance(execute, ExecutePlan)
-    assert _intent_skips_execution(show_plan)
-    assert _intent_skips_execution(dry_run)
-    assert not _intent_skips_execution(execute)
+    assert isinstance(show_plan_intent, ShowPlan)
+    assert isinstance(legacy_plan_intent, ShowPlan)
+    assert isinstance(execute_intent, ExecutePlan)
+    assert _intent_skips_execution(show_plan_intent)
+    assert _intent_skips_execution(legacy_plan_intent)
+    assert not _intent_skips_execution(execute_intent)
 
 
 FAKE_BAYESITE_USAGE = "\n".join(
@@ -619,7 +626,7 @@ def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -
     assert not stale_posterior.exists()
 
 
-def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
+def test_prior_predictive_dry_run_prints_plan_without_materializing_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -648,11 +655,7 @@ def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
     assert code == 0
     ir_path = output_dir / "model.ir.json"
     run_data_path = output_dir / "data.json"
-    assert json.loads(ir_path.read_text(encoding="utf-8"))["jaxstanv5_ir"] == 1
-    assert json.loads(run_data_path.read_text(encoding="utf-8")) == {
-        "format": "bayescycle.data.json.v1",
-        "variables": {},
-    }
+    assert not output_dir.exists()
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
         "data": str(run_data_path),
@@ -676,7 +679,7 @@ def test_prior_predictive_dry_run_prepares_run_and_prints_engine_command(
         "output": str(output_dir),
         "prior_predictive": str(output_dir / "prior_predictive.ndjson"),
     }
-    assert not (output_dir / "prior_predictive.ndjson").exists()
+    assert not output_dir.exists()
 
 
 def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
@@ -717,7 +720,7 @@ def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
         "prior_predictive": str(output_dir / "prior_predictive.ndjson"),
         "settings": {"draws": 4, "seed": 3},
     }
-    assert not (output_dir / "prior_predictive.ndjson").exists()
+    assert not output_dir.exists()
 
 
 def test_prior_predictive_jaxstanv5_backend_rejects_engine_passthrough_before_writes(
@@ -1045,7 +1048,7 @@ def test_sample_invalid_canonical_data_does_not_create_output_dir(
     assert not output_dir.exists()
 
 
-def test_recover_dry_run_prepares_scenario_command(
+def test_recover_dry_run_prints_plan_without_materializing_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1066,6 +1069,7 @@ def test_recover_dry_run_prepares_scenario_command(
     )
 
     assert code == 0
+    assert not output_dir.exists()
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
         "engine_command": [
@@ -1086,7 +1090,7 @@ def test_recover_dry_run_prepares_scenario_command(
     }
 
 
-def test_sbc_dry_run_prepares_scenario_command_with_replicates(
+def test_sbc_dry_run_prints_plan_with_replicates_without_materializing_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1109,6 +1113,7 @@ def test_sbc_dry_run_prepares_scenario_command_with_replicates(
     )
 
     assert code == 0
+    assert not output_dir.exists()
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
         "engine_command": [
@@ -1279,6 +1284,7 @@ def test_posterior_predictive_dry_run_uses_run_directory_artifacts_and_seed(
         "output": str(run_dir / "posterior_predictive.ndjson"),
         "run": str(run_dir),
     }
+    assert not (run_dir / ".bayesite" / "data.json").exists()
 
 
 def test_posterior_predictive_invokes_engine_with_run_directory_paths(tmp_path: Path) -> None:
@@ -1341,6 +1347,7 @@ def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
         "output": str(run_dir / "posterior_check.json"),
         "run": str(run_dir),
     }
+    assert not (run_dir / ".bayesite" / "data.json").exists()
 
 
 def test_posterior_check_reports_missing_required_artifacts(

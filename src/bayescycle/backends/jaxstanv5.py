@@ -10,7 +10,7 @@ from bayescycle._errors import WorkflowError
 from bayescycle._inproc import run_jaxstanv5_prior_predictive, run_jaxstanv5_sample
 from bayescycle._settings import PriorPredictiveSettings
 from bayescycle._workflow import (
-    PreparedModelRunContext,
+    PlannedModelRunContext,
     PriorPredictiveRequest,
     SampleRequest,
 )
@@ -39,7 +39,7 @@ class Jaxstanv5Backend:
     """In-process jaxstanv5 backend capabilities."""
 
     def plan_sample_action(
-        self, context: PreparedModelRunContext, request: SampleRequest
+        self, context: PlannedModelRunContext, request: SampleRequest
     ) -> Jaxstanv5SampleAction:
         """Plan the in-process jaxstanv5 sample action."""
         if request.engine_args:
@@ -57,7 +57,7 @@ class Jaxstanv5Backend:
         )
 
     def plan_prior_predictive_action(
-        self, context: PreparedModelRunContext, request: PriorPredictiveRequest
+        self, context: PlannedModelRunContext, request: PriorPredictiveRequest
     ) -> Jaxstanv5PriorPredictiveAction:
         """Plan the in-process jaxstanv5 prior-predictive action."""
         if request.engine_args:
@@ -77,7 +77,7 @@ class Jaxstanv5Backend:
         )
 
     def describe(self, action: Jaxstanv5Action) -> dict[str, object]:
-        """Return jaxstanv5-owned dry-run fields for a planned action."""
+        """Return jaxstanv5-owned plan fields for a planned action."""
         if isinstance(action, Jaxstanv5SampleAction):
             return {"backend": "jaxstanv5", "sampler": action.command.settings.as_json()}
         return {"backend": "jaxstanv5", "settings": action.command.settings.as_json()}

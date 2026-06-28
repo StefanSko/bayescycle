@@ -22,6 +22,7 @@ from bayescycle._inproc import InProcessBackendError
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
+    ActionBackend,
     DiagnoseRequest,
     PosteriorCheckRequest,
     PosteriorPredictiveRequest,
@@ -29,28 +30,33 @@ from bayescycle._workflow import (
     PriorPredictiveRequest,
     RecoverCheckRequest,
     RecoverRequest,
+    RunDirectoryCommandPlan,
     SampleBackend,
     SampleRequest,
     SbcRequest,
     SimulateRequest,
+    materialize_prior_predictive_run,
+    materialize_recover_run,
+    materialize_run_directory_command,
     materialize_sample_run,
+    materialize_sbc_run,
+    materialize_simulate_run,
+    plan_diagnose_run,
+    plan_posterior_check_run,
+    plan_posterior_predictive_run,
+    plan_prior_predictive_run,
+    plan_recover_check_run,
+    plan_recover_run,
     plan_sample_run,
-    prepare_diagnose_run,
-    prepare_posterior_check_run,
-    prepare_posterior_predictive_run,
-    prepare_prior_predictive_run,
-    prepare_recover_check_run,
-    prepare_recover_run,
-    prepare_sbc_run,
-    prepare_simulate_run,
-    prior_predictive_dry_run_document,
-    recover_dry_run_document,
-    run_command_dry_run_document,
+    plan_sbc_run,
+    plan_simulate_run,
+    prior_predictive_plan_document,
+    recover_plan_document,
+    run_command_plan_document,
     sample_plan_document,
-    sbc_dry_run_document,
-    simulate_dry_run_document,
+    sbc_plan_document,
+    simulate_plan_document,
 )
-from bayescycle.backends.bayesite import BayesitePreparedCommand
 from bayescycle.backends.bayesite_engine import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
@@ -59,12 +65,12 @@ from bayescycle.backends.bayesite_engine import (
 
 @dataclass(frozen=True)
 class ShowPlan:
-    """CLI intent to show the sample plan without executing it."""
+    """CLI intent to show a plan without executing it."""
 
 
 @dataclass(frozen=True)
 class ExecutePlan:
-    """CLI intent to execute the prepared command."""
+    """CLI intent to materialize and execute a plan."""
 
 
 type CliIntent = ShowPlan | ExecutePlan
@@ -170,7 +176,7 @@ def _build_parser() -> argparse.ArgumentParser:
     prior_predictive.add_argument(
         "--dry-run",
         action="store_true",
-        help="prepare IR/data files and print the planned backend command",
+        help="show the planned backend command without executing it",
     )
 
     simulate = subparsers.add_parser(
@@ -193,7 +199,7 @@ def _build_parser() -> argparse.ArgumentParser:
     simulate.add_argument(
         "--dry-run",
         action="store_true",
-        help="prepare IR/data/truth files and print the planned engine command",
+        help="show the planned engine command without executing it",
     )
 
     recover = subparsers.add_parser(
@@ -214,7 +220,7 @@ def _build_parser() -> argparse.ArgumentParser:
     recover.add_argument(
         "--dry-run",
         action="store_true",
-        help="prepare IR/scenario files and print the planned engine command",
+        help="show the planned engine command without executing it",
     )
 
     sbc = subparsers.add_parser(
@@ -236,7 +242,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sbc.add_argument(
         "--dry-run",
         action="store_true",
-        help="prepare IR/scenario files and print the planned engine command",
+        help="show the planned engine command without executing it",
     )
 
     diagnose = subparsers.add_parser(
@@ -344,13 +350,13 @@ def _sample(namespace: argparse.Namespace) -> int:
         explicit_engine = cast(str | None, namespace.engine)
         backend_name = cast(str, namespace.backend)
         _reject_engine_for_non_bayesite(backend_name, explicit_engine)
+        engine = explicit_engine or "bayesite"
         request = SampleRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=backend_name,
-            engine=explicit_engine or "bayesite",
             sampler=SamplerSettings(
                 seed=cast(str | None, namespace.seed),
                 chains=cast(str | None, namespace.chains),
@@ -362,14 +368,9 @@ def _sample(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        intent = _intent_from_flags(
-            show_plan=cast(bool, namespace.show_plan),
-            dry_run=cast(bool, namespace.dry_run),
-        )
+        intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(
-                request.engine, _intent_skips_execution(intent), "sample", "sample"
-            )
+            engine = _preflight_bayesite_for_intent(engine, intent, "sample", "sample")
             return _sample_with_backend(BayesiteBackend(engine), request, intent=intent)
         return _sample_with_backend(Jaxstanv5Backend(), request, intent=intent)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
@@ -395,25 +396,25 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
         explicit_engine = cast(str | None, namespace.engine)
         backend_name = cast(str, namespace.backend)
         _reject_engine_for_non_bayesite(backend_name, explicit_engine)
+        engine = explicit_engine or "bayesite"
         request = PriorPredictiveRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=backend_name,
-            engine=explicit_engine or "bayesite",
             seed=cast(str | None, namespace.seed),
             draws=cast(str | None, namespace.draws),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        dry_run = cast(bool, namespace.dry_run)
+        intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(
-                request.engine, dry_run, "prior-predictive", "prior-predictive"
+            engine = _preflight_bayesite_for_intent(
+                engine, intent, "prior-predictive", "prior-predictive"
             )
-            return _prior_predictive_with_backend(BayesiteBackend(engine), request, dry_run=dry_run)
-        return _prior_predictive_with_backend(Jaxstanv5Backend(), request, dry_run=dry_run)
+            return _prior_predictive_with_backend(BayesiteBackend(engine), request, intent=intent)
+        return _prior_predictive_with_backend(Jaxstanv5Backend(), request, intent=intent)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -423,22 +424,23 @@ def _prior_predictive_with_backend[ActionT, CommandT](
     backend: PriorPredictiveBackend[ActionT, CommandT],
     request: PriorPredictiveRequest,
     *,
-    dry_run: bool,
+    intent: CliIntent,
 ) -> int:
-    prepared = prepare_prior_predictive_run(request, backend)
-    if dry_run:
-        print(
-            json.dumps(
-                prior_predictive_dry_run_document(prepared, backend), indent=2, sort_keys=True
+    plan = plan_prior_predictive_run(request, backend)
+    match intent:
+        case ShowPlan():
+            print(
+                json.dumps(prior_predictive_plan_document(plan, backend), indent=2, sort_keys=True)
             )
-        )
-        return 0
-    command = backend.materialize(prepared.action)
-    return backend.execute(command)
+            return 0
+        case ExecutePlan():
+            command = materialize_prior_predictive_run(plan, backend)
+            return backend.execute(command)
 
 
 def _simulate(namespace: argparse.Namespace) -> int:
     try:
+        engine = cast(str | None, namespace.engine) or "bayesite"
         request = SimulateRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
@@ -446,26 +448,22 @@ def _simulate(namespace: argparse.Namespace) -> int:
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
-            engine=cast(str | None, namespace.engine) or "bayesite",
             seed=cast(str | None, namespace.seed),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        dry_run = cast(bool, namespace.dry_run)
-        engine = request.engine
+        intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(
-                request.engine, dry_run, "simulate", "simulate"
-            )
+            engine = _preflight_bayesite_for_intent(engine, intent, "simulate", "simulate")
         backend = BayesiteBackend(engine)
-        prepared = prepare_simulate_run(request, backend)
-        if dry_run:
-            print(
-                json.dumps(simulate_dry_run_document(prepared, backend), indent=2, sort_keys=True)
-            )
-            return 0
-        command = backend.materialize(prepared.action)
-        return backend.execute(command)
+        plan = plan_simulate_run(request, backend)
+        match intent:
+            case ShowPlan():
+                print(json.dumps(simulate_plan_document(plan, backend), indent=2, sort_keys=True))
+                return 0
+            case ExecutePlan():
+                command = materialize_simulate_run(plan, backend)
+                return backend.execute(command)
     except (WorkflowError, ModelLoadError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -473,29 +471,28 @@ def _simulate(namespace: argparse.Namespace) -> int:
 
 def _recover(namespace: argparse.Namespace) -> int:
     try:
+        engine = cast(str | None, namespace.engine) or "bayesite"
         request = RecoverRequest(
             model_path=cast(Path, namespace.model_path),
             scenario_path=cast(Path, namespace.scenario),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
-            engine=cast(str | None, namespace.engine) or "bayesite",
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        dry_run = cast(bool, namespace.dry_run)
-        engine = request.engine
+        intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(
-                request.engine, dry_run, "recover", "recover"
-            )
+            engine = _preflight_bayesite_for_intent(engine, intent, "recover", "recover")
         backend = BayesiteBackend(engine)
-        prepared = prepare_recover_run(request, backend)
-        if dry_run:
-            print(json.dumps(recover_dry_run_document(prepared, backend), indent=2, sort_keys=True))
-            return 0
-        command = backend.materialize(prepared.action)
-        return backend.execute(command)
+        plan = plan_recover_run(request, backend)
+        match intent:
+            case ShowPlan():
+                print(json.dumps(recover_plan_document(plan, backend), indent=2, sort_keys=True))
+                return 0
+            case ExecutePlan():
+                command = materialize_recover_run(plan, backend)
+                return backend.execute(command)
     except (WorkflowError, ModelLoadError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -503,28 +500,29 @@ def _recover(namespace: argparse.Namespace) -> int:
 
 def _sbc(namespace: argparse.Namespace) -> int:
     try:
+        engine = cast(str | None, namespace.engine) or "bayesite"
         request = SbcRequest(
             model_path=cast(Path, namespace.model_path),
             scenario_path=cast(Path, namespace.scenario),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
-            engine=cast(str | None, namespace.engine) or "bayesite",
             replicates=cast(str | None, namespace.replicates),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        dry_run = cast(bool, namespace.dry_run)
-        engine = request.engine
+        intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(request.engine, dry_run, "sbc", "sbc")
+            engine = _preflight_bayesite_for_intent(engine, intent, "sbc", "sbc")
         backend = BayesiteBackend(engine)
-        prepared = prepare_sbc_run(request, backend)
-        if dry_run:
-            print(json.dumps(sbc_dry_run_document(prepared, backend), indent=2, sort_keys=True))
-            return 0
-        command = backend.materialize(prepared.action)
-        return backend.execute(command)
+        plan = plan_sbc_run(request, backend)
+        match intent:
+            case ShowPlan():
+                print(json.dumps(sbc_plan_document(plan, backend), indent=2, sort_keys=True))
+                return 0
+            case ExecutePlan():
+                command = materialize_sbc_run(plan, backend)
+                return backend.execute(command)
     except (WorkflowError, ModelLoadError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -533,19 +531,16 @@ def _sbc(namespace: argparse.Namespace) -> int:
 def _diagnose(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
-        engine = cast(str | None, namespace.engine) or "bayesite"
-        dry_run = cast(bool, namespace.dry_run)
-        engine = _preflight_bayesite_unless_dry_run(engine, dry_run, "diagnose", "diagnose")
-        prepared = prepare_diagnose_run(
-            DiagnoseRequest(
-                run_dir=cast(Path, namespace.run_dir),
-                engine=engine,
-            )
+        intent = _intent_from_namespace(namespace)
+        engine = _preflight_bayesite_for_intent(
+            cast(str | None, namespace.engine) or "bayesite", intent, "diagnose", "diagnose"
         )
-        if dry_run:
-            print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
-            return 0
-        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
+        backend = BayesiteBackend(engine)
+        plan = plan_diagnose_run(
+            DiagnoseRequest(run_dir=cast(Path, namespace.run_dir)),
+            backend,
+        )
+        return _run_directory_with_backend(plan, backend, intent=intent)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -554,22 +549,22 @@ def _diagnose(namespace: argparse.Namespace) -> int:
 def _posterior_predictive(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
-        engine = cast(str | None, namespace.engine) or "bayesite"
-        dry_run = cast(bool, namespace.dry_run)
-        engine = _preflight_bayesite_unless_dry_run(
-            engine, dry_run, "posterior-predictive", "posterior-predictive"
+        intent = _intent_from_namespace(namespace)
+        engine = _preflight_bayesite_for_intent(
+            cast(str | None, namespace.engine) or "bayesite",
+            intent,
+            "posterior-predictive",
+            "posterior-predictive",
         )
-        prepared = prepare_posterior_predictive_run(
+        backend = BayesiteBackend(engine)
+        plan = plan_posterior_predictive_run(
             PosteriorPredictiveRequest(
                 run_dir=cast(Path, namespace.run_dir),
-                engine=engine,
                 seed=cast(str, namespace.seed),
-            )
+            ),
+            backend,
         )
-        if dry_run:
-            print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
-            return 0
-        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
+        return _run_directory_with_backend(plan, backend, intent=intent)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -580,25 +575,23 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
         explicit_engine = cast(str | None, namespace.engine)
         backend_name = cast(str, namespace.backend)
         _reject_engine_for_non_bayesite(backend_name, explicit_engine)
+        intent = _intent_from_namespace(namespace)
         engine = explicit_engine or "bayesite"
-        dry_run = cast(bool, namespace.dry_run)
         if backend_name == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(
-                engine, dry_run, "posterior-check", "posterior-check"
+            engine = _preflight_bayesite_for_intent(
+                engine, intent, "posterior-check", "posterior-check"
             )
-        prepared = prepare_posterior_check_run(
+        backend = BayesiteBackend(engine)
+        plan = plan_posterior_check_run(
             PosteriorCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
                 seed=cast(str | None, namespace.seed),
                 backend=backend_name,
-                engine=engine,
                 engine_args=tuple(cast(list[str], namespace.engine_args)),
-            )
+            ),
+            backend,
         )
-        if dry_run:
-            print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
-            return 0
-        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
+        return _run_directory_with_backend(plan, backend, intent=intent)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -609,30 +602,43 @@ def _recover_check(namespace: argparse.Namespace) -> int:
         explicit_engine = cast(str | None, namespace.engine)
         backend_name = cast(str, namespace.backend)
         _reject_engine_for_non_bayesite(backend_name, explicit_engine)
+        intent = _intent_from_namespace(namespace)
         engine = explicit_engine or "bayesite"
-        dry_run = cast(bool, namespace.dry_run)
         if backend_name == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(
-                engine, dry_run, "recover-check", "recover-check"
+            engine = _preflight_bayesite_for_intent(
+                engine, intent, "recover-check", "recover-check"
             )
-        prepared = prepare_recover_check_run(
+        backend = BayesiteBackend(engine)
+        plan = plan_recover_check_run(
             RecoverCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
                 truth_path=cast(Path, namespace.truth),
                 targets_path=cast(Path | None, namespace.targets),
                 interval=cast(str | None, namespace.interval),
                 backend=backend_name,
-                engine=engine,
                 engine_args=tuple(cast(list[str], namespace.engine_args)),
-            )
+            ),
+            backend,
         )
-        if dry_run:
-            print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
-            return 0
-        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
+        return _run_directory_with_backend(plan, backend, intent=intent)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _run_directory_with_backend[ActionT, CommandT](
+    plan: RunDirectoryCommandPlan[ActionT],
+    backend: ActionBackend[ActionT, CommandT],
+    *,
+    intent: CliIntent,
+) -> int:
+    match intent:
+        case ShowPlan():
+            print(json.dumps(run_command_plan_document(plan, backend), indent=2, sort_keys=True))
+            return 0
+        case ExecutePlan():
+            command = materialize_run_directory_command(plan, backend)
+            return backend.execute(command)
 
 
 def _workflow_plan(namespace: argparse.Namespace) -> int:
@@ -669,8 +675,8 @@ def _workflow_plan(namespace: argparse.Namespace) -> int:
         return 2
 
 
-def _intent_from_flags(*, show_plan: bool = False, dry_run: bool = False) -> CliIntent:
-    if show_plan or dry_run:
+def _intent_from_namespace(namespace: argparse.Namespace) -> CliIntent:
+    if bool(getattr(namespace, "show_plan", False)) or bool(getattr(namespace, "dry_run", False)):
         return ShowPlan()
     return ExecutePlan()
 
@@ -679,8 +685,8 @@ def _intent_skips_execution(intent: CliIntent) -> bool:
     return isinstance(intent, ShowPlan)
 
 
-def _preflight_bayesite_unless_dry_run(engine: str, dry_run: bool, command: str, stage: str) -> str:
-    if _intent_skips_execution(_intent_from_flags(dry_run=dry_run)):
+def _preflight_bayesite_for_intent(engine: str, intent: CliIntent, command: str, stage: str) -> str:
+    if _intent_skips_execution(intent):
         return engine
     info = preflight_bayesite_engine(engine, (BayesiteCommandRequirement(command, stage),))
     return str(info.executable)
@@ -688,7 +694,9 @@ def _preflight_bayesite_unless_dry_run(engine: str, dry_run: bool, command: str,
 
 def _reject_forwarded_engine_args(engine_args: tuple[str, ...]) -> None:
     if engine_args:
-        raise WorkflowError("engine passthrough after -- is only supported for sample")
+        raise WorkflowError(
+            "engine passthrough after -- is only supported for model-level backend commands"
+        )
 
 
 def _reject_engine_for_non_bayesite(backend: str, explicit_engine: str | None) -> None:

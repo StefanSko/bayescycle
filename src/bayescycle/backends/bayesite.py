@@ -10,9 +10,17 @@ from bayescycle._commands import BayesiteCommand
 from bayescycle._engine import run_bayesite_command
 from bayescycle._errors import WorkflowError
 from bayescycle._workflow import (
-    PreparedModelRunContext,
-    PreparedModelScenarioContext,
+    DiagnoseRequest,
+    DiagnoseRunContext,
+    PlannedModelRunContext,
+    PlannedModelScenarioContext,
+    PosteriorCheckRequest,
+    PosteriorCheckRunContext,
+    PosteriorPredictiveRequest,
+    PosteriorPredictiveRunContext,
     PriorPredictiveRequest,
+    RecoverCheckRequest,
+    RecoverCheckRunContext,
     RecoverRequest,
     SampleRequest,
     SbcRequest,
@@ -61,7 +69,7 @@ class BayesiteBackend:
     engine: str
 
     def plan_sample_action(
-        self, context: PreparedModelRunContext, request: SampleRequest
+        self, context: PlannedModelRunContext, request: SampleRequest
     ) -> BayesiteAction:
         """Plan the Bayesite sample action for a planned run directory."""
         draws_path = context.output_dir / "posterior.ndjson"
@@ -91,9 +99,9 @@ class BayesiteBackend:
         )
 
     def plan_prior_predictive_action(
-        self, context: PreparedModelRunContext, request: PriorPredictiveRequest
+        self, context: PlannedModelRunContext, request: PriorPredictiveRequest
     ) -> BayesiteAction:
-        """Plan the Bayesite prior-predictive action for a prepared run directory."""
+        """Plan the Bayesite prior-predictive action for a planned run directory."""
         output_path = context.output_dir / "prior_predictive.ndjson"
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
         return BayesiteAction(
@@ -122,9 +130,9 @@ class BayesiteBackend:
         )
 
     def plan_simulate_action(
-        self, context: PreparedModelRunContext, request: SimulateRequest, truth_path: Path
+        self, context: PlannedModelRunContext, request: SimulateRequest, truth_path: Path
     ) -> BayesiteAction:
-        """Plan the Bayesite simulate action for a prepared run directory."""
+        """Plan the Bayesite simulate action for a planned run directory."""
         canonical_output_path = CanonicalDataArtifact(context.output_dir / "simulated_data.json")
         native_output_path = BackendPrivateArtifact(
             _backend_dir(context.output_dir) / "simulated_data.json"
@@ -163,9 +171,9 @@ class BayesiteBackend:
         )
 
     def plan_recover_action(
-        self, context: PreparedModelScenarioContext, request: RecoverRequest
+        self, context: PlannedModelScenarioContext, request: RecoverRequest
     ) -> BayesiteAction:
-        """Plan the Bayesite recover action for a prepared run directory."""
+        """Plan the Bayesite recover action for a planned run directory."""
         output_path = context.output_dir / "recovery.json"
         return BayesiteAction(
             engine_command=BayesiteCommand(
@@ -185,9 +193,9 @@ class BayesiteBackend:
         )
 
     def plan_sbc_action(
-        self, context: PreparedModelScenarioContext, request: SbcRequest
+        self, context: PlannedModelScenarioContext, request: SbcRequest
     ) -> BayesiteAction:
-        """Plan the Bayesite SBC action for a prepared run directory."""
+        """Plan the Bayesite SBC action for a planned run directory."""
         output_path = context.output_dir / "sbc.json"
         return BayesiteAction(
             engine_command=BayesiteCommand(
@@ -207,8 +215,114 @@ class BayesiteBackend:
             )
         )
 
+    def plan_diagnose_action(
+        self, context: DiagnoseRunContext, request: DiagnoseRequest
+    ) -> BayesiteAction:
+        """Plan the Bayesite diagnose action for an existing run directory."""
+        return BayesiteAction(
+            engine_command=BayesiteCommand(
+                argv=(
+                    self.engine,
+                    "diagnose",
+                    "--fit",
+                    str(context.fit_path),
+                    "--out",
+                    str(context.output_path),
+                ),
+                output_paths=(context.output_path,),
+            )
+        )
+
+    def plan_posterior_predictive_action(
+        self, context: PosteriorPredictiveRunContext, request: PosteriorPredictiveRequest
+    ) -> BayesiteAction:
+        """Plan the Bayesite posterior-predictive action for an existing run directory."""
+        engine_data_path = BackendPrivateArtifact(_backend_dir(context.run_dir) / "data.json")
+        return BayesiteAction(
+            engine_command=BayesiteCommand(
+                argv=(
+                    self.engine,
+                    "posterior-predictive",
+                    "--model",
+                    str(context.model_path.path),
+                    "--data",
+                    str(engine_data_path.path),
+                    "--fit",
+                    str(context.fit_path),
+                    "--seed",
+                    request.seed,
+                    "--out",
+                    str(context.output_path),
+                ),
+                output_paths=(context.output_path,),
+            ),
+            input_materializations=(
+                MaterializeBayesiteData(
+                    canonical_path=context.data_path,
+                    native_path=engine_data_path,
+                ),
+            ),
+        )
+
+    def plan_posterior_check_action(
+        self, context: PosteriorCheckRunContext, request: PosteriorCheckRequest
+    ) -> BayesiteAction:
+        """Plan the Bayesite posterior-check action for an existing run directory."""
+        engine_data_path = BackendPrivateArtifact(_backend_dir(context.run_dir) / "data.json")
+        return BayesiteAction(
+            engine_command=BayesiteCommand(
+                argv=(
+                    self.engine,
+                    "posterior-check",
+                    "--model",
+                    str(context.model_path.path),
+                    "--data",
+                    str(engine_data_path.path),
+                    "--fit",
+                    str(context.fit_path),
+                    *_optional_arg("--seed", request.seed),
+                    "--out",
+                    str(context.output_path),
+                    *request.engine_args,
+                ),
+                output_paths=(context.output_path,),
+            ),
+            input_materializations=(
+                MaterializeBayesiteData(
+                    canonical_path=context.data_path,
+                    native_path=engine_data_path,
+                ),
+            ),
+        )
+
+    def plan_recover_check_action(
+        self, context: RecoverCheckRunContext, request: RecoverCheckRequest
+    ) -> BayesiteAction:
+        """Plan the Bayesite recover-check action for an existing run directory."""
+        targets_args = (
+            ("--targets", str(context.targets_path)) if context.targets_path is not None else ()
+        )
+        return BayesiteAction(
+            engine_command=BayesiteCommand(
+                argv=(
+                    self.engine,
+                    "recover-check",
+                    "--fit",
+                    str(context.fit_path),
+                    "--truth",
+                    str(context.truth_path),
+                    *targets_args,
+                    *_optional_arg("--interval", request.interval),
+                    "--out",
+                    str(context.output_path),
+                    *request.engine_args,
+                ),
+                output_paths=(context.output_path,),
+            )
+        )
+
     def describe(self, action: BayesiteAction) -> dict[str, object]:
-        """Return Bayesite-owned dry-run fields for a planned action."""
+        """Return Bayesite-owned plan fields for a planned action."""
         fields: dict[str, object] = {"engine_command": list(action.engine_command.argv)}
         if action.postprocess:
             fields["backend_simulated_data"] = str(action.postprocess[0].native_path.path)
@@ -231,18 +345,6 @@ class BayesiteBackend:
         for step in command.postprocess:
             _canonicalize_generated_data(step)
         return 0
-
-
-def materialize_run_data_for_bayesite(run_dir: Path) -> BackendPrivateArtifact:
-    """Materialize ``run/data.json`` into Bayesite's backend-private data file."""
-    engine_data_path = BackendPrivateArtifact(_backend_dir(run_dir) / "data.json")
-    _materialize_engine_data(
-        MaterializeBayesiteData(
-            canonical_path=CanonicalDataArtifact(run_dir / "data.json"),
-            native_path=engine_data_path,
-        )
-    )
-    return engine_data_path
 
 
 def _materialize_engine_data(step: MaterializeBayesiteData) -> None:
