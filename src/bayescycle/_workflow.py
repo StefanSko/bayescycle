@@ -11,12 +11,12 @@ from typing import NotRequired, Protocol, TypedDict, cast
 from jaxstanv5.ir import canonical_bytes
 from jaxstanv5.model import ModelMeta
 
-from bayescycle._commands import BayesiteCommand, DryRunCommand
+from bayescycle._commands import BayesiteCommand
 from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import LoadedModel, load_model
 from bayescycle._settings import SamplerSettings
-from bayescycle.data import DataDocError, read_data_doc, write_data_doc
+from bayescycle.data import DataDoc, DataDocError, read_data_doc, write_data_doc
 
 
 @dataclass(frozen=True)
@@ -129,6 +129,7 @@ class PreparedModelRunContext:
     data_path: Path
     dims_path: Path | None
     output_dir: Path
+    data_doc: DataDoc
 
 
 @dataclass(frozen=True)
@@ -143,82 +144,106 @@ class PreparedModelScenarioContext:
     output_dir: Path
 
 
-class SampleBackend[CommandT: DryRunCommand](Protocol):
-    """Backend capability for the sample workflow operation."""
-
-    def build_sample_command(
-        self, context: PreparedModelRunContext, request: SampleRequest
-    ) -> CommandT:
-        """Build a typed sample command from a prepared run context."""
+class BackendExecutor[CommandT](Protocol):
+    """Backend capability for executing a materialized command."""
 
     def execute(self, command: CommandT) -> int:
-        """Execute a typed sample command."""
+        """Execute a typed backend command."""
 
 
-class PriorPredictiveBackend[CommandT: DryRunCommand](Protocol):
+class SampleBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
+    """Backend capability for the sample workflow operation."""
+
+    def plan_sample_action(
+        self, context: PreparedModelRunContext, request: SampleRequest
+    ) -> ActionT:
+        """Plan a backend-private sample action from a planned run context."""
+
+    def describe(self, action: ActionT) -> dict[str, object]:
+        """Return backend-owned dry-run fields for an action."""
+
+    def materialize(self, action: ActionT) -> CommandT:
+        """Materialize backend-private inputs and return an executable command."""
+
+
+class PriorPredictiveBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
     """Backend capability for the prior-predictive workflow operation."""
 
-    def build_prior_predictive_command(
+    def plan_prior_predictive_action(
         self, context: PreparedModelRunContext, request: PriorPredictiveRequest
-    ) -> CommandT:
-        """Build a typed prior-predictive command from a prepared run context."""
+    ) -> ActionT:
+        """Plan a backend-private prior-predictive action."""
 
-    def run_prior_predictive(self, command: CommandT) -> int:
-        """Execute a typed prior-predictive command."""
+    def describe(self, action: ActionT) -> dict[str, object]:
+        """Return backend-owned dry-run fields for an action."""
+
+    def materialize(self, action: ActionT) -> CommandT:
+        """Materialize backend-private inputs and return an executable command."""
 
 
-class SimulateBackend[CommandT: DryRunCommand](Protocol):
+class SimulateBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
     """Backend capability for the simulate workflow operation."""
 
-    def build_simulate_command(
+    def plan_simulate_action(
         self, context: PreparedModelRunContext, request: SimulateRequest, truth_path: Path
-    ) -> CommandT:
-        """Build a typed simulate command from a prepared run context."""
+    ) -> ActionT:
+        """Plan a backend-private simulate action from a prepared run context."""
 
-    def run_simulate(self, command: CommandT) -> int:
-        """Execute a typed simulate command."""
+    def describe(self, action: ActionT) -> dict[str, object]:
+        """Return backend-owned dry-run fields for an action."""
+
+    def materialize(self, action: ActionT) -> CommandT:
+        """Materialize backend-private inputs and return an executable command."""
 
 
-class RecoverBackend[CommandT: DryRunCommand](Protocol):
+class RecoverBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
     """Backend capability for the recover workflow operation."""
 
-    def build_recover_command(
+    def plan_recover_action(
         self, context: PreparedModelScenarioContext, request: RecoverRequest
-    ) -> CommandT:
-        """Build a typed recover command from a prepared scenario context."""
+    ) -> ActionT:
+        """Plan a backend-private recover action from a prepared scenario context."""
 
-    def run_recover(self, command: CommandT) -> int:
-        """Execute a typed recover command."""
+    def describe(self, action: ActionT) -> dict[str, object]:
+        """Return backend-owned dry-run fields for an action."""
+
+    def materialize(self, action: ActionT) -> CommandT:
+        """Materialize backend-private inputs and return an executable command."""
 
 
-class SbcBackend[CommandT: DryRunCommand](Protocol):
+class SbcBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
     """Backend capability for the SBC workflow operation."""
 
-    def build_sbc_command(
+    def plan_sbc_action(
         self, context: PreparedModelScenarioContext, request: SbcRequest
-    ) -> CommandT:
-        """Build a typed SBC command from a prepared scenario context."""
+    ) -> ActionT:
+        """Plan a backend-private SBC action from a prepared scenario context."""
 
-    def run_sbc(self, command: CommandT) -> int:
-        """Execute a typed SBC command."""
+    def describe(self, action: ActionT) -> dict[str, object]:
+        """Return backend-owned dry-run fields for an action."""
+
+    def materialize(self, action: ActionT) -> CommandT:
+        """Materialize backend-private inputs and return an executable command."""
 
 
 @dataclass(frozen=True)
-class SampleRunPlan[CommandT: DryRunCommand]:
-    """A sample run plan with prepared run-directory inputs and command."""
+class SampleRunPlan[ActionT]:
+    """A sample run plan with workflow-owned paths and backend action."""
 
     model_name: str
+    loaded_model: LoadedModel
     ir_path: Path
     data_path: Path
     dims_path: Path | None
     output_dir: Path
+    data_doc: DataDoc
     draws_path: Path
-    command: CommandT
+    action: ActionT
 
 
 @dataclass(frozen=True)
-class PreparedPriorPredictiveRun[CommandT: DryRunCommand]:
-    """A run directory and prior-predictive command produced from a request."""
+class PreparedPriorPredictiveRun[ActionT]:
+    """A run directory and prior-predictive backend action produced from a request."""
 
     model_name: str
     ir_path: Path
@@ -226,12 +251,12 @@ class PreparedPriorPredictiveRun[CommandT: DryRunCommand]:
     dims_path: Path | None
     output_dir: Path
     prior_predictive_path: Path
-    command: CommandT
+    action: ActionT
 
 
 @dataclass(frozen=True)
-class PreparedSimulateRun[CommandT: DryRunCommand]:
-    """A run directory and simulate command produced from a request."""
+class PreparedSimulateRun[ActionT]:
+    """A run directory and simulate backend action produced from a request."""
 
     model_name: str
     ir_path: Path
@@ -240,12 +265,12 @@ class PreparedSimulateRun[CommandT: DryRunCommand]:
     dims_path: Path | None
     output_dir: Path
     simulated_data_path: Path
-    command: CommandT
+    action: ActionT
 
 
 @dataclass(frozen=True)
-class PreparedRecoverRun[CommandT: DryRunCommand]:
-    """A run directory and recover command produced from a request."""
+class PreparedRecoverRun[ActionT]:
+    """A run directory and recover backend action produced from a request."""
 
     model_name: str
     ir_path: Path
@@ -253,12 +278,12 @@ class PreparedRecoverRun[CommandT: DryRunCommand]:
     dims_path: Path | None
     output_dir: Path
     recovery_path: Path
-    command: CommandT
+    action: ActionT
 
 
 @dataclass(frozen=True)
-class PreparedSbcRun[CommandT: DryRunCommand]:
-    """A run directory and SBC command produced from a request."""
+class PreparedSbcRun[ActionT]:
+    """A run directory and SBC backend action produced from a request."""
 
     model_name: str
     ir_path: Path
@@ -266,7 +291,7 @@ class PreparedSbcRun[CommandT: DryRunCommand]:
     dims_path: Path | None
     output_dir: Path
     sbc_path: Path
-    command: CommandT
+    action: ActionT
 
 
 @dataclass(frozen=True)
@@ -336,48 +361,53 @@ class RunCommandDryRunDocument(TypedDict):
     engine_command: list[str]
 
 
-def plan_sample_run[CommandT: DryRunCommand](
-    request: SampleRequest, backend: SampleBackend[CommandT]
-) -> SampleRunPlan[CommandT]:
-    """Plan a sample run and prepare its run-directory inputs."""
+def plan_sample_run[ActionT, CommandT](
+    request: SampleRequest, backend: SampleBackend[ActionT, CommandT]
+) -> SampleRunPlan[ActionT]:
+    """Plan a sample run without durable filesystem writes."""
     _validate_backend(request.backend)
     output_dir = request.output_dir.expanduser().resolve()
     draws_path = output_dir / "posterior.ndjson"
     _reject_reserved_engine_args(request.engine_args, draws_path)
     _reject_in_process_engine_args(request.backend, request.engine_args)
-    context = prepare_model_run_context(
+    context = plan_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
         data_path=request.data_path,
         output_dir=output_dir,
         force=request.force,
     )
-    command = backend.build_sample_command(context, request)
+    action = backend.plan_sample_action(context, request)
     return SampleRunPlan(
         model_name=context.model_name,
+        loaded_model=context.loaded_model,
         ir_path=context.ir_path,
         data_path=context.data_path,
         dims_path=context.dims_path,
         output_dir=context.output_dir,
+        data_doc=context.data_doc,
         draws_path=draws_path,
-        command=command,
+        action=action,
     )
 
 
-def materialize_sample_run[CommandT: DryRunCommand](
-    plan: SampleRunPlan[CommandT], backend: SampleBackend[CommandT]
-) -> SampleRunPlan[CommandT]:
-    """Materialize a planned sample run for execution.
+def materialize_sample_run[ActionT, CommandT](
+    plan: SampleRunPlan[ActionT], backend: SampleBackend[ActionT, CommandT]
+) -> CommandT:
+    """Materialize a planned sample run for execution."""
+    _ensure_output_dir(plan.output_dir, force=True)
+    plan.ir_path.write_bytes(canonical_bytes(plan.loaded_model.meta))
+    write_data_doc(plan.data_path, plan.data_doc)
+    _write_data_manifest(plan.output_dir, plan.data_path)
+    _write_optional_dims_sidecar(
+        plan.output_dir, plan.loaded_model.model_cls, plan.loaded_model.meta
+    )
+    return backend.materialize(plan.action)
 
-    Sample planning currently prepares run-directory inputs; this function marks the
-    explicit transition from CLI execution intent to an executable prepared run.
-    """
-    return plan
 
-
-def prepare_prior_predictive_run[CommandT: DryRunCommand](
-    request: PriorPredictiveRequest, backend: PriorPredictiveBackend[CommandT]
-) -> PreparedPriorPredictiveRun[CommandT]:
+def prepare_prior_predictive_run[ActionT, CommandT](
+    request: PriorPredictiveRequest, backend: PriorPredictiveBackend[ActionT, CommandT]
+) -> PreparedPriorPredictiveRun[ActionT]:
     """Prepare a prior-predictive run directory and command."""
     _validate_backend(request.backend)
     output_dir = request.output_dir.expanduser().resolve()
@@ -391,7 +421,7 @@ def prepare_prior_predictive_run[CommandT: DryRunCommand](
         output_dir=output_dir,
         force=request.force,
     )
-    command = backend.build_prior_predictive_command(context, request)
+    action = backend.plan_prior_predictive_action(context, request)
     return PreparedPriorPredictiveRun(
         model_name=context.model_name,
         ir_path=context.ir_path,
@@ -399,13 +429,13 @@ def prepare_prior_predictive_run[CommandT: DryRunCommand](
         dims_path=context.dims_path,
         output_dir=context.output_dir,
         prior_predictive_path=output_path,
-        command=command,
+        action=action,
     )
 
 
-def prepare_simulate_run[CommandT: DryRunCommand](
-    request: SimulateRequest, backend: SimulateBackend[CommandT]
-) -> PreparedSimulateRun[CommandT]:
+def prepare_simulate_run[ActionT, CommandT](
+    request: SimulateRequest, backend: SimulateBackend[ActionT, CommandT]
+) -> PreparedSimulateRun[ActionT]:
     """Prepare a simulation run directory and command."""
     _validate_bayesite_only(request.backend, "simulate")
     output_dir = request.output_dir.expanduser().resolve()
@@ -421,7 +451,7 @@ def prepare_simulate_run[CommandT: DryRunCommand](
     )
     truth_path = _copy_required_input(truth_source, output_dir / "truth.json", "truth")
     _write_data_manifest(output_dir, context.data_path, (output_path,))
-    command = backend.build_simulate_command(context, request, truth_path)
+    action = backend.plan_simulate_action(context, request, truth_path)
     return PreparedSimulateRun(
         model_name=context.model_name,
         ir_path=context.ir_path,
@@ -430,13 +460,13 @@ def prepare_simulate_run[CommandT: DryRunCommand](
         dims_path=context.dims_path,
         output_dir=context.output_dir,
         simulated_data_path=output_path,
-        command=command,
+        action=action,
     )
 
 
-def prepare_recover_run[CommandT: DryRunCommand](
-    request: RecoverRequest, backend: RecoverBackend[CommandT]
-) -> PreparedRecoverRun[CommandT]:
+def prepare_recover_run[ActionT, CommandT](
+    request: RecoverRequest, backend: RecoverBackend[ActionT, CommandT]
+) -> PreparedRecoverRun[ActionT]:
     """Prepare a single-scenario recovery run directory and command."""
     _validate_bayesite_only(request.backend, "recover")
     output_dir = request.output_dir.expanduser().resolve()
@@ -449,7 +479,7 @@ def prepare_recover_run[CommandT: DryRunCommand](
         output_dir=output_dir,
         force=request.force,
     )
-    command = backend.build_recover_command(context, request)
+    action = backend.plan_recover_action(context, request)
     return PreparedRecoverRun(
         model_name=context.model_name,
         ir_path=context.ir_path,
@@ -457,13 +487,13 @@ def prepare_recover_run[CommandT: DryRunCommand](
         dims_path=context.dims_path,
         output_dir=context.output_dir,
         recovery_path=output_path,
-        command=command,
+        action=action,
     )
 
 
-def prepare_sbc_run[CommandT: DryRunCommand](
-    request: SbcRequest, backend: SbcBackend[CommandT]
-) -> PreparedSbcRun[CommandT]:
+def prepare_sbc_run[ActionT, CommandT](
+    request: SbcRequest, backend: SbcBackend[ActionT, CommandT]
+) -> PreparedSbcRun[ActionT]:
     """Prepare an SBC run directory and command."""
     _validate_bayesite_only(request.backend, "sbc")
     output_dir = request.output_dir.expanduser().resolve()
@@ -476,7 +506,7 @@ def prepare_sbc_run[CommandT: DryRunCommand](
         output_dir=output_dir,
         force=request.force,
     )
-    command = backend.build_sbc_command(context, request)
+    action = backend.plan_sbc_action(context, request)
     return PreparedSbcRun(
         model_name=context.model_name,
         ir_path=context.ir_path,
@@ -484,7 +514,44 @@ def prepare_sbc_run[CommandT: DryRunCommand](
         dims_path=context.dims_path,
         output_dir=context.output_dir,
         sbc_path=output_path,
-        command=command,
+        action=action,
+    )
+
+
+def plan_model_run_context(
+    *,
+    model_path: Path,
+    model_name: str | None,
+    data_path: Path,
+    output_dir: Path,
+    force: bool,
+) -> PreparedModelRunContext:
+    """Plan shared model/data run directory inputs without writing them."""
+    source_data_path = _require_input_file(data_path, "data")
+    try:
+        data_doc = read_data_doc(source_data_path)
+    except DataDocError as exc:
+        raise WorkflowError(f"invalid data file: {exc}") from exc
+
+    _validate_output_dir(output_dir, force=force)
+    loaded_model = load_model(model_path, model_name)
+    try:
+        dims_path = (
+            output_dir / "dims.json"
+            if dims_sidecar_for_model(loaded_model.model_cls, loaded_model.meta) is not None
+            else None
+        )
+    except ValueError as exc:
+        raise WorkflowError(f"invalid model dimension metadata: {exc}") from exc
+
+    return PreparedModelRunContext(
+        model_name=loaded_model.name,
+        loaded_model=loaded_model,
+        ir_path=output_dir / "model.ir.json",
+        data_path=output_dir / "data.json",
+        dims_path=dims_path,
+        output_dir=output_dir,
+        data_doc=data_doc,
     )
 
 
@@ -497,32 +564,29 @@ def prepare_model_run_context(
     force: bool,
 ) -> PreparedModelRunContext:
     """Prepare the shared model/data run directory inputs for model-level commands."""
-    source_data_path = _require_input_file(data_path, "data")
-    try:
-        data_doc = read_data_doc(source_data_path)
-    except DataDocError as exc:
-        raise WorkflowError(f"invalid data file: {exc}") from exc
-
-    _ensure_output_dir(output_dir, force=force)
-
-    loaded_model = load_model(model_path, model_name)
-
-    ir_path = output_dir / "model.ir.json"
-    ir_path.write_bytes(canonical_bytes(loaded_model.meta))
-
-    run_data_path = output_dir / "data.json"
-    write_data_doc(run_data_path, data_doc)
-    _write_data_manifest(output_dir, run_data_path)
-
-    dims_path = _write_optional_dims_sidecar(output_dir, loaded_model.model_cls, loaded_model.meta)
+    context = plan_model_run_context(
+        model_path=model_path,
+        model_name=model_name,
+        data_path=data_path,
+        output_dir=output_dir,
+        force=force,
+    )
+    _ensure_output_dir(output_dir, force=True)
+    context.ir_path.write_bytes(canonical_bytes(context.loaded_model.meta))
+    write_data_doc(context.data_path, context.data_doc)
+    _write_data_manifest(output_dir, context.data_path)
+    dims_path = _write_optional_dims_sidecar(
+        output_dir, context.loaded_model.model_cls, context.loaded_model.meta
+    )
 
     return PreparedModelRunContext(
-        model_name=loaded_model.name,
-        loaded_model=loaded_model,
-        ir_path=ir_path,
-        data_path=run_data_path,
+        model_name=context.model_name,
+        loaded_model=context.loaded_model,
+        ir_path=context.ir_path,
+        data_path=context.data_path,
         dims_path=dims_path,
-        output_dir=output_dir,
+        output_dir=context.output_dir,
+        data_doc=context.data_doc,
     )
 
 
@@ -558,8 +622,8 @@ def prepare_model_scenario_context(
     )
 
 
-def sample_plan_document[CommandT: DryRunCommand](
-    run: SampleRunPlan[CommandT],
+def sample_plan_document[ActionT, CommandT](
+    run: SampleRunPlan[ActionT], backend: SampleBackend[ActionT, CommandT]
 ) -> DryRunDocument:
     """Return a serializable sample plan summary."""
     document: dict[str, object] = {
@@ -569,36 +633,37 @@ def sample_plan_document[CommandT: DryRunCommand](
         "draws": str(run.draws_path),
         "output": str(run.output_dir),
     }
-    document.update(run.command.dry_run_fields())
+    document.update(backend.describe(run.action))
     if run.dims_path is not None:
         document["dims"] = str(run.dims_path)
     return cast(DryRunDocument, document)
 
 
-def prior_predictive_dry_run_document[CommandT: DryRunCommand](
-    run: PreparedPriorPredictiveRun[CommandT],
+def prior_predictive_dry_run_document[ActionT, CommandT](
+    run: PreparedPriorPredictiveRun[ActionT],
+    backend: PriorPredictiveBackend[ActionT, CommandT],
 ) -> ModelCommandDryRunDocument:
     """Return a serializable prior-predictive dry-run summary."""
     return _model_command_document(
         model_name=run.model_name,
         ir_path=run.ir_path,
         output_dir=run.output_dir,
-        command=run.command,
+        description=backend.describe(run.action),
         dims_path=run.dims_path,
         data_path=run.data_path,
         extra={"prior_predictive": str(run.prior_predictive_path)},
     )
 
 
-def simulate_dry_run_document[CommandT: DryRunCommand](
-    run: PreparedSimulateRun[CommandT],
+def simulate_dry_run_document[ActionT, CommandT](
+    run: PreparedSimulateRun[ActionT], backend: SimulateBackend[ActionT, CommandT]
 ) -> ModelCommandDryRunDocument:
     """Return a serializable simulate dry-run summary."""
     return _model_command_document(
         model_name=run.model_name,
         ir_path=run.ir_path,
         output_dir=run.output_dir,
-        command=run.command,
+        description=backend.describe(run.action),
         dims_path=run.dims_path,
         data_path=run.data_path,
         extra={
@@ -608,30 +673,30 @@ def simulate_dry_run_document[CommandT: DryRunCommand](
     )
 
 
-def recover_dry_run_document[CommandT: DryRunCommand](
-    run: PreparedRecoverRun[CommandT],
+def recover_dry_run_document[ActionT, CommandT](
+    run: PreparedRecoverRun[ActionT], backend: RecoverBackend[ActionT, CommandT]
 ) -> ModelCommandDryRunDocument:
     """Return a serializable recover dry-run summary."""
     return _model_command_document(
         model_name=run.model_name,
         ir_path=run.ir_path,
         output_dir=run.output_dir,
-        command=run.command,
+        description=backend.describe(run.action),
         dims_path=run.dims_path,
         data_path=None,
         extra={"scenario": str(run.scenario_path), "recovery": str(run.recovery_path)},
     )
 
 
-def sbc_dry_run_document[CommandT: DryRunCommand](
-    run: PreparedSbcRun[CommandT],
+def sbc_dry_run_document[ActionT, CommandT](
+    run: PreparedSbcRun[ActionT], backend: SbcBackend[ActionT, CommandT]
 ) -> ModelCommandDryRunDocument:
     """Return a serializable SBC dry-run summary."""
     return _model_command_document(
         model_name=run.model_name,
         ir_path=run.ir_path,
         output_dir=run.output_dir,
-        command=run.command,
+        description=backend.describe(run.action),
         dims_path=run.dims_path,
         data_path=None,
         extra={"scenario": str(run.scenario_path), "sbc": str(run.sbc_path)},
@@ -786,7 +851,7 @@ def _model_command_document(
     model_name: str,
     ir_path: Path,
     output_dir: Path,
-    command: DryRunCommand,
+    description: dict[str, object],
     dims_path: Path | None,
     data_path: Path | None,
     extra: dict[str, str],
@@ -799,7 +864,7 @@ def _model_command_document(
     if data_path is not None:
         document["data"] = str(data_path)
     document.update(extra)
-    document.update(command.dry_run_fields())
+    document.update(description)
     if dims_path is not None:
         document["dims"] = str(dims_path)
     return cast(ModelCommandDryRunDocument, document)
@@ -893,9 +958,13 @@ def _write_optional_dims_sidecar(
     return dims_path
 
 
-def _ensure_output_dir(path: Path, *, force: bool) -> None:
+def _validate_output_dir(path: Path, *, force: bool) -> None:
     if path.exists() and not path.is_dir():
         raise WorkflowError(f"output path exists and is not a directory: {path}")
     if path.exists() and not force and any(path.iterdir()):
         raise WorkflowError(f"output directory is not empty: {path}; pass --force to reuse it")
+
+
+def _ensure_output_dir(path: Path, *, force: bool) -> None:
+    _validate_output_dir(path, force=force)
     path.mkdir(parents=True, exist_ok=True)

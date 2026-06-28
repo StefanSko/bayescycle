@@ -129,7 +129,7 @@ def _write_fake_out_engine(tmp_path: Path) -> Path:
     return fake_engine
 
 
-def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
+def test_sample_dry_run_prints_engine_command_without_materializing_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -165,21 +165,7 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
     assert code == 0
     ir_path = output_dir / "model.ir.json"
     run_data_path = output_dir / "data.json"
-    assert json.loads(ir_path.read_text(encoding="utf-8"))["jaxstanv5_ir"] == 1
-    assert json.loads(run_data_path.read_text(encoding="utf-8")) == {
-        "format": "bayescycle.data.json.v1",
-        "variables": {"y": {"dtype": "float64", "shape": [], "values": [0.25]}},
-    }
-    assert json.loads((output_dir / "manifest.json").read_text(encoding="utf-8")) == {
-        "manifest_format": "bayescycle.run-manifest.v1",
-        "artifacts": {
-            "data.json": {
-                "format": "bayescycle.data.json.v1",
-                "path": "data.json",
-            }
-        },
-    }
-    assert not (output_dir / "dims.json").exists()
+    assert not output_dir.exists()
 
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
@@ -203,7 +189,7 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
     }
 
 
-def test_sample_show_plan_writes_ir_and_data_and_prints_plan(
+def test_sample_show_plan_prints_plan_without_materializing_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -229,6 +215,7 @@ def test_sample_show_plan_writes_ir_and_data_and_prints_plan(
     assert printed["data"] == str(output_dir / "data.json")
     assert printed["draws"] == str(output_dir / "posterior.ndjson")
     assert printed["engine_command"][:2] == ["bayesite", "sample"]
+    assert not output_dir.exists()
 
 
 def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
@@ -1480,7 +1467,7 @@ def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> 
     assert not stale_report.exists()
 
 
-def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(
+def test_sample_dry_run_reports_dims_sidecar_without_materializing_it(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1521,38 +1508,15 @@ def test_sample_dry_run_writes_dims_sidecar_when_model_declares_dims(
 
     assert code == 0
     dims_path = output_dir / "dims.json"
-    assert json.loads(dims_path.read_text(encoding="utf-8")) == {
-        "dims_format": "bayescycle-dims-v1",
-        "dims": {
-            "alpha": [],
-            "beta": ["predictor"],
-            "x": ["obs", "predictor"],
-            "y": ["obs"],
-        },
-        "coords": {"predictor": ["x1", "x2"]},
-    }
-
     printed = json.loads(capsys.readouterr().out)
     assert printed["dims"] == str(dims_path)
+    assert not dims_path.exists()
 
 
-def test_sample_force_removes_stale_dims_sidecar_when_model_has_no_dims(
+def test_sample_dry_run_force_does_not_remove_stale_dims_sidecar_when_model_has_no_dims(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    dims_model_file = tmp_path / "dims_model.py"
-    dims_model_file.write_text(
-        "from jaxstanv5 import Dim, Observed, Param, model\n"
-        "from jaxstanv5.distributions import Normal\n"
-        "\n"
-        "predictor = Dim('predictor')\n"
-        "\n"
-        "@model\n"
-        "class WithDims:\n"
-        "    beta = Param(Normal(0.0, 1.0), size=2, dims=(predictor,))\n"
-        "    y = Observed(Normal(0.0, 1.0))\n",
-        encoding="utf-8",
-    )
     plain_model_file = tmp_path / "plain_model.py"
     plain_model_file.write_text(
         "from jaxstanv5 import Observed, model\n"
@@ -1567,20 +1531,8 @@ def test_sample_force_removes_stale_dims_sidecar_when_model_has_no_dims(
     data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
     output_dir = tmp_path / "run"
 
-    first_code = main(
-        [
-            "sample",
-            str(dims_model_file),
-            "--data",
-            str(data_file),
-            "-o",
-            str(output_dir),
-            "--dry-run",
-        ]
-    )
-    assert first_code == 0
-    assert (output_dir / "dims.json").exists()
-    capsys.readouterr()
+    output_dir.mkdir()
+    (output_dir / "dims.json").write_text("{}\n", encoding="utf-8")
 
     second_code = main(
         [
@@ -1596,7 +1548,7 @@ def test_sample_force_removes_stale_dims_sidecar_when_model_has_no_dims(
     )
 
     assert second_code == 0
-    assert not (output_dir / "dims.json").exists()
+    assert (output_dir / "dims.json").exists()
     assert "dims" not in json.loads(capsys.readouterr().out)
 
 

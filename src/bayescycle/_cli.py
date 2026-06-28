@@ -17,7 +17,6 @@ from bayescycle._backend_plan import (
     resolve_backend_plan_file,
 )
 from bayescycle._backends import BayesiteBackend, Jaxstanv5Backend
-from bayescycle._commands import DryRunCommand
 from bayescycle._engine import run_engine
 from bayescycle._errors import WorkflowError
 from bayescycle._inproc import InProcessBackendError
@@ -378,17 +377,17 @@ def _sample(namespace: argparse.Namespace) -> int:
         return 2
 
 
-def _sample_with_backend[CommandT: DryRunCommand](
-    backend: SampleBackend[CommandT], request: SampleRequest, *, intent: CliIntent
+def _sample_with_backend[ActionT, CommandT](
+    backend: SampleBackend[ActionT, CommandT], request: SampleRequest, *, intent: CliIntent
 ) -> int:
     plan = plan_sample_run(request, backend)
     match intent:
         case ShowPlan():
-            print(json.dumps(sample_plan_document(plan), indent=2, sort_keys=True))
+            print(json.dumps(sample_plan_document(plan, backend), indent=2, sort_keys=True))
             return 0
         case ExecutePlan():
-            prepared = materialize_sample_run(plan, backend)
-            return backend.execute(prepared.command)
+            command = materialize_sample_run(plan, backend)
+            return backend.execute(command)
 
 
 def _prior_predictive(namespace: argparse.Namespace) -> int:
@@ -420,14 +419,22 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
         return 2
 
 
-def _prior_predictive_with_backend[CommandT: DryRunCommand](
-    backend: PriorPredictiveBackend[CommandT], request: PriorPredictiveRequest, *, dry_run: bool
+def _prior_predictive_with_backend[ActionT, CommandT](
+    backend: PriorPredictiveBackend[ActionT, CommandT],
+    request: PriorPredictiveRequest,
+    *,
+    dry_run: bool,
 ) -> int:
     prepared = prepare_prior_predictive_run(request, backend)
     if dry_run:
-        print(json.dumps(prior_predictive_dry_run_document(prepared), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                prior_predictive_dry_run_document(prepared, backend), indent=2, sort_keys=True
+            )
+        )
         return 0
-    return backend.run_prior_predictive(prepared.command)
+    command = backend.materialize(prepared.action)
+    return backend.execute(command)
 
 
 def _simulate(namespace: argparse.Namespace) -> int:
@@ -453,9 +460,12 @@ def _simulate(namespace: argparse.Namespace) -> int:
         backend = BayesiteBackend(engine)
         prepared = prepare_simulate_run(request, backend)
         if dry_run:
-            print(json.dumps(simulate_dry_run_document(prepared), indent=2, sort_keys=True))
+            print(
+                json.dumps(simulate_dry_run_document(prepared, backend), indent=2, sort_keys=True)
+            )
             return 0
-        return backend.run_simulate(prepared.command)
+        command = backend.materialize(prepared.action)
+        return backend.execute(command)
     except (WorkflowError, ModelLoadError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -482,9 +492,10 @@ def _recover(namespace: argparse.Namespace) -> int:
         backend = BayesiteBackend(engine)
         prepared = prepare_recover_run(request, backend)
         if dry_run:
-            print(json.dumps(recover_dry_run_document(prepared), indent=2, sort_keys=True))
+            print(json.dumps(recover_dry_run_document(prepared, backend), indent=2, sort_keys=True))
             return 0
-        return backend.run_recover(prepared.command)
+        command = backend.materialize(prepared.action)
+        return backend.execute(command)
     except (WorkflowError, ModelLoadError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -510,9 +521,10 @@ def _sbc(namespace: argparse.Namespace) -> int:
         backend = BayesiteBackend(engine)
         prepared = prepare_sbc_run(request, backend)
         if dry_run:
-            print(json.dumps(sbc_dry_run_document(prepared), indent=2, sort_keys=True))
+            print(json.dumps(sbc_dry_run_document(prepared, backend), indent=2, sort_keys=True))
             return 0
-        return backend.run_sbc(prepared.command)
+        command = backend.materialize(prepared.action)
+        return backend.execute(command)
     except (WorkflowError, ModelLoadError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
