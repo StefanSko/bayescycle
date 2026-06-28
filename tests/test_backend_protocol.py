@@ -112,6 +112,7 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
 
 def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> None:
     import bayescycle._commands as commands
+    import bayescycle._engine as engine
     from bayescycle._commands import (
         BayesiteCommand,
         Jaxstanv5PriorPredictiveCommand,
@@ -120,6 +121,8 @@ def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> 
 
     assert not hasattr(commands, "DryRunCommand")
     assert not hasattr(commands, "BayesiteSimulateCommand")
+    assert not hasattr(engine, "EngineCommand")
+    assert not hasattr(engine, "run_engine")
     assert not hasattr(BayesiteCommand(argv=("bayesite", "sample")), "dry_run_fields")
     assert not hasattr(Jaxstanv5SampleCommand, "dry_run_fields")
     assert not hasattr(Jaxstanv5PriorPredictiveCommand, "dry_run_fields")
@@ -130,6 +133,8 @@ def test_bayesite_action_owns_data_materialization_and_postprocess(
 ) -> None:
     from bayescycle._commands import BayesiteCommand
     from bayescycle.backends import bayesite
+
+    assert not hasattr(bayesite, "BayesiteExecutableCommand")
 
     canonical_input = tmp_path / "run" / "data.json"
     canonical_input.parent.mkdir()
@@ -181,6 +186,54 @@ def test_bayesite_action_owns_data_materialization_and_postprocess(
     assert '"format": "bayescycle.data.json.v1"' in canonical_output.path.read_text(
         encoding="utf-8"
     )
+
+
+def test_run_directory_commands_execute_through_bayesite_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import bayescycle._cli as cli
+    from bayescycle._commands import BayesiteCommand
+    from bayescycle.backends.bayesite import BayesitePreparedCommand
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    seen: dict[str, object] = {}
+
+    class RecordingBayesiteBackend:
+        def __init__(self, engine: str) -> None:
+            seen["engine"] = engine
+
+        def execute(self, command: BayesitePreparedCommand) -> int:
+            seen["command"] = command
+            return 23
+
+    monkeypatch.setattr(cli, "BayesiteBackend", RecordingBayesiteBackend)
+    monkeypatch.setattr(
+        cli,
+        "_preflight_bayesite_unless_dry_run",
+        lambda engine, _dry_run, _command, _requirement: engine,
+    )
+
+    code = cli.main(["diagnose", str(run_dir), "--engine", "fake-bayesite"])
+
+    assert code == 23
+    assert seen == {
+        "engine": "fake-bayesite",
+        "command": BayesitePreparedCommand(
+            engine_command=BayesiteCommand(
+                argv=(
+                    "fake-bayesite",
+                    "diagnose",
+                    "--fit",
+                    str(run_dir / "posterior.ndjson"),
+                    "--out",
+                    str(run_dir / "diagnostics.json"),
+                ),
+                output_paths=(run_dir / "diagnostics.json",),
+            ),
+        ),
+    }
 
 
 def test_first_party_backends_do_not_expose_operation_specific_runners() -> None:

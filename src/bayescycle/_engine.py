@@ -6,9 +6,6 @@ import subprocess
 
 from bayescycle._commands import BayesiteCommand
 
-# Backward-compatible name while callers migrate to BayesiteCommand.
-EngineCommand = BayesiteCommand
-
 
 def run_bayesite_command(command: BayesiteCommand) -> int:
     """Run a Bayesite command after clearing owned output artifacts."""
@@ -16,7 +13,3 @@ def run_bayesite_command(command: BayesiteCommand) -> int:
         path.unlink(missing_ok=True)
     completed = subprocess.run(command.argv, check=False)  # noqa: S603
     return completed.returncode
-
-
-# Backward-compatible name for the Bayesite subprocess runner.
-run_engine = run_bayesite_command

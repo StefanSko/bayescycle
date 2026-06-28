@@ -17,7 +17,6 @@ from bayescycle._backend_plan import (
     resolve_backend_plan_file,
 )
 from bayescycle._backends import BayesiteBackend, Jaxstanv5Backend
-from bayescycle._engine import run_engine
 from bayescycle._errors import WorkflowError
 from bayescycle._inproc import InProcessBackendError
 from bayescycle._model_loader import ModelLoadError
@@ -51,6 +50,7 @@ from bayescycle._workflow import (
     sbc_dry_run_document,
     simulate_dry_run_document,
 )
+from bayescycle.backends.bayesite import BayesitePreparedCommand
 from bayescycle.backends.bayesite_engine import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
@@ -545,7 +545,7 @@ def _diagnose(namespace: argparse.Namespace) -> int:
         if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.command)
+        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -569,7 +569,7 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
         if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.command)
+        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -598,7 +598,7 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
         if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.command)
+        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -629,7 +629,7 @@ def _recover_check(namespace: argparse.Namespace) -> int:
         if dry_run:
             print(json.dumps(run_command_dry_run_document(prepared), indent=2, sort_keys=True))
             return 0
-        return run_engine(prepared.command)
+        return BayesiteBackend(engine).execute(BayesitePreparedCommand(prepared.command))
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2

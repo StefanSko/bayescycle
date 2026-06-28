@@ -96,6 +96,8 @@ class Jaxstanv5Backend:
 
     def execute(self, command: Jaxstanv5ExecutableCommand) -> int:
         """Execute an in-process jaxstanv5 command."""
-        if isinstance(command, Jaxstanv5SampleCommand):
-            return run_jaxstanv5_sample(command)
-        return run_jaxstanv5_prior_predictive(command)
+        match command:
+            case Jaxstanv5SampleCommand():
+                return run_jaxstanv5_sample(command)
+            case Jaxstanv5PriorPredictiveCommand():
+                return run_jaxstanv5_prior_predictive(command)
