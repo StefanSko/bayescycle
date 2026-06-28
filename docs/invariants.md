@@ -52,6 +52,10 @@ layout keeps matching the architecture.
   runs Bayesite preflight, and wires concrete backend adapters into workflow
   operations. It must not own artifact schemas, sampler semantics, or backend
   execution details.
+- `bayescycle._workflow.capabilities` owns the closed workflow-capability ADT,
+  open backend identity value, and immutable first-party backend catalog. It may
+  validate backend/capability support, but it must not import concrete backend
+  adapters or execute backend code.
 - `bayescycle._workflow.requests` contains backend-neutral logical CLI input
   normalized into typed immutable requests. Backend selection, backend-private
   passthrough flags, and backend-native option rendering must live outside these

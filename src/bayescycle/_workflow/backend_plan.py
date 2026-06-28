@@ -8,12 +8,16 @@ from pathlib import Path
 from typing import Literal, cast
 
 from bayescycle._errors import WorkflowError
+from bayescycle._workflow.capabilities import (
+    BAYESITE,
+    FIRST_PARTY_BACKENDS,
+    BackendCapability,
+    BackendId,
+)
 
-BackendId = Literal["bayesite", "jaxstanv5"]
 StageId = Literal["simulate", "recover"]
 
 STAGES: tuple[StageId, ...] = ("simulate", "recover")
-BACKENDS: tuple[BackendId, ...] = ("bayesite", "jaxstanv5")
 
 
 @dataclass(frozen=True)
@@ -63,7 +67,7 @@ class ResolvedBackendPlan:
         """Return a stable JSON summary for dry planning/docs."""
         return {
             "mode": "single" if isinstance(self.plan, SingleBackendPlan) else "mixed",
-            "stages": {entry.stage: entry.backend for entry in self.stage_backends},
+            "stages": {entry.stage: str(entry.backend) for entry in self.stage_backends},
             "backends": _backend_options_json(self.bayesite_engine),
         }
 
@@ -81,7 +85,7 @@ def resolve_backend_plan(request: BackendPlanRequest) -> ResolvedBackendPlan:
     }
     provided = {stage: backend for stage, backend in overrides.items() if backend is not None}
     if not provided:
-        backend = _parse_backend(request.backend or "bayesite", "--backend")
+        backend = _parse_backend(request.backend or str(BAYESITE), "--backend")
         plan: BackendPlan = SingleBackendPlan(backend=backend)
         stage_backends = tuple(StageBackend(stage=stage, backend=backend) for stage in STAGES)
     else:
@@ -140,7 +144,7 @@ def resolve_backend_plan_file(path: Path) -> ResolvedBackendPlan:
     if mode_value == "single":
         if "stages" in document:
             raise WorkflowError("[stages] backend assignments require [workflow].mode = 'mixed'")
-        backend_value = workflow.get("backend", "bayesite")
+        backend_value = workflow.get("backend", str(BAYESITE))
         if not isinstance(backend_value, str):
             raise WorkflowError("[workflow].backend must be a string")
         return resolve_backend_plan(
@@ -173,9 +177,7 @@ def resolve_backend_plan_file(path: Path) -> ResolvedBackendPlan:
 
 
 def _parse_backend(value: str, label: str) -> BackendId:
-    if value == "bayesite" or value == "jaxstanv5":
-        return cast(BackendId, value)
-    raise WorkflowError(f"{label} must be 'bayesite' or 'jaxstanv5'")
+    return FIRST_PARTY_BACKENDS.resolve(value, label=label)
 
 
 def _partial_assignment_lines(overrides: dict[str, str | None]) -> str:
@@ -191,9 +193,11 @@ def _partial_assignment_lines(overrides: dict[str, str | None]) -> str:
 
 def _validate_stage_support(stage_backends: tuple[StageBackend, ...]) -> None:
     for entry in stage_backends:
-        if entry.stage == "simulate" and entry.backend != "bayesite":
+        if entry.stage == "simulate" and not FIRST_PARTY_BACKENDS.supports(
+            entry.backend, BackendCapability.SIMULATE
+        ):
             raise WorkflowError(
-                "backend jaxstanv5 does not support required stage simulate; "
+                f"backend {entry.backend} does not support required stage simulate; "
                 "use --backend bayesite or assign simulate to bayesite in an explicit mixed plan"
             )
 
@@ -209,13 +213,13 @@ def _validate_engine_selection(
 
 
 def _uses_bayesite(stage_backends: tuple[StageBackend, ...]) -> bool:
-    return any(entry.backend == "bayesite" for entry in stage_backends)
+    return any(entry.backend == BAYESITE for entry in stage_backends)
 
 
 def _backend_options_json(engine: str | None) -> dict[str, object]:
     if engine is None:
         return {}
-    return {"bayesite": {"engine": engine}}
+    return {str(BAYESITE): {"engine": engine}}
 
 
 def _table(document: dict[str, object], name: str, config_path: Path) -> dict[str, object]:
