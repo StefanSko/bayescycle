@@ -74,6 +74,9 @@ layout keeps matching the architecture.
 - `bayescycle._workflow.backend_plan` resolves multi-stage backend intent before
   run-directory writes. It must reject implicit mixed plans and backend-specific
   options that do not correspond to a selected backend.
+- `bayescycle.data` is the stable public import surface for canonical data
+  artifact helpers. It may re-export the canonical data API, but it must not
+  grow workflow orchestration or backend-specific behavior.
 - `bayescycle._run_artifacts` owns durable artifact references, format markers,
   serializers, and compatibility rules for the run-directory contract. It must
   not import workflow orchestration or concrete backend adapters.
