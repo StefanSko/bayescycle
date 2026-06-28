@@ -139,15 +139,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--max-treedepth", dest="max_tree_depth", help="maximum NUTS tree depth")
     sample.add_argument("--target-accept", dest="target_accept", help="target NUTS acceptance rate")
     sample.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
-    sample.add_argument(
-        "--show-plan",
-        action="store_true",
-        help="show the planned sample command without executing it",
-    )
-    sample.add_argument(
-        "--dry-run",
-        action="store_true",
-        help=argparse.SUPPRESS,
+    _add_show_plan_argument(
+        sample,
+        help_text="show the planned sample command without executing it",
     )
 
     prior_predictive = subparsers.add_parser(
@@ -173,10 +167,9 @@ def _build_parser() -> argparse.ArgumentParser:
     prior_predictive.add_argument(
         "--force", action="store_true", help="reuse a non-empty output directory"
     )
-    prior_predictive.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="show the planned backend command without executing it",
+    _add_show_plan_argument(
+        prior_predictive,
+        help_text="show the planned backend command without executing it",
     )
 
     simulate = subparsers.add_parser(
@@ -196,10 +189,9 @@ def _build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     simulate.add_argument("--seed", help="seed forwarded to Bayesite")
     simulate.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
-    simulate.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="show the planned engine command without executing it",
+    _add_show_plan_argument(
+        simulate,
+        help_text="show the planned backend command without executing it",
     )
 
     recover = subparsers.add_parser(
@@ -217,10 +209,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     recover.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     recover.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
-    recover.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="show the planned engine command without executing it",
+    _add_show_plan_argument(
+        recover,
+        help_text="show the planned backend command without executing it",
     )
 
     sbc = subparsers.add_parser(
@@ -239,10 +230,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sbc.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     sbc.add_argument("--replicates", help="replicate count overriding the scenario")
     sbc.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
-    sbc.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="show the planned engine command without executing it",
+    _add_show_plan_argument(
+        sbc,
+        help_text="show the planned backend command without executing it",
     )
 
     diagnose = subparsers.add_parser(
@@ -251,10 +241,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     diagnose.add_argument("run_dir", type=Path, help="bayescycle run directory")
     diagnose.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
-    diagnose.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="validate run files and print the planned engine command",
+    _add_show_plan_argument(
+        diagnose,
+        help_text="validate run files and show the planned engine command",
     )
 
     posterior_predictive = subparsers.add_parser(
@@ -266,10 +255,9 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_predictive.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
-    posterior_predictive.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="validate run files and print the planned engine command",
+    _add_show_plan_argument(
+        posterior_predictive,
+        help_text="validate run files and show the planned engine command",
     )
 
     posterior_check = subparsers.add_parser(
@@ -287,10 +275,9 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_check.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
-    posterior_check.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="validate run files and print the planned engine command",
+    _add_show_plan_argument(
+        posterior_check,
+        help_text="validate run files and show the planned backend command",
     )
 
     recover_check = subparsers.add_parser(
@@ -308,10 +295,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recover-check backend to use",
     )
     recover_check.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
-    recover_check.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="validate run files and print the planned engine command",
+    _add_show_plan_argument(
+        recover_check,
+        help_text="validate run files and show the planned backend command",
     )
 
     workflow_plan = subparsers.add_parser(
@@ -342,6 +328,21 @@ def _add_model_selection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("model_path", type=Path, help="Python file containing a jaxstanv5 @model")
     parser.add_argument(
         "--model", dest="model_name", help="model class name when discovery is ambiguous"
+    )
+
+
+def _add_show_plan_argument(parser: argparse.ArgumentParser, *, help_text: str) -> None:
+    parser.add_argument(
+        "--show-plan",
+        dest="show_plan",
+        action="store_true",
+        help=help_text,
+    )
+    parser.add_argument(
+        "--dry-run",
+        dest="show_plan",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
 
 

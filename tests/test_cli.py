@@ -17,6 +17,33 @@ from bayescycle._cli import (
 )
 
 
+@pytest.mark.parametrize(
+    "command",
+    (
+        "sample",
+        "prior-predictive",
+        "simulate",
+        "recover",
+        "sbc",
+        "diagnose",
+        "posterior-predictive",
+        "posterior-check",
+        "recover-check",
+    ),
+)
+def test_plan_commands_expose_show_plan_not_legacy_dry_run(
+    command: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main([command, "--help"])
+
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--show-plan" in out
+    assert "--dry-run" not in out
+
+
 def test_cli_intent_from_namespace_maps_plan_flags_to_explicit_intent() -> None:
     show_plan_intent = _intent_from_namespace(argparse.Namespace(show_plan=True))
     legacy_plan_intent = _intent_from_namespace(argparse.Namespace(dry_run=True))
@@ -1202,14 +1229,14 @@ def test_workflow_plan_missing_config_reports_standard_error(
     assert err.startswith("bayescycle: cannot read backend plan config")
 
 
-def test_diagnose_dry_run_uses_run_directory_artifacts(
+def test_diagnose_show_plan_uses_run_directory_artifacts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_dir = tmp_path / "run"
     _write_run_artifacts(run_dir, model=False, data=False)
 
-    code = main(["diagnose", str(run_dir), "--dry-run"])
+    code = main(["diagnose", str(run_dir), "--show-plan"])
 
     assert code == 0
     printed = json.loads(capsys.readouterr().out)

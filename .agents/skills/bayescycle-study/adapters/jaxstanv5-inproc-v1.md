@@ -29,11 +29,11 @@ bayescycle sample models/model.py --data data/data.json -o runs/fit-0001 \
   --backend jaxstanv5 --seed 123 --chains 4 --warmup 1000 --draws 1000
 ```
 
-Dry-run without sampling:
+Show the plan without sampling:
 
 ```bash
 bayescycle sample models/model.py --data data/data.json -o runs/fit-0001 \
-  --backend jaxstanv5 --seed 123 --chains 4 --warmup 1000 --draws 1000 --dry-run
+  --backend jaxstanv5 --seed 123 --chains 4 --warmup 1000 --draws 1000 --show-plan
 ```
 
 Run prior predictive in-process through the same artifact contract:

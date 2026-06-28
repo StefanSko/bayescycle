@@ -27,11 +27,11 @@ bayescycle sample models/model.py --data data/data.json -o runs/fit-0001 \
   --seed 123 --chains 4 --warmup 1000 --draws 1000
 ```
 
-Dry-run without invoking Bayesite:
+Show the plan without invoking Bayesite:
 
 ```bash
 bayescycle sample models/model.py --data data/data.json -o runs/fit-0001 \
-  --seed 123 --chains 4 --warmup 1000 --draws 1000 --dry-run
+  --seed 123 --chains 4 --warmup 1000 --draws 1000 --show-plan
 ```
 
 Run diagnostics for an existing run directory:

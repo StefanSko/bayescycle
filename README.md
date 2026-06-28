@@ -47,7 +47,7 @@ The engine is asked to write draws to:
 run/posterior.ndjson
 ```
 
-Use `--dry-run` to print the planned engine command without creating or rewriting
+Use `--show-plan` to print the planned backend command without creating or rewriting
 run-directory artifacts.
 
 If a Python file declares more than one model, choose one explicitly:
