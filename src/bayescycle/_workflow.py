@@ -851,6 +851,7 @@ def materialize_run_directory_command[ActionT, CommandT](
     plan: RunDirectoryCommandPlan[ActionT], backend: ActionBackend[ActionT, CommandT]
 ) -> CommandT:
     """Materialize a planned existing-run command for execution."""
+    _reject_existing_output_artifacts((plan.output_path,))
     return backend.materialize(plan.action)
 
 

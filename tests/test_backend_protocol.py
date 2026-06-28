@@ -9,13 +9,17 @@ from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact,
 from bayescycle._errors import WorkflowError
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
+    DiagnoseRequest,
+    DiagnoseRunContext,
     EngineBackendPlanDescription,
     InProcessSamplePlanDescription,
     InProcessSettingsPlanDescription,
     PlannedModelRunContext,
     SampleRequest,
     backend_plan_description_fields,
+    materialize_run_directory_command,
     materialize_sample_run,
+    plan_diagnose_run,
     plan_sample_run,
     sample_plan_document,
 )
@@ -30,6 +34,29 @@ class FakeSampleAction:
 @dataclass(frozen=True)
 class FakeCommand:
     output_dir: Path
+
+
+@dataclass(frozen=True)
+class FakeDiagnoseAction:
+    output_path: Path
+
+
+class FakeDiagnoseBackend:
+    def plan_diagnose_action(
+        self, context: DiagnoseRunContext, request: DiagnoseRequest
+    ) -> FakeDiagnoseAction:
+        return FakeDiagnoseAction(output_path=context.output_path)
+
+    def describe(self, action: FakeDiagnoseAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(
+            engine_command=("fake", "diagnose", "--out", str(action.output_path))
+        )
+
+    def materialize(self, action: FakeDiagnoseAction) -> FakeCommand:
+        return FakeCommand(output_dir=action.output_path.parent)
+
+    def execute(self, command: FakeCommand) -> int:
+        return 0
 
 
 class FakeSampleBackend:
@@ -138,6 +165,19 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
 
     assert command == FakeCommand(output_dir=output_dir.resolve())
     assert backend.execute(command) == 17
+
+
+def test_run_directory_materialization_rechecks_output_absence(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    backend = FakeDiagnoseBackend()
+
+    plan = plan_diagnose_run(DiagnoseRequest(run_dir=run_dir), backend)
+    plan.output_path.write_text("created after planning\n", encoding="utf-8")
+
+    with pytest.raises(WorkflowError, match="output artifact already exists"):
+        materialize_run_directory_command(plan, backend)
 
 
 def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
@@ -266,7 +306,6 @@ def test_run_directory_commands_execute_through_bayesite_backend(
 ) -> None:
     import bayescycle._cli as cli
     from bayescycle._commands import BayesiteCommand
-    from bayescycle._workflow import DiagnoseRequest, DiagnoseRunContext
     from bayescycle.backends.bayesite import BayesiteAction, BayesitePreparedCommand
 
     run_dir = tmp_path / "run"
