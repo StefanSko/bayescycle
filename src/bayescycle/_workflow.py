@@ -31,7 +31,6 @@ class SampleRequest:
     backend: str
     sampler: SamplerSettings
     engine_args: tuple[str, ...]
-    force: bool
 
 
 @dataclass(frozen=True)
@@ -46,7 +45,6 @@ class PriorPredictiveRequest:
     seed: str | None
     draws: str | None
     engine_args: tuple[str, ...]
-    force: bool
 
 
 @dataclass(frozen=True)
@@ -61,7 +59,6 @@ class SimulateRequest:
     backend: str
     seed: str | None
     engine_args: tuple[str, ...]
-    force: bool
 
 
 @dataclass(frozen=True)
@@ -74,7 +71,6 @@ class RecoverRequest:
     model_name: str | None
     backend: str
     engine_args: tuple[str, ...]
-    force: bool
 
 
 @dataclass(frozen=True)
@@ -88,7 +84,6 @@ class SbcRequest:
     backend: str
     replicates: str | None
     engine_args: tuple[str, ...]
-    force: bool
 
 
 @dataclass(frozen=True)
@@ -138,7 +133,6 @@ class PlannedModelRunContext:
     data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
-    force: bool
     data_doc: DataDoc
 
 
@@ -153,7 +147,6 @@ class PlannedModelScenarioContext:
     scenario_path: Path
     dims_path: Path | None
     output_dir: Path
-    force: bool
 
 
 @dataclass(frozen=True)
@@ -467,7 +460,6 @@ def plan_sample_run[ActionT, CommandT](
         model_name=request.model_name,
         data_path=request.data_path,
         output_dir=output_dir,
-        force=request.force,
     )
     action = backend.plan_sample_action(context, request)
     return SampleRunPlan(context=context, draws_path=draws_path, action=action)
@@ -495,7 +487,6 @@ def plan_prior_predictive_run[ActionT, CommandT](
         model_name=request.model_name,
         data_path=request.data_path,
         output_dir=output_dir,
-        force=request.force,
     )
     action = backend.plan_prior_predictive_action(context, request)
     return PriorPredictiveRunPlan(
@@ -527,7 +518,6 @@ def plan_simulate_run[ActionT, CommandT](
         model_name=request.model_name,
         data_path=request.data_path,
         output_dir=output_dir,
-        force=request.force,
     )
     truth_path = output_dir / "truth.json"
     action = backend.plan_simulate_action(context, request, truth_path)
@@ -562,7 +552,6 @@ def plan_recover_run[ActionT, CommandT](
         model_name=request.model_name,
         scenario_path=request.scenario_path,
         output_dir=output_dir,
-        force=request.force,
     )
     action = backend.plan_recover_action(context, request)
     return RecoverRunPlan(context=context, recovery_path=output_path, action=action)
@@ -589,7 +578,6 @@ def plan_sbc_run[ActionT, CommandT](
         model_name=request.model_name,
         scenario_path=request.scenario_path,
         output_dir=output_dir,
-        force=request.force,
     )
     action = backend.plan_sbc_action(context, request)
     return SbcRunPlan(context=context, sbc_path=output_path, action=action)
@@ -611,6 +599,7 @@ def plan_diagnose_run[ActionT, CommandT](
     fit_path = run_dir / "posterior.ndjson"
     output_path = run_dir / "diagnostics.json"
     _require_run_artifacts((fit_path,))
+    _reject_existing_output_artifacts((output_path,))
     context = DiagnoseRunContext(run_dir=run_dir, fit_path=fit_path, output_path=output_path)
     action = backend.plan_diagnose_action(context, request)
     return RunDirectoryCommandPlan(run_dir=run_dir, output_path=output_path, action=action)
@@ -627,6 +616,7 @@ def plan_posterior_predictive_run[ActionT, CommandT](
     fit_path = run_dir / "posterior.ndjson"
     output_path = run_dir / "posterior_predictive.ndjson"
     _require_run_artifacts((model_path.path, data_path.path, fit_path))
+    _reject_existing_output_artifacts((output_path,))
     context = PosteriorPredictiveRunContext(
         run_dir=run_dir,
         model_path=model_path,
@@ -651,6 +641,7 @@ def plan_posterior_check_run[ActionT, CommandT](
     output_path = run_dir / "posterior_check.json"
     _reject_reserved_engine_args(request.engine_args, output_path)
     _require_run_artifacts((model_path.path, data_path.path, fit_path))
+    _reject_existing_output_artifacts((output_path,))
     context = PosteriorCheckRunContext(
         run_dir=run_dir,
         model_path=model_path,
@@ -673,6 +664,7 @@ def plan_recover_check_run[ActionT, CommandT](
     output_path = run_dir / "recovery_check.json"
     _reject_reserved_engine_args(request.engine_args, output_path)
     _require_run_artifacts((fit_path,))
+    _reject_existing_output_artifacts((output_path,))
     truth_path = request.truth_path.expanduser().resolve()
     if not truth_path.is_file():
         raise WorkflowError(f"truth file does not exist: {truth_path}")
@@ -705,7 +697,6 @@ def plan_model_run_context(
     model_name: str | None,
     data_path: Path,
     output_dir: Path,
-    force: bool,
 ) -> PlannedModelRunContext:
     """Plan shared model/data run directory inputs without writing them."""
     source_data_path = _require_input_file(data_path, "data")
@@ -714,7 +705,7 @@ def plan_model_run_context(
     except DataDocError as exc:
         raise WorkflowError(f"invalid data file: {exc}") from exc
 
-    _validate_output_dir(output_dir, force=force)
+    _validate_output_dir(output_dir)
     loaded_model = load_model(model_path, model_name)
     dims_path = _planned_dims_path(output_dir, loaded_model.model_cls, loaded_model.meta)
 
@@ -725,7 +716,6 @@ def plan_model_run_context(
         data_path=CanonicalDataArtifact(output_dir / "data.json"),
         dims_path=dims_path,
         output_dir=output_dir,
-        force=force,
         data_doc=data_doc,
     )
 
@@ -736,7 +726,7 @@ def materialize_model_run_context(
     additional_data_paths: tuple[CanonicalDataArtifact, ...] = (),
 ) -> PlannedModelRunContext:
     """Materialize shared model/data run-directory inputs."""
-    _ensure_output_dir(context.output_dir, force=context.force)
+    _ensure_output_dir(context.output_dir)
     context.ir_path.path.write_bytes(canonical_bytes(context.loaded_model.meta))
     write_data_doc(context.data_path.path, context.data_doc)
     _write_data_manifest(context.output_dir, context.data_path, additional_data_paths)
@@ -752,11 +742,10 @@ def plan_model_scenario_context(
     model_name: str | None,
     scenario_path: Path,
     output_dir: Path,
-    force: bool,
 ) -> PlannedModelScenarioContext:
     """Plan shared model/scenario run directory inputs without writing them."""
     scenario_source = _require_input_file(scenario_path, "scenario")
-    _validate_output_dir(output_dir, force=force)
+    _validate_output_dir(output_dir)
     loaded_model = load_model(model_path, model_name)
     dims_path = _planned_dims_path(output_dir, loaded_model.model_cls, loaded_model.meta)
 
@@ -768,7 +757,6 @@ def plan_model_scenario_context(
         scenario_path=output_dir / "scenario.json",
         dims_path=dims_path,
         output_dir=output_dir,
-        force=force,
     )
 
 
@@ -776,7 +764,7 @@ def materialize_model_scenario_context(
     context: PlannedModelScenarioContext,
 ) -> PlannedModelScenarioContext:
     """Materialize shared model/scenario run-directory inputs."""
-    _ensure_output_dir(context.output_dir, force=context.force)
+    _ensure_output_dir(context.output_dir)
     context.ir_path.path.write_bytes(canonical_bytes(context.loaded_model.meta))
     _copy_required_input(context.scenario_source_path, context.scenario_path, "scenario")
     dims_path = _write_optional_dims_sidecar(
@@ -961,6 +949,18 @@ def _require_run_artifacts(paths: tuple[Path, ...]) -> None:
     )
 
 
+def _reject_existing_output_artifacts(paths: tuple[Path, ...]) -> None:
+    existing = tuple(path for path in paths if path.exists())
+    if not existing:
+        return
+    names = ", ".join(path.name for path in existing)
+    plural = "s" if len(existing) != 1 else ""
+    raise WorkflowError(
+        f"output artifact{plural} already exists in {existing[0].parent}: {names}; "
+        "choose a new run directory or remove the derived artifact intentionally"
+    )
+
+
 def _write_data_manifest(
     output_dir: Path,
     data_path: CanonicalDataArtifact,
@@ -1007,13 +1007,13 @@ def _write_optional_dims_sidecar(
     return dims_path
 
 
-def _validate_output_dir(path: Path, *, force: bool) -> None:
+def _validate_output_dir(path: Path) -> None:
     if path.exists() and not path.is_dir():
         raise WorkflowError(f"output path exists and is not a directory: {path}")
-    if path.exists() and not force and any(path.iterdir()):
-        raise WorkflowError(f"output directory is not empty: {path}; pass --force to reuse it")
+    if path.exists() and any(path.iterdir()):
+        raise WorkflowError(f"output directory is not empty: {path}; choose a new run directory")
 
 
-def _ensure_output_dir(path: Path, *, force: bool) -> None:
-    _validate_output_dir(path, force=force)
+def _ensure_output_dir(path: Path) -> None:
+    _validate_output_dir(path)
     path.mkdir(parents=True, exist_ok=True)

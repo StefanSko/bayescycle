@@ -116,7 +116,6 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
             target_accept=None,
         ),
         engine_args=(),
-        force=False,
     )
 
     plan = plan_sample_run(request, backend)
@@ -141,7 +140,7 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
     assert backend.execute(command) == 17
 
 
-def test_materialization_preserves_no_force_output_dir_guard(tmp_path: Path) -> None:
+def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
         "from jaxstanv5 import Observed, model\n"
@@ -173,7 +172,6 @@ def test_materialization_preserves_no_force_output_dir_guard(tmp_path: Path) -> 
                 target_accept=None,
             ),
             engine_args=(),
-            force=False,
         ),
         backend,
     )

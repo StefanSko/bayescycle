@@ -60,7 +60,6 @@ def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
             "jaxstanv5 in-process backend requires JAX and BlackJAX. "
             "Install with `bayescycle[inproc]` or use `--backend bayesite`."
         ) from exc
-    command.draws_path.unlink(missing_ok=True)
     data = _load_data(command.data_path.path)
     try:
         model_cls = cast(_BindableModel, command.loaded_model.model_cls)
@@ -110,7 +109,6 @@ def run_jaxstanv5_prior_predictive(command: Jaxstanv5PriorPredictiveCommand) -> 
             "jaxstanv5 in-process backend requires JAX. "
             "Install with `bayescycle[inproc]` or use `--backend bayesite`."
         ) from exc
-    command.output_path.unlink(missing_ok=True)
     data = _load_data(command.data_path.path)
     try:
         result = simulate_prior_predictive(

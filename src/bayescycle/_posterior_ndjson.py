@@ -111,7 +111,7 @@ def write_posterior_ndjson(
         )
     _validate_result_shapes(bound, result, settings)
     lines = _posterior_documents(bound, result, settings, fingerprint)
-    with path.open("w", encoding="utf-8") as f:
+    with path.open("x", encoding="utf-8") as f:
         for document in lines:
             f.write(json.dumps(document, separators=(",", ":"), allow_nan=False))
             f.write("\n")

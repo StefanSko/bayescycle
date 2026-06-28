@@ -637,21 +637,22 @@ def test_sample_force_option_is_removed_and_does_not_mutate_stale_run(
     )
     fake_engine.chmod(0o755)
 
-    code = main(
-        [
-            "sample",
-            str(model_file),
-            "--data",
-            str(data_file),
-            "-o",
-            str(output_dir),
-            "--force",
-            "--engine",
-            str(fake_engine),
-        ]
-    )
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "sample",
+                str(model_file),
+                "--data",
+                str(data_file),
+                "-o",
+                str(output_dir),
+                "--force",
+                "--engine",
+                str(fake_engine),
+            ]
+        )
 
-    assert code == 2
+    assert exc_info.value.code == 2
     assert "unrecognized arguments: --force" in capsys.readouterr().err
     assert stale_posterior.read_text(encoding="utf-8") == "stale draws\n"
 
@@ -1499,7 +1500,9 @@ def test_recover_check_reports_missing_posterior(
     assert "posterior.ndjson" in err
 
 
-def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> None:
+def test_recover_check_refuses_to_overwrite_stale_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     run_dir = tmp_path / "run"
     _write_run_artifacts(run_dir, model=False, data=False)
     stale_report = run_dir / "recovery_check.json"
@@ -1529,8 +1532,9 @@ def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> 
         ]
     )
 
-    assert code == 19
-    assert not stale_report.exists()
+    assert code == 2
+    assert "output artifact already exists" in capsys.readouterr().err
+    assert stale_report.read_text(encoding="utf-8") == "stale report\n"
 
 
 def test_sample_dry_run_reports_dims_sidecar_without_materializing_it(
@@ -1579,7 +1583,7 @@ def test_sample_dry_run_reports_dims_sidecar_without_materializing_it(
     assert not dims_path.exists()
 
 
-def test_sample_dry_run_force_does_not_remove_stale_dims_sidecar_when_model_has_no_dims(
+def test_sample_dry_run_refuses_existing_run_dir_without_removing_stale_dims_sidecar(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1608,14 +1612,13 @@ def test_sample_dry_run_force_does_not_remove_stale_dims_sidecar_when_model_has_
             str(data_file),
             "-o",
             str(output_dir),
-            "--force",
             "--dry-run",
         ]
     )
 
-    assert second_code == 0
+    assert second_code == 2
     assert (output_dir / "dims.json").exists()
-    assert "dims" not in json.loads(capsys.readouterr().out)
+    assert "output directory is not empty" in capsys.readouterr().err
 
 
 def test_sample_rejects_dims_sidecar_rank_mismatch(
