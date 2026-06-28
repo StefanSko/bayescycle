@@ -47,8 +47,10 @@ The engine is asked to write draws to:
 run/posterior.ndjson
 ```
 
-Use `--show-plan` to print the planned backend command without creating or rewriting
-run-directory artifacts.
+Use `--show-plan` to print the planned backend action without creating or rewriting
+run-directory artifacts. Plan output records both the selected backend and the
+integration mode: Bayesite is an `external-command` adapter, while jaxstanv5 is
+an `in-process-python` adapter.
 
 If a Python file declares more than one model, choose one explicitly:
 
