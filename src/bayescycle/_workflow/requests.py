@@ -10,68 +10,58 @@ from bayescycle._settings import SamplerSettings
 
 @dataclass(frozen=True)
 class SampleRequest:
-    """Loose CLI sampling input normalized into a typed request."""
+    """Logical sampling input normalized into a typed request."""
 
     model_path: Path
     data_path: Path
     output_dir: Path
     model_name: str | None
-    backend: str
     sampler: SamplerSettings
-    engine_args: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class PriorPredictiveRequest:
-    """Loose CLI prior-predictive input normalized into a typed request."""
+    """Logical prior-predictive input normalized into a typed request."""
 
     model_path: Path
     data_path: Path
     output_dir: Path
     model_name: str | None
-    backend: str
     seed: str | None
     draws: str | None
-    engine_args: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class SimulateRequest:
-    """Loose CLI simulation input normalized into a typed request."""
+    """Logical simulation input normalized into a typed request."""
 
     model_path: Path
     data_path: Path
     truth_path: Path
     output_dir: Path
     model_name: str | None
-    backend: str
     seed: str | None
-    engine_args: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class RecoverRequest:
-    """Loose CLI single-scenario recovery input normalized into a typed request."""
+    """Logical single-scenario recovery input normalized into a typed request."""
 
     model_path: Path
     scenario_path: Path
     output_dir: Path
     model_name: str | None
-    backend: str
-    engine_args: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class SbcRequest:
-    """Loose CLI SBC input normalized into a typed request."""
+    """Logical SBC input normalized into a typed request."""
 
     model_path: Path
     scenario_path: Path
     output_dir: Path
     model_name: str | None
-    backend: str
     replicates: str | None
-    engine_args: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -95,8 +85,6 @@ class PosteriorCheckRequest:
 
     run_dir: Path
     seed: str | None
-    backend: str
-    engine_args: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -107,5 +95,3 @@ class RecoverCheckRequest:
     truth_path: Path
     targets_path: Path | None
     interval: str | None
-    backend: str
-    engine_args: tuple[str, ...]

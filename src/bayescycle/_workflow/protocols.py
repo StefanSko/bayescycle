@@ -37,6 +37,10 @@ class BackendExecutor[CommandT](Protocol):
 class ActionBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
     """Backend capability shared by planned backend actions."""
 
+    @property
+    def backend_id(self) -> str:
+        """Return the stable backend identifier for run metadata."""
+
     def describe(self, action: ActionT) -> BackendPlanDescription:
         """Return backend-owned plan description for an action."""
 

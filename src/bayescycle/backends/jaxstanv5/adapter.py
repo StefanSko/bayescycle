@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import overload
 
-from bayescycle._errors import WorkflowError
 from bayescycle._integrations.descriptions import (
     InProcessSamplePlanDescription,
     InProcessSettingsPlanDescription,
@@ -45,14 +44,15 @@ type Jaxstanv5ExecutableCommand = Jaxstanv5SampleCommand | Jaxstanv5PriorPredict
 class Jaxstanv5Backend:
     """In-process jaxstanv5 backend capabilities."""
 
+    @property
+    def backend_id(self) -> str:
+        """Return the stable backend identifier for run metadata."""
+        return "jaxstanv5"
+
     def plan_sample_action(
         self, context: PlannedModelRunContext, request: SampleRequest
     ) -> Jaxstanv5SampleAction:
         """Plan the in-process jaxstanv5 sample action."""
-        if request.engine_args:
-            raise WorkflowError(
-                "engine passthrough after -- is only supported for --backend bayesite"
-            )
         return Jaxstanv5SampleAction(
             command=Jaxstanv5SampleCommand(
                 loaded_model=context.loaded_model,
@@ -67,10 +67,6 @@ class Jaxstanv5Backend:
         self, context: PlannedModelRunContext, request: PriorPredictiveRequest
     ) -> Jaxstanv5PriorPredictiveAction:
         """Plan the in-process jaxstanv5 prior-predictive action."""
-        if request.engine_args:
-            raise WorkflowError(
-                "engine passthrough after -- is only supported for --backend bayesite"
-            )
         return Jaxstanv5PriorPredictiveAction(
             command=Jaxstanv5PriorPredictiveCommand(
                 loaded_model=context.loaded_model,
