@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NotRequired, Protocol, TypedDict, cast
@@ -14,6 +13,12 @@ from jaxstanv5.ir import canonical_bytes
 from jaxstanv5.model import ModelMeta
 
 from bayescycle._errors import WorkflowError
+from bayescycle._integrations.descriptions import (
+    BackendPlanDescription,
+    BackendPlanFields,
+    JsonNumber,
+    backend_plan_description_fields,
+)
 from bayescycle._model_loader import LoadedModel, load_model
 from bayescycle._run_artifacts.canonical_data import (
     DATA_DOC_FORMAT,
@@ -203,67 +208,6 @@ class RecoverCheckRunContext:
     truth_path: Path
     targets_path: Path | None
     output_path: Path
-
-
-type JsonNumber = int | float
-
-
-class BackendPlanFields(TypedDict, total=False):
-    """JSON-ready backend-owned plan fields."""
-
-    engine_command: list[str]
-    backend_simulated_data: str
-    backend: str
-    sampler: dict[str, JsonNumber]
-    settings: dict[str, JsonNumber]
-
-
-@dataclass(frozen=True)
-class EngineBackendPlanDescription:
-    """Backend plan description for an external engine command."""
-
-    engine_command: tuple[str, ...]
-    backend_simulated_data: Path | None = None
-
-
-@dataclass(frozen=True)
-class InProcessSamplePlanDescription:
-    """Backend plan description for in-process sampling."""
-
-    backend: str
-    sampler: Mapping[str, JsonNumber]
-
-
-@dataclass(frozen=True)
-class InProcessSettingsPlanDescription:
-    """Backend plan description for in-process non-sampling settings."""
-
-    backend: str
-    settings: Mapping[str, JsonNumber]
-
-
-type BackendPlanDescription = (
-    EngineBackendPlanDescription | InProcessSamplePlanDescription | InProcessSettingsPlanDescription
-)
-
-
-def backend_plan_description_fields(
-    description: BackendPlanDescription,
-) -> BackendPlanFields:
-    """Lower a typed backend plan description to JSON-ready plan fields."""
-    match description:
-        case EngineBackendPlanDescription(
-            engine_command=engine_command,
-            backend_simulated_data=backend_simulated_data,
-        ):
-            fields: BackendPlanFields = {"engine_command": list(engine_command)}
-            if backend_simulated_data is not None:
-                fields["backend_simulated_data"] = str(backend_simulated_data)
-            return fields
-        case InProcessSamplePlanDescription(backend=backend, sampler=sampler):
-            return {"backend": backend, "sampler": dict(sampler)}
-        case InProcessSettingsPlanDescription(backend=backend, settings=settings):
-            return {"backend": backend, "settings": dict(settings)}
 
 
 class BackendExecutor[CommandT](Protocol):
@@ -510,7 +454,8 @@ class SamplePlanDocument(TypedDict):
     data: str
     draws: str
     output: str
-    engine_command: NotRequired[list[str]]
+    command: NotRequired[list[str]]
+    integration_mode: NotRequired[str]
     backend: NotRequired[str]
     sampler: NotRequired[dict[str, JsonNumber]]
     dims: NotRequired[str]
@@ -529,7 +474,8 @@ class ModelCommandPlanDocument(TypedDict):
     simulated_data: NotRequired[str]
     recovery: NotRequired[str]
     sbc: NotRequired[str]
-    engine_command: NotRequired[list[str]]
+    command: NotRequired[list[str]]
+    integration_mode: NotRequired[str]
     backend_simulated_data: NotRequired[str]
     backend: NotRequired[str]
     settings: NotRequired[dict[str, JsonNumber]]
@@ -541,7 +487,9 @@ class RunCommandPlanDocument(TypedDict):
 
     run: str
     output: str
-    engine_command: list[str]
+    command: NotRequired[list[str]]
+    backend: NotRequired[str]
+    integration_mode: NotRequired[str]
 
 
 def plan_sample_run[ActionT, CommandT](

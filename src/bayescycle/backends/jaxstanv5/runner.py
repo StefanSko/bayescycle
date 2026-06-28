@@ -7,11 +7,14 @@ from typing import Protocol, cast
 
 from jaxstanv5.model.bound import BoundModel
 
-from bayescycle._commands import Jaxstanv5PriorPredictiveCommand, Jaxstanv5SampleCommand
 from bayescycle._run_artifacts.canonical_data import (
     DataDocError,
     data_doc_to_plain_json,
     read_data_doc,
+)
+from bayescycle.backends.jaxstanv5.commands import (
+    Jaxstanv5PriorPredictiveCommand,
+    Jaxstanv5SampleCommand,
 )
 
 

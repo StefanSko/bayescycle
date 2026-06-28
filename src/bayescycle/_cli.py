@@ -16,9 +16,7 @@ from bayescycle._backend_plan import (
     resolve_backend_plan,
     resolve_backend_plan_file,
 )
-from bayescycle._backends import BayesiteBackend, Jaxstanv5Backend
 from bayescycle._errors import WorkflowError
-from bayescycle._inproc import InProcessBackendError
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
@@ -57,10 +55,13 @@ from bayescycle._workflow import (
     sbc_plan_document,
     simulate_plan_document,
 )
-from bayescycle.backends.bayesite_engine import (
+from bayescycle.backends.bayesite import BayesiteBackend
+from bayescycle.backends.bayesite.preflight import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
 )
+from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
+from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
 
 @dataclass(frozen=True)

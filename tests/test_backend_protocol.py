@@ -8,6 +8,13 @@ from pathlib import Path
 import pytest
 
 from bayescycle._errors import WorkflowError
+from bayescycle._integrations.descriptions import (
+    ExternalCommandPlanDescription,
+    InProcessSamplePlanDescription,
+    InProcessSettingsPlanDescription,
+    backend_plan_description_fields,
+)
+from bayescycle._integrations.external_command import ExternalCommand
 from bayescycle._run_artifacts.references import (
     BackendPrivateArtifact,
     CanonicalDataArtifact,
@@ -17,15 +24,11 @@ from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
     DiagnoseRequest,
     DiagnoseRunContext,
-    EngineBackendPlanDescription,
-    InProcessSamplePlanDescription,
-    InProcessSettingsPlanDescription,
     PlannedModelRunContext,
     PlannedModelScenarioContext,
     RecoverRequest,
     SampleRequest,
     SimulateRequest,
-    backend_plan_description_fields,
     materialize_recover_run,
     materialize_run_directory_command,
     materialize_sample_run,
@@ -74,9 +77,9 @@ class FakeDiagnoseBackend:
     ) -> FakeDiagnoseAction:
         return FakeDiagnoseAction(output_path=context.output_path)
 
-    def describe(self, action: FakeDiagnoseAction) -> EngineBackendPlanDescription:
-        return EngineBackendPlanDescription(
-            engine_command=("fake", "diagnose", "--out", str(action.output_path))
+    def describe(self, action: FakeDiagnoseAction) -> ExternalCommandPlanDescription:
+        return ExternalCommandPlanDescription(
+            backend="fake", command=("fake", "diagnose", "--out", str(action.output_path))
         )
 
     def materialize(self, action: FakeDiagnoseAction) -> FakeCommand:
@@ -92,8 +95,8 @@ class FakeSimulateBackend:
     ) -> FakeSimulateAction:
         return FakeSimulateAction(output_dir=context.output_dir)
 
-    def describe(self, action: FakeSimulateAction) -> EngineBackendPlanDescription:
-        return EngineBackendPlanDescription(engine_command=("fake", "simulate"))
+    def describe(self, action: FakeSimulateAction) -> ExternalCommandPlanDescription:
+        return ExternalCommandPlanDescription(backend="fake", command=("fake", "simulate"))
 
     def materialize(self, action: FakeSimulateAction) -> FakeCommand:
         return FakeCommand(output_dir=action.output_dir)
@@ -108,8 +111,8 @@ class FakeRecoverBackend:
     ) -> FakeRecoverAction:
         return FakeRecoverAction(output_dir=context.output_dir)
 
-    def describe(self, action: FakeRecoverAction) -> EngineBackendPlanDescription:
-        return EngineBackendPlanDescription(engine_command=("fake", "recover"))
+    def describe(self, action: FakeRecoverAction) -> ExternalCommandPlanDescription:
+        return ExternalCommandPlanDescription(backend="fake", command=("fake", "recover"))
 
     def materialize(self, action: FakeRecoverAction) -> FakeCommand:
         return FakeCommand(output_dir=action.output_dir)
@@ -128,9 +131,9 @@ class FakeSampleBackend:
             draws_path=context.output_dir / "posterior.ndjson",
         )
 
-    def describe(self, action: FakeSampleAction) -> EngineBackendPlanDescription:
-        return EngineBackendPlanDescription(
-            engine_command=("fake", "sample", "--out", str(action.draws_path))
+    def describe(self, action: FakeSampleAction) -> ExternalCommandPlanDescription:
+        return ExternalCommandPlanDescription(
+            backend="fake", command=("fake", "sample", "--out", str(action.draws_path))
         )
 
     def materialize(self, action: FakeSampleAction) -> FakeCommand:
@@ -149,12 +152,15 @@ def test_backend_plan_description_is_closed_adt_lowered_by_workflow(
     simulated_data = tmp_path / ".bayesite" / "simulated_data.json"
 
     assert backend_plan_description_fields(
-        EngineBackendPlanDescription(
-            engine_command=("bayesite", "simulate"),
+        ExternalCommandPlanDescription(
+            backend="bayesite",
+            command=("bayesite", "simulate"),
             backend_simulated_data=simulated_data,
         )
     ) == {
-        "engine_command": ["bayesite", "simulate"],
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": ["bayesite", "simulate"],
         "backend_simulated_data": str(simulated_data),
     }
     assert backend_plan_description_fields(
@@ -162,13 +168,21 @@ def test_backend_plan_description_is_closed_adt_lowered_by_workflow(
             backend="jaxstanv5",
             sampler={"seed": 1, "target_accept": 0.9},
         )
-    ) == {"backend": "jaxstanv5", "sampler": {"seed": 1, "target_accept": 0.9}}
+    ) == {
+        "backend": "jaxstanv5",
+        "integration_mode": "in-process-python",
+        "sampler": {"seed": 1, "target_accept": 0.9},
+    }
     assert backend_plan_description_fields(
         InProcessSettingsPlanDescription(
             backend="jaxstanv5",
             settings={"seed": 2, "draws": 4},
         )
-    ) == {"backend": "jaxstanv5", "settings": {"seed": 2, "draws": 4}}
+    ) == {
+        "backend": "jaxstanv5",
+        "integration_mode": "in-process-python",
+        "settings": {"seed": 2, "draws": 4},
+    }
 
 
 def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> None:
@@ -213,7 +227,7 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
         draws_path=output_dir.resolve() / "posterior.ndjson",
     )
     assert not output_dir.exists()
-    assert sample_plan_document(plan, backend)["engine_command"] == [
+    assert sample_plan_document(plan, backend)["command"] == [
         "fake",
         "sample",
         "--out",
@@ -414,19 +428,18 @@ def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
 
 
 def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> None:
-    import bayescycle._commands as commands
-    import bayescycle._engine as engine
-    from bayescycle._commands import (
-        BayesiteCommand,
+    import bayescycle._integrations.external_command as external_command
+    from bayescycle._integrations.external_command import ExternalCommand
+    from bayescycle.backends.jaxstanv5.commands import (
         Jaxstanv5PriorPredictiveCommand,
         Jaxstanv5SampleCommand,
     )
 
-    assert not hasattr(commands, "DryRunCommand")
-    assert not hasattr(commands, "BayesiteSimulateCommand")
-    assert not hasattr(engine, "EngineCommand")
-    assert not hasattr(engine, "run_engine")
-    assert not hasattr(BayesiteCommand(argv=("bayesite", "sample")), "dry_run_fields")
+    assert not hasattr(external_command, "DryRunCommand")
+    assert not hasattr(external_command, "BayesiteSimulateCommand")
+    assert not hasattr(external_command, "EngineCommand")
+    assert not hasattr(external_command, "run_engine")
+    assert not hasattr(ExternalCommand(argv=("bayesite", "sample")), "dry_run_fields")
     assert not hasattr(Jaxstanv5SampleCommand, "dry_run_fields")
     assert not hasattr(Jaxstanv5PriorPredictiveCommand, "dry_run_fields")
 
@@ -434,8 +447,7 @@ def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> 
 def test_bayesite_action_owns_data_materialization_and_postprocess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from bayescycle._commands import BayesiteCommand
-    from bayescycle.backends import bayesite
+    from bayescycle.backends.bayesite import adapter as bayesite
 
     assert not hasattr(bayesite, "BayesiteExecutableCommand")
     assert not hasattr(bayesite, "materialize_run_data_for_bayesite")
@@ -450,9 +462,9 @@ def test_bayesite_action_owns_data_materialization_and_postprocess(
     native_input = BackendPrivateArtifact(tmp_path / "run" / ".bayesite" / "data.json")
     native_output = BackendPrivateArtifact(tmp_path / "run" / ".bayesite" / "simulated_data.json")
     canonical_output = CanonicalDataArtifact(tmp_path / "run" / "simulated_data.json")
-    engine_command = BayesiteCommand(argv=("fake-bayesite", "simulate"))
+    external_command = ExternalCommand(argv=("fake-bayesite", "simulate"))
     action = bayesite.BayesiteAction(
-        engine_command=engine_command,
+        command=external_command,
         input_materializations=(
             bayesite.MaterializeBayesiteData(
                 canonical_path=CanonicalDataArtifact(canonical_input),
@@ -470,21 +482,21 @@ def test_bayesite_action_owns_data_materialization_and_postprocess(
     prepared = bayesite.BayesiteBackend("fake-bayesite").materialize(action)
 
     assert prepared == bayesite.BayesitePreparedCommand(
-        engine_command=engine_command,
+        command=external_command,
         postprocess=action.postprocess,
     )
     assert '"ok": {' in native_input.path.read_text(encoding="utf-8")
     assert '"dtype": "int64"' in native_input.path.read_text(encoding="utf-8")
 
-    def fake_run(command: BayesiteCommand) -> int:
-        assert command == engine_command
+    def fake_run(command: ExternalCommand) -> int:
+        assert command == external_command
         native_output.path.write_text(
             '{"y":{"dtype":"float64","shape":[],"values":[1.5]}}\n',
             encoding="utf-8",
         )
         return 0
 
-    monkeypatch.setattr(bayesite, "run_bayesite_command", fake_run)
+    monkeypatch.setattr(bayesite, "run_external_command", fake_run)
 
     assert bayesite.BayesiteBackend("fake-bayesite").execute(prepared) == 0
     assert '"format": "bayescycle.data.json.v1"' in canonical_output.path.read_text(
@@ -496,8 +508,8 @@ def test_run_directory_commands_execute_through_bayesite_backend(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import bayescycle._cli as cli
-    from bayescycle._commands import BayesiteCommand
-    from bayescycle.backends.bayesite import BayesiteAction, BayesitePreparedCommand
+    from bayescycle._integrations.external_command import ExternalCommand
+    from bayescycle.backends.bayesite.adapter import BayesiteAction, BayesitePreparedCommand
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -513,7 +525,7 @@ def test_run_directory_commands_execute_through_bayesite_backend(
             self, context: DiagnoseRunContext, request: DiagnoseRequest
         ) -> BayesiteAction:
             action = BayesiteAction(
-                engine_command=BayesiteCommand(
+                command=ExternalCommand(
                     argv=(
                         self.engine,
                         "diagnose",
@@ -528,11 +540,11 @@ def test_run_directory_commands_execute_through_bayesite_backend(
             seen["action"] = action
             return action
 
-        def describe(self, action: BayesiteAction) -> EngineBackendPlanDescription:
-            return EngineBackendPlanDescription(engine_command=action.engine_command.argv)
+        def describe(self, action: BayesiteAction) -> ExternalCommandPlanDescription:
+            return ExternalCommandPlanDescription(backend="bayesite", command=action.command.argv)
 
         def materialize(self, action: BayesiteAction) -> BayesitePreparedCommand:
-            return BayesitePreparedCommand(action.engine_command)
+            return BayesitePreparedCommand(action.command)
 
         def execute(self, command: BayesitePreparedCommand) -> int:
             seen["command"] = command
@@ -549,7 +561,7 @@ def test_run_directory_commands_execute_through_bayesite_backend(
 
     assert code == 23
     expected_action = BayesiteAction(
-        engine_command=BayesiteCommand(
+        command=ExternalCommand(
             argv=(
                 "fake-bayesite",
                 "diagnose",
@@ -564,7 +576,7 @@ def test_run_directory_commands_execute_through_bayesite_backend(
     assert seen == {
         "engine": "fake-bayesite",
         "action": expected_action,
-        "command": BayesitePreparedCommand(engine_command=expected_action.engine_command),
+        "command": BayesitePreparedCommand(command=expected_action.command),
     }
 
 
