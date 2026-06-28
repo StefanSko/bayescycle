@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NotRequired, Protocol, TypedDict, cast
@@ -195,6 +196,67 @@ class RecoverCheckRunContext:
     output_path: Path
 
 
+type JsonNumber = int | float
+
+
+class BackendPlanFields(TypedDict, total=False):
+    """JSON-ready backend-owned plan fields."""
+
+    engine_command: list[str]
+    backend_simulated_data: str
+    backend: str
+    sampler: dict[str, JsonNumber]
+    settings: dict[str, JsonNumber]
+
+
+@dataclass(frozen=True)
+class EngineBackendPlanDescription:
+    """Backend plan description for an external engine command."""
+
+    engine_command: tuple[str, ...]
+    backend_simulated_data: Path | None = None
+
+
+@dataclass(frozen=True)
+class InProcessSamplePlanDescription:
+    """Backend plan description for in-process sampling."""
+
+    backend: str
+    sampler: Mapping[str, JsonNumber]
+
+
+@dataclass(frozen=True)
+class InProcessSettingsPlanDescription:
+    """Backend plan description for in-process non-sampling settings."""
+
+    backend: str
+    settings: Mapping[str, JsonNumber]
+
+
+type BackendPlanDescription = (
+    EngineBackendPlanDescription | InProcessSamplePlanDescription | InProcessSettingsPlanDescription
+)
+
+
+def backend_plan_description_fields(
+    description: BackendPlanDescription,
+) -> BackendPlanFields:
+    """Lower a typed backend plan description to JSON-ready plan fields."""
+    match description:
+        case EngineBackendPlanDescription(
+            engine_command=engine_command,
+            backend_simulated_data=backend_simulated_data,
+        ):
+            fields: BackendPlanFields = {"engine_command": list(engine_command)}
+            if backend_simulated_data is not None:
+                fields["backend_simulated_data"] = str(backend_simulated_data)
+            return fields
+        case InProcessSamplePlanDescription(backend=backend, sampler=sampler):
+            return {"backend": backend, "sampler": dict(sampler)}
+        case InProcessSettingsPlanDescription(backend=backend, settings=settings):
+            return {"backend": backend, "settings": dict(settings)}
+
+
 class BackendExecutor[CommandT](Protocol):
     """Backend capability for executing a materialized command."""
 
@@ -205,8 +267,8 @@ class BackendExecutor[CommandT](Protocol):
 class ActionBackend[ActionT, CommandT](BackendExecutor[CommandT], Protocol):
     """Backend capability shared by planned backend actions."""
 
-    def describe(self, action: ActionT) -> dict[str, object]:
-        """Return backend-owned plan fields for an action."""
+    def describe(self, action: ActionT) -> BackendPlanDescription:
+        """Return backend-owned plan description for an action."""
 
     def materialize(self, action: ActionT) -> CommandT:
         """Materialize backend-private inputs and return an executable command."""
@@ -357,7 +419,7 @@ class SamplePlanDocument(TypedDict):
     output: str
     engine_command: NotRequired[list[str]]
     backend: NotRequired[str]
-    sampler: NotRequired[dict[str, int | float]]
+    sampler: NotRequired[dict[str, JsonNumber]]
     dims: NotRequired[str]
 
 
@@ -375,8 +437,9 @@ class ModelCommandPlanDocument(TypedDict):
     recovery: NotRequired[str]
     sbc: NotRequired[str]
     engine_command: NotRequired[list[str]]
+    backend_simulated_data: NotRequired[str]
     backend: NotRequired[str]
-    settings: NotRequired[dict[str, int | float]]
+    settings: NotRequired[dict[str, JsonNumber]]
     dims: NotRequired[str]
 
 
@@ -730,7 +793,7 @@ def sample_plan_document[ActionT, CommandT](
         "draws": str(run.draws_path),
         "output": str(context.output_dir),
     }
-    document.update(backend.describe(run.action))
+    document.update(backend_plan_description_fields(backend.describe(run.action)))
     if context.dims_path is not None:
         document["dims"] = str(context.dims_path)
     return cast(SamplePlanDocument, document)
@@ -746,7 +809,7 @@ def prior_predictive_plan_document[ActionT, CommandT](
         model_name=context.model_name,
         ir_path=context.ir_path,
         output_dir=context.output_dir,
-        description=backend.describe(run.action),
+        description=backend_plan_description_fields(backend.describe(run.action)),
         dims_path=context.dims_path,
         data_path=context.data_path,
         extra={"prior_predictive": str(run.prior_predictive_path)},
@@ -762,7 +825,7 @@ def simulate_plan_document[ActionT, CommandT](
         model_name=context.model_name,
         ir_path=context.ir_path,
         output_dir=context.output_dir,
-        description=backend.describe(run.action),
+        description=backend_plan_description_fields(backend.describe(run.action)),
         dims_path=context.dims_path,
         data_path=context.data_path,
         extra={
@@ -781,7 +844,7 @@ def recover_plan_document[ActionT, CommandT](
         model_name=context.model_name,
         ir_path=context.ir_path,
         output_dir=context.output_dir,
-        description=backend.describe(run.action),
+        description=backend_plan_description_fields(backend.describe(run.action)),
         dims_path=context.dims_path,
         data_path=None,
         extra={"scenario": str(context.scenario_path), "recovery": str(run.recovery_path)},
@@ -797,7 +860,7 @@ def sbc_plan_document[ActionT, CommandT](
         model_name=context.model_name,
         ir_path=context.ir_path,
         output_dir=context.output_dir,
-        description=backend.describe(run.action),
+        description=backend_plan_description_fields(backend.describe(run.action)),
         dims_path=context.dims_path,
         data_path=None,
         extra={"scenario": str(context.scenario_path), "sbc": str(run.sbc_path)},
@@ -812,7 +875,7 @@ def run_command_plan_document[ActionT, CommandT](
         "run": str(plan.run_dir),
         "output": str(plan.output_path),
     }
-    document.update(backend.describe(plan.action))
+    document.update(backend_plan_description_fields(backend.describe(plan.action)))
     return cast(RunCommandPlanDocument, document)
 
 
@@ -821,7 +884,7 @@ def _model_command_document(
     model_name: str,
     ir_path: IrArtifact,
     output_dir: Path,
-    description: dict[str, object],
+    description: BackendPlanFields,
     dims_path: Path | None,
     data_path: CanonicalDataArtifact | None,
     extra: dict[str, str],

@@ -8,8 +8,12 @@ import pytest
 from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact, IrArtifact
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
+    EngineBackendPlanDescription,
+    InProcessSamplePlanDescription,
+    InProcessSettingsPlanDescription,
     PlannedModelRunContext,
     SampleRequest,
+    backend_plan_description_fields,
     materialize_sample_run,
     plan_sample_run,
     sample_plan_document,
@@ -37,11 +41,10 @@ class FakeSampleBackend:
             draws_path=context.output_dir / "posterior.ndjson",
         )
 
-    def describe(self, action: FakeSampleAction) -> dict[str, object]:
-        return {
-            "backend": "fake",
-            "engine_command": ["fake", "sample", "--out", str(action.draws_path)],
-        }
+    def describe(self, action: FakeSampleAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(
+            engine_command=("fake", "sample", "--out", str(action.draws_path))
+        )
 
     def materialize(self, action: FakeSampleAction) -> FakeCommand:
         assert (action.output_dir / "model.ir.json").is_file()
@@ -51,6 +54,34 @@ class FakeSampleBackend:
     def execute(self, command: FakeCommand) -> int:
         assert command.output_dir.is_dir()
         return 17
+
+
+def test_backend_plan_description_is_closed_adt_lowered_by_workflow(
+    tmp_path: Path,
+) -> None:
+    simulated_data = tmp_path / ".bayesite" / "simulated_data.json"
+
+    assert backend_plan_description_fields(
+        EngineBackendPlanDescription(
+            engine_command=("bayesite", "simulate"),
+            backend_simulated_data=simulated_data,
+        )
+    ) == {
+        "engine_command": ["bayesite", "simulate"],
+        "backend_simulated_data": str(simulated_data),
+    }
+    assert backend_plan_description_fields(
+        InProcessSamplePlanDescription(
+            backend="jaxstanv5",
+            sampler={"seed": 1, "target_accept": 0.9},
+        )
+    ) == {"backend": "jaxstanv5", "sampler": {"seed": 1, "target_accept": 0.9}}
+    assert backend_plan_description_fields(
+        InProcessSettingsPlanDescription(
+            backend="jaxstanv5",
+            settings={"seed": 2, "draws": 4},
+        )
+    ) == {"backend": "jaxstanv5", "settings": {"seed": 2, "draws": 4}}
 
 
 def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> None:
@@ -225,8 +256,8 @@ def test_run_directory_commands_execute_through_bayesite_backend(
             seen["action"] = action
             return action
 
-        def describe(self, action: BayesiteAction) -> dict[str, object]:
-            return {"engine_command": list(action.engine_command.argv)}
+        def describe(self, action: BayesiteAction) -> EngineBackendPlanDescription:
+            return EngineBackendPlanDescription(engine_command=action.engine_command.argv)
 
         def materialize(self, action: BayesiteAction) -> BayesitePreparedCommand:
             return BayesitePreparedCommand(action.engine_command)

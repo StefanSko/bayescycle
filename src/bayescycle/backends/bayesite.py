@@ -12,6 +12,7 @@ from bayescycle._errors import WorkflowError
 from bayescycle._workflow import (
     DiagnoseRequest,
     DiagnoseRunContext,
+    EngineBackendPlanDescription,
     PlannedModelRunContext,
     PlannedModelScenarioContext,
     PosteriorCheckRequest,
@@ -321,12 +322,15 @@ class BayesiteBackend:
             )
         )
 
-    def describe(self, action: BayesiteAction) -> dict[str, object]:
-        """Return Bayesite-owned plan fields for a planned action."""
-        fields: dict[str, object] = {"engine_command": list(action.engine_command.argv)}
-        if action.postprocess:
-            fields["backend_simulated_data"] = str(action.postprocess[0].native_path.path)
-        return fields
+    def describe(self, action: BayesiteAction) -> EngineBackendPlanDescription:
+        """Return Bayesite-owned plan description for a planned action."""
+        backend_simulated_data = (
+            action.postprocess[0].native_path.path if action.postprocess else None
+        )
+        return EngineBackendPlanDescription(
+            engine_command=action.engine_command.argv,
+            backend_simulated_data=backend_simulated_data,
+        )
 
     def materialize(self, action: BayesiteAction) -> BayesitePreparedCommand:
         """Materialize Bayesite-private inputs and return an executable command."""

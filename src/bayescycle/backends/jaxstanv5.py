@@ -10,6 +10,8 @@ from bayescycle._errors import WorkflowError
 from bayescycle._inproc import run_jaxstanv5_prior_predictive, run_jaxstanv5_sample
 from bayescycle._settings import PriorPredictiveSettings
 from bayescycle._workflow import (
+    InProcessSamplePlanDescription,
+    InProcessSettingsPlanDescription,
     PlannedModelRunContext,
     PriorPredictiveRequest,
     SampleRequest,
@@ -76,11 +78,19 @@ class Jaxstanv5Backend:
             )
         )
 
-    def describe(self, action: Jaxstanv5Action) -> dict[str, object]:
-        """Return jaxstanv5-owned plan fields for a planned action."""
+    def describe(
+        self, action: Jaxstanv5Action
+    ) -> InProcessSamplePlanDescription | InProcessSettingsPlanDescription:
+        """Return jaxstanv5-owned plan description for a planned action."""
         if isinstance(action, Jaxstanv5SampleAction):
-            return {"backend": "jaxstanv5", "sampler": action.command.settings.as_json()}
-        return {"backend": "jaxstanv5", "settings": action.command.settings.as_json()}
+            return InProcessSamplePlanDescription(
+                backend="jaxstanv5",
+                sampler=action.command.settings.as_json(),
+            )
+        return InProcessSettingsPlanDescription(
+            backend="jaxstanv5",
+            settings=action.command.settings.as_json(),
+        )
 
     @overload
     def materialize(self, action: Jaxstanv5SampleAction) -> Jaxstanv5SampleCommand: ...
