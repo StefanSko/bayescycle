@@ -6,11 +6,13 @@
 - Python model execution and IR serialization are delegated to `jaxstanv5`.
 - Sampling is delegated to an engine backend such as the Bayesite CLI or an
   explicitly selected in-process backend.
-- Run-directory preparation, canonical data-artifact serialization, and command
-  orchestration are the only core responsibilities.
-- Run-directory metadata sidecars are allowed only when they serialize metadata
-  explicitly exposed by `jaxstanv5`; `bayescycle` must not invent model
-  semantics such as dimension labels.
+- Run-directory preparation, canonical data-artifact serialization, command
+  orchestration, and narrow run provenance metadata are the only core
+  responsibilities.
+- Run-directory metadata sidecars are allowed only when they serialize command
+  provenance, artifact paths and hashes, or metadata explicitly exposed by
+  `jaxstanv5`; `bayescycle` must not invent model semantics such as dimension
+  labels.
 
 ## Boundaries
 
@@ -24,8 +26,10 @@
 - Multi-stage backend intent is resolved as a single backend plan or a complete
   explicit mixed plan before any run-directory writes.
 - The Bayesite engine command is data, represented before it is executed.
+- Durable run artifacts are append-only: commands must refuse existing output
+  artifacts instead of clearing or overwriting them.
 - Bayesite engine paths and required subcommands are preflighted before
-  execution creates or rewrites run artifacts.
+  execution creates run artifacts.
 - Backend stdout/stderr and exit status are not interpreted as sampler semantics
   unless a later explicit diagnostics phase is added.
 - When bayescycle serializes sampler facts, those facts must be explicitly

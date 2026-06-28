@@ -138,7 +138,6 @@ def _build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--draws", help="posterior draw count forwarded to Bayesite")
     sample.add_argument("--max-treedepth", dest="max_tree_depth", help="maximum NUTS tree depth")
     sample.add_argument("--target-accept", dest="target_accept", help="target NUTS acceptance rate")
-    sample.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     _add_show_plan_argument(
         sample,
         help_text="show the planned sample command without executing it",
@@ -164,9 +163,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     prior_predictive.add_argument("--seed", help="seed forwarded to the backend")
     prior_predictive.add_argument("--draws", help="prior-predictive draw count")
-    prior_predictive.add_argument(
-        "--force", action="store_true", help="reuse a non-empty output directory"
-    )
     _add_show_plan_argument(
         prior_predictive,
         help_text="show the planned backend command without executing it",
@@ -188,7 +184,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     simulate.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     simulate.add_argument("--seed", help="seed forwarded to Bayesite")
-    simulate.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     _add_show_plan_argument(
         simulate,
         help_text="show the planned backend command without executing it",
@@ -208,7 +203,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recovery backend to use",
     )
     recover.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
-    recover.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     _add_show_plan_argument(
         recover,
         help_text="show the planned backend command without executing it",
@@ -229,7 +223,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sbc.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
     sbc.add_argument("--replicates", help="replicate count overriding the scenario")
-    sbc.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     _add_show_plan_argument(
         sbc,
         help_text="show the planned backend command without executing it",
@@ -367,7 +360,6 @@ def _sample(namespace: argparse.Namespace) -> int:
                 target_accept=cast(str | None, namespace.target_accept),
             ),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
-            force=cast(bool, namespace.force),
         )
         intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
@@ -407,7 +399,6 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
             seed=cast(str | None, namespace.seed),
             draws=cast(str | None, namespace.draws),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
-            force=cast(bool, namespace.force),
         )
         intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
@@ -451,7 +442,6 @@ def _simulate(namespace: argparse.Namespace) -> int:
             backend=cast(str, namespace.backend),
             seed=cast(str | None, namespace.seed),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
-            force=cast(bool, namespace.force),
         )
         intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
@@ -480,7 +470,6 @@ def _recover(namespace: argparse.Namespace) -> int:
             model_name=cast(str | None, namespace.model_name),
             backend=cast(str, namespace.backend),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
-            force=cast(bool, namespace.force),
         )
         intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":
@@ -510,7 +499,6 @@ def _sbc(namespace: argparse.Namespace) -> int:
             backend=cast(str, namespace.backend),
             replicates=cast(str | None, namespace.replicates),
             engine_args=tuple(cast(list[str], namespace.engine_args)),
-            force=cast(bool, namespace.force),
         )
         intent = _intent_from_namespace(namespace)
         if request.backend == "bayesite":

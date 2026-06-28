@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,14 +11,25 @@ from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact,
 from bayescycle._errors import WorkflowError
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
+    DiagnoseRequest,
+    DiagnoseRunContext,
     EngineBackendPlanDescription,
     InProcessSamplePlanDescription,
     InProcessSettingsPlanDescription,
     PlannedModelRunContext,
+    PlannedModelScenarioContext,
+    RecoverRequest,
     SampleRequest,
+    SimulateRequest,
     backend_plan_description_fields,
+    materialize_recover_run,
+    materialize_run_directory_command,
     materialize_sample_run,
+    materialize_simulate_run,
+    plan_diagnose_run,
+    plan_recover_run,
     plan_sample_run,
+    plan_simulate_run,
     sample_plan_document,
 )
 
@@ -30,6 +43,75 @@ class FakeSampleAction:
 @dataclass(frozen=True)
 class FakeCommand:
     output_dir: Path
+
+
+def _sha256_uri(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+@dataclass(frozen=True)
+class FakeDiagnoseAction:
+    output_path: Path
+
+
+@dataclass(frozen=True)
+class FakeSimulateAction:
+    output_dir: Path
+
+
+@dataclass(frozen=True)
+class FakeRecoverAction:
+    output_dir: Path
+
+
+class FakeDiagnoseBackend:
+    def plan_diagnose_action(
+        self, context: DiagnoseRunContext, request: DiagnoseRequest
+    ) -> FakeDiagnoseAction:
+        return FakeDiagnoseAction(output_path=context.output_path)
+
+    def describe(self, action: FakeDiagnoseAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(
+            engine_command=("fake", "diagnose", "--out", str(action.output_path))
+        )
+
+    def materialize(self, action: FakeDiagnoseAction) -> FakeCommand:
+        return FakeCommand(output_dir=action.output_path.parent)
+
+    def execute(self, command: FakeCommand) -> int:
+        return 0
+
+
+class FakeSimulateBackend:
+    def plan_simulate_action(
+        self, context: PlannedModelRunContext, request: SimulateRequest, truth_path: Path
+    ) -> FakeSimulateAction:
+        return FakeSimulateAction(output_dir=context.output_dir)
+
+    def describe(self, action: FakeSimulateAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(engine_command=("fake", "simulate"))
+
+    def materialize(self, action: FakeSimulateAction) -> FakeCommand:
+        return FakeCommand(output_dir=action.output_dir)
+
+    def execute(self, command: FakeCommand) -> int:
+        return 0
+
+
+class FakeRecoverBackend:
+    def plan_recover_action(
+        self, context: PlannedModelScenarioContext, request: RecoverRequest
+    ) -> FakeRecoverAction:
+        return FakeRecoverAction(output_dir=context.output_dir)
+
+    def describe(self, action: FakeRecoverAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(engine_command=("fake", "recover"))
+
+    def materialize(self, action: FakeRecoverAction) -> FakeCommand:
+        return FakeCommand(output_dir=action.output_dir)
+
+    def execute(self, command: FakeCommand) -> int:
+        return 0
 
 
 class FakeSampleBackend:
@@ -116,7 +198,6 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
             target_accept=None,
         ),
         engine_args=(),
-        force=False,
     )
 
     plan = plan_sample_run(request, backend)
@@ -141,7 +222,152 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
     assert backend.execute(command) == 17
 
 
-def test_materialization_preserves_no_force_output_dir_guard(tmp_path: Path) -> None:
+def test_run_directory_materialization_rechecks_output_absence(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    backend = FakeDiagnoseBackend()
+
+    plan = plan_diagnose_run(DiagnoseRequest(run_dir=run_dir), backend)
+    plan.output_path.write_text("created after planning\n", encoding="utf-8")
+
+    with pytest.raises(WorkflowError, match="output artifact already exists"):
+        materialize_run_directory_command(plan, backend)
+
+
+def test_run_directory_output_guard_treats_dangling_symlink_as_existing(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    (run_dir / "diagnostics.json").symlink_to(run_dir / "missing-diagnostics.json")
+
+    with pytest.raises(WorkflowError, match="output artifact already exists"):
+        plan_diagnose_run(DiagnoseRequest(run_dir=run_dir), FakeDiagnoseBackend())
+
+
+def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    original_model = (
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n"
+    )
+    model_file.write_text(original_model, encoding="utf-8")
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    original_model_hash = _sha256_uri(model_file)
+    original_data_hash = _sha256_uri(data_file)
+    backend = FakeSampleBackend()
+
+    plan = plan_sample_run(
+        SampleRequest(
+            model_path=model_file,
+            data_path=data_file,
+            output_dir=tmp_path / "run",
+            model_name=None,
+            backend="bayesite",
+            sampler=SamplerSettings(
+                seed=None,
+                chains=None,
+                warmup=None,
+                draws=None,
+                max_tree_depth=None,
+                target_accept=None,
+            ),
+            engine_args=(),
+        ),
+        backend,
+    )
+    model_file.write_text(f"{original_model}\n# edited after planning\n", encoding="utf-8")
+    data_file.write_text('{"y": 9.0}\n', encoding="utf-8")
+
+    materialize_sample_run(plan, backend)
+
+    run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
+    assert run_metadata["model"]["sha256"] == original_model_hash
+    assert run_metadata["inputs"][0]["sha256"] == original_data_hash
+
+
+def test_simulate_metadata_hashes_materialized_truth(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    truth_file = tmp_path / "truth.json"
+    truth_file.write_text('{"mu": 0.0}\n', encoding="utf-8")
+    backend = FakeSimulateBackend()
+
+    plan = plan_simulate_run(
+        SimulateRequest(
+            model_path=model_file,
+            data_path=data_file,
+            truth_path=truth_file,
+            output_dir=tmp_path / "run",
+            model_name=None,
+            backend="bayesite",
+            seed=None,
+            engine_args=(),
+        ),
+        backend,
+    )
+    truth_file.write_text('{"mu": 9.0}\n', encoding="utf-8")
+
+    materialize_simulate_run(plan, backend)
+
+    run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
+    truth_input = next(entry for entry in run_metadata["inputs"] if entry["role"] == "truth")
+    assert truth_input["sha256"] == _sha256_uri(tmp_path / "run" / "truth.json")
+
+
+def test_recover_metadata_hashes_materialized_scenario(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    scenario_file = tmp_path / "scenario.json"
+    scenario_file.write_text('{"data": {"y": 0.25}}\n', encoding="utf-8")
+    backend = FakeRecoverBackend()
+
+    plan = plan_recover_run(
+        RecoverRequest(
+            model_path=model_file,
+            scenario_path=scenario_file,
+            output_dir=tmp_path / "run",
+            model_name=None,
+            backend="bayesite",
+            engine_args=(),
+        ),
+        backend,
+    )
+    scenario_file.write_text('{"data": {"y": 9.0}}\n', encoding="utf-8")
+
+    materialize_recover_run(plan, backend)
+
+    run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
+    scenario_input = next(entry for entry in run_metadata["inputs"] if entry["role"] == "scenario")
+    assert scenario_input["sha256"] == _sha256_uri(tmp_path / "run" / "scenario.json")
+
+
+def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
         "from jaxstanv5 import Observed, model\n"
@@ -173,7 +399,6 @@ def test_materialization_preserves_no_force_output_dir_guard(tmp_path: Path) -> 
                 target_accept=None,
             ),
             engine_args=(),
-            force=False,
         ),
         backend,
     )
@@ -268,7 +493,6 @@ def test_run_directory_commands_execute_through_bayesite_backend(
 ) -> None:
     import bayescycle._cli as cli
     from bayescycle._commands import BayesiteCommand
-    from bayescycle._workflow import DiagnoseRequest, DiagnoseRunContext
     from bayescycle.backends.bayesite import BayesiteAction, BayesitePreparedCommand
 
     run_dir = tmp_path / "run"

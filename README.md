@@ -111,6 +111,11 @@ bayescycle recover model.py --scenario scenario.json -o runs/recover-0001
 bayescycle sbc model.py --scenario scenario.json -o runs/sbc-0001 --replicates 100
 ```
 
+Run directories are append-only discovery records. Commands refuse to reuse a
+non-empty output directory or overwrite an existing follow-up artifact; use a new
+run id for a new attempt. Fresh model-level runs also write `run.json` with
+narrow provenance metadata for future indexing.
+
 `prior-predictive` supports both backends. `simulate`, `recover`, and `sbc` are
 currently Bayesite-backed; selecting `--backend jaxstanv5` returns a clear
 unsupported-profile error rather than falling back silently.

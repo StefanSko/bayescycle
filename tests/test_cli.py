@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -114,6 +115,10 @@ def _write_input_data(tmp_path: Path) -> Path:
     data_file = tmp_path / "input.json"
     data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
     return data_file
+
+
+def _sha256_uri(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
 def _write_empty_data(tmp_path: Path) -> Path:
@@ -615,7 +620,64 @@ def test_sample_uses_preflight_resolved_engine_after_model_changes_cwd(
     )
 
 
-def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -> None:
+def test_sample_writes_run_metadata_for_future_provenance(tmp_path: Path) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text('draws\\n')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--engine",
+            str(fake_engine),
+        ]
+    )
+
+    assert code == 0
+    assert json.loads((output_dir / "run.json").read_text(encoding="utf-8")) == {
+        "format": "bayescycle.run.v1",
+        "kind": "sample",
+        "backend": "bayesite",
+        "model": {
+            "name": "Simple",
+            "source_path": str(model_file.resolve()),
+            "sha256": _sha256_uri(model_file),
+            "ir_path": "model.ir.json",
+        },
+        "inputs": [
+            {
+                "role": "data",
+                "source_path": str(data_file.resolve()),
+                "sha256": _sha256_uri(data_file),
+                "path": "data.json",
+                "format": "bayescycle.data.json.v1",
+            }
+        ],
+        "outputs": [{"role": "posterior", "path": "posterior.ndjson"}],
+    }
+
+
+def test_sample_force_option_is_removed_and_does_not_mutate_stale_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     model_file = _write_simple_model(tmp_path)
     data_file = _write_input_data(tmp_path)
     output_dir = tmp_path / "run"
@@ -635,22 +697,53 @@ def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -
     )
     fake_engine.chmod(0o755)
 
-    code = main(
-        [
-            "sample",
-            str(model_file),
-            "--data",
-            str(data_file),
-            "-o",
-            str(output_dir),
-            "--force",
-            "--engine",
-            str(fake_engine),
-        ]
-    )
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "sample",
+                str(model_file),
+                "--data",
+                str(data_file),
+                "-o",
+                str(output_dir),
+                "--force",
+                "--engine",
+                str(fake_engine),
+            ]
+        )
 
-    assert code == 19
-    assert not stale_posterior.exists()
+    assert exc_info.value.code == 2
+    assert "unrecognized arguments: --force" in capsys.readouterr().err
+    assert stale_posterior.read_text(encoding="utf-8") == "stale draws\n"
+
+
+def test_diagnose_refuses_to_overwrite_existing_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    diagnostics = run_dir / "diagnostics.json"
+    diagnostics.write_text('{"old": true}\n', encoding="utf-8")
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text('{\"old\": false}\\n')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(["diagnose", str(run_dir), "--engine", str(fake_engine)])
+
+    assert code == 2
+    assert "output artifact already exists" in capsys.readouterr().err
+    assert diagnostics.read_text(encoding="utf-8") == '{"old": true}\n'
 
 
 def test_prior_predictive_dry_run_prints_plan_without_materializing_run(
@@ -1467,7 +1560,9 @@ def test_recover_check_reports_missing_posterior(
     assert "posterior.ndjson" in err
 
 
-def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> None:
+def test_recover_check_refuses_to_overwrite_stale_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     run_dir = tmp_path / "run"
     _write_run_artifacts(run_dir, model=False, data=False)
     stale_report = run_dir / "recovery_check.json"
@@ -1497,8 +1592,9 @@ def test_recover_check_clears_stale_output_when_engine_fails(tmp_path: Path) -> 
         ]
     )
 
-    assert code == 19
-    assert not stale_report.exists()
+    assert code == 2
+    assert "output artifact already exists" in capsys.readouterr().err
+    assert stale_report.read_text(encoding="utf-8") == "stale report\n"
 
 
 def test_sample_dry_run_reports_dims_sidecar_without_materializing_it(
@@ -1547,7 +1643,7 @@ def test_sample_dry_run_reports_dims_sidecar_without_materializing_it(
     assert not dims_path.exists()
 
 
-def test_sample_dry_run_force_does_not_remove_stale_dims_sidecar_when_model_has_no_dims(
+def test_sample_dry_run_refuses_existing_run_dir_without_removing_stale_dims_sidecar(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1576,14 +1672,13 @@ def test_sample_dry_run_force_does_not_remove_stale_dims_sidecar_when_model_has_
             str(data_file),
             "-o",
             str(output_dir),
-            "--force",
             "--dry-run",
         ]
     )
 
-    assert second_code == 0
+    assert second_code == 2
     assert (output_dir / "dims.json").exists()
-    assert "dims" not in json.loads(capsys.readouterr().out)
+    assert "output directory is not empty" in capsys.readouterr().err
 
 
 def test_sample_rejects_dims_sidecar_rank_mismatch(

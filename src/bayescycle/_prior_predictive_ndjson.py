@@ -68,7 +68,7 @@ def write_prior_predictive_ndjson(
         )
     _validate_site_arrays(result, sites, settings)
     documents = _documents(result, sites, settings)
-    with path.open("w", encoding="utf-8") as f:
+    with path.open("x", encoding="utf-8") as f:
         for document in documents:
             f.write(json.dumps(document, separators=(",", ":"), allow_nan=False))
             f.write("\n")
