@@ -18,15 +18,6 @@ class BayesiteCommand:
 
 
 @dataclass(frozen=True)
-class BayesiteSimulateCommand:
-    """Bayesite simulate command plus canonical-data postprocessing paths."""
-
-    engine_command: BayesiteCommand
-    native_data_path: Path
-    canonical_data_path: Path
-
-
-@dataclass(frozen=True)
 class Jaxstanv5PriorPredictiveCommand:
     """An in-process jaxstanv5 prior-predictive command."""
 

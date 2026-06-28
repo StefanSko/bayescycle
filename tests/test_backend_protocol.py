@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
     PreparedModelRunContext,
@@ -105,27 +107,75 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
     assert backend.execute(command) == 17
 
 
-def test_command_values_do_not_own_dry_run_projection() -> None:
+def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> None:
     import bayescycle._commands as commands
     from bayescycle._commands import (
         BayesiteCommand,
-        BayesiteSimulateCommand,
         Jaxstanv5PriorPredictiveCommand,
         Jaxstanv5SampleCommand,
     )
 
     assert not hasattr(commands, "DryRunCommand")
+    assert not hasattr(commands, "BayesiteSimulateCommand")
     assert not hasattr(BayesiteCommand(argv=("bayesite", "sample")), "dry_run_fields")
-    assert not hasattr(
-        BayesiteSimulateCommand(
-            engine_command=BayesiteCommand(argv=("bayesite", "simulate")),
-            native_data_path=Path("backend.json"),
-            canonical_data_path=Path("canonical.json"),
-        ),
-        "dry_run_fields",
-    )
     assert not hasattr(Jaxstanv5SampleCommand, "dry_run_fields")
     assert not hasattr(Jaxstanv5PriorPredictiveCommand, "dry_run_fields")
+
+
+def test_bayesite_action_owns_data_materialization_and_postprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bayescycle._commands import BayesiteCommand
+    from bayescycle.backends import bayesite
+
+    canonical_input = tmp_path / "run" / "data.json"
+    canonical_input.parent.mkdir()
+    canonical_input.write_text(
+        '{"format":"bayescycle.data.json.v1",'
+        '"variables":{"ok":{"dtype":"bool","shape":[],"values":[true]}}}\n',
+        encoding="utf-8",
+    )
+    native_input = tmp_path / "run" / ".bayesite" / "data.json"
+    native_output = tmp_path / "run" / ".bayesite" / "simulated_data.json"
+    canonical_output = tmp_path / "run" / "simulated_data.json"
+    engine_command = BayesiteCommand(argv=("fake-bayesite", "simulate"))
+    action = bayesite.BayesiteAction(
+        engine_command=engine_command,
+        input_materializations=(
+            bayesite.MaterializeBayesiteData(
+                canonical_path=canonical_input,
+                native_path=native_input,
+            ),
+        ),
+        postprocess=(
+            bayesite.CanonicalizeGeneratedData(
+                native_path=native_output,
+                canonical_path=canonical_output,
+            ),
+        ),
+    )
+
+    prepared = bayesite.BayesiteBackend("fake-bayesite").materialize(action)
+
+    assert prepared == bayesite.BayesitePreparedCommand(
+        engine_command=engine_command,
+        postprocess=action.postprocess,
+    )
+    assert '"ok": {' in native_input.read_text(encoding="utf-8")
+    assert '"dtype": "int64"' in native_input.read_text(encoding="utf-8")
+
+    def fake_run(command: BayesiteCommand) -> int:
+        assert command == engine_command
+        native_output.write_text(
+            '{"y":{"dtype":"float64","shape":[],"values":[1.5]}}\n',
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr(bayesite, "run_bayesite_command", fake_run)
+
+    assert bayesite.BayesiteBackend("fake-bayesite").execute(prepared) == 0
+    assert '"format": "bayescycle.data.json.v1"' in canonical_output.read_text(encoding="utf-8")
 
 
 def test_first_party_backends_do_not_expose_operation_specific_runners() -> None:
