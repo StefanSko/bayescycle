@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from bayescycle._artifacts import CanonicalDataArtifact, IrArtifact
 from bayescycle._model_loader import LoadedModel
 from bayescycle._settings import ResolvedPriorPredictiveSettings, ResolvedSamplerSettings
 
@@ -22,7 +23,7 @@ class Jaxstanv5PriorPredictiveCommand:
     """An in-process jaxstanv5 prior-predictive command."""
 
     loaded_model: LoadedModel
-    data_path: Path
+    data_path: CanonicalDataArtifact
     output_path: Path
     settings: ResolvedPriorPredictiveSettings
 
@@ -32,7 +33,7 @@ class Jaxstanv5SampleCommand:
     """An in-process jaxstanv5 sampling command."""
 
     loaded_model: LoadedModel
-    ir_path: Path
-    data_path: Path
+    ir_path: IrArtifact
+    data_path: CanonicalDataArtifact
     draws_path: Path
     settings: ResolvedSamplerSettings

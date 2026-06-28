@@ -11,6 +11,7 @@ from typing import NotRequired, Protocol, TypedDict, cast
 from jaxstanv5.ir import canonical_bytes
 from jaxstanv5.model import ModelMeta
 
+from bayescycle._artifacts import CanonicalDataArtifact, IrArtifact
 from bayescycle._commands import BayesiteCommand
 from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._errors import WorkflowError
@@ -125,8 +126,8 @@ class PreparedModelRunContext:
 
     model_name: str
     loaded_model: LoadedModel
-    ir_path: Path
-    data_path: Path
+    ir_path: IrArtifact
+    data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
     data_doc: DataDoc
@@ -138,7 +139,7 @@ class PreparedModelScenarioContext:
 
     model_name: str
     loaded_model: LoadedModel
-    ir_path: Path
+    ir_path: IrArtifact
     scenario_path: Path
     dims_path: Path | None
     output_dir: Path
@@ -232,8 +233,8 @@ class SampleRunPlan[ActionT]:
 
     model_name: str
     loaded_model: LoadedModel
-    ir_path: Path
-    data_path: Path
+    ir_path: IrArtifact
+    data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
     data_doc: DataDoc
@@ -246,8 +247,8 @@ class PreparedPriorPredictiveRun[ActionT]:
     """A run directory and prior-predictive backend action produced from a request."""
 
     model_name: str
-    ir_path: Path
-    data_path: Path
+    ir_path: IrArtifact
+    data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
     prior_predictive_path: Path
@@ -259,12 +260,12 @@ class PreparedSimulateRun[ActionT]:
     """A run directory and simulate backend action produced from a request."""
 
     model_name: str
-    ir_path: Path
-    data_path: Path
+    ir_path: IrArtifact
+    data_path: CanonicalDataArtifact
     truth_path: Path
     dims_path: Path | None
     output_dir: Path
-    simulated_data_path: Path
+    simulated_data_path: CanonicalDataArtifact
     action: ActionT
 
 
@@ -273,7 +274,7 @@ class PreparedRecoverRun[ActionT]:
     """A run directory and recover backend action produced from a request."""
 
     model_name: str
-    ir_path: Path
+    ir_path: IrArtifact
     scenario_path: Path
     dims_path: Path | None
     output_dir: Path
@@ -286,7 +287,7 @@ class PreparedSbcRun[ActionT]:
     """A run directory and SBC backend action produced from a request."""
 
     model_name: str
-    ir_path: Path
+    ir_path: IrArtifact
     scenario_path: Path
     dims_path: Path | None
     output_dir: Path
@@ -396,8 +397,8 @@ def materialize_sample_run[ActionT, CommandT](
 ) -> CommandT:
     """Materialize a planned sample run for execution."""
     _ensure_output_dir(plan.output_dir, force=True)
-    plan.ir_path.write_bytes(canonical_bytes(plan.loaded_model.meta))
-    write_data_doc(plan.data_path, plan.data_doc)
+    plan.ir_path.path.write_bytes(canonical_bytes(plan.loaded_model.meta))
+    write_data_doc(plan.data_path.path, plan.data_doc)
     _write_data_manifest(plan.output_dir, plan.data_path)
     _write_optional_dims_sidecar(
         plan.output_dir, plan.loaded_model.model_cls, plan.loaded_model.meta
@@ -439,8 +440,8 @@ def prepare_simulate_run[ActionT, CommandT](
     """Prepare a simulation run directory and command."""
     _validate_bayesite_only(request.backend, "simulate")
     output_dir = request.output_dir.expanduser().resolve()
-    output_path = output_dir / "simulated_data.json"
-    _reject_reserved_engine_args(request.engine_args, output_path)
+    output_path = CanonicalDataArtifact(output_dir / "simulated_data.json")
+    _reject_reserved_engine_args(request.engine_args, output_path.path)
     truth_source = _require_input_file(request.truth_path, "truth")
     context = prepare_model_run_context(
         model_path=request.model_path,
@@ -547,8 +548,8 @@ def plan_model_run_context(
     return PreparedModelRunContext(
         model_name=loaded_model.name,
         loaded_model=loaded_model,
-        ir_path=output_dir / "model.ir.json",
-        data_path=output_dir / "data.json",
+        ir_path=IrArtifact(output_dir / "model.ir.json"),
+        data_path=CanonicalDataArtifact(output_dir / "data.json"),
         dims_path=dims_path,
         output_dir=output_dir,
         data_doc=data_doc,
@@ -572,8 +573,8 @@ def prepare_model_run_context(
         force=force,
     )
     _ensure_output_dir(output_dir, force=True)
-    context.ir_path.write_bytes(canonical_bytes(context.loaded_model.meta))
-    write_data_doc(context.data_path, context.data_doc)
+    context.ir_path.path.write_bytes(canonical_bytes(context.loaded_model.meta))
+    write_data_doc(context.data_path.path, context.data_doc)
     _write_data_manifest(output_dir, context.data_path)
     dims_path = _write_optional_dims_sidecar(
         output_dir, context.loaded_model.model_cls, context.loaded_model.meta
@@ -604,8 +605,8 @@ def prepare_model_scenario_context(
 
     loaded_model = load_model(model_path, model_name)
 
-    ir_path = output_dir / "model.ir.json"
-    ir_path.write_bytes(canonical_bytes(loaded_model.meta))
+    ir_path = IrArtifact(output_dir / "model.ir.json")
+    ir_path.path.write_bytes(canonical_bytes(loaded_model.meta))
 
     run_scenario_path = _copy_required_input(
         scenario_source, output_dir / "scenario.json", "scenario"
@@ -628,8 +629,8 @@ def sample_plan_document[ActionT, CommandT](
     """Return a serializable sample plan summary."""
     document: dict[str, object] = {
         "model": run.model_name,
-        "ir": str(run.ir_path),
-        "data": str(run.data_path),
+        "ir": str(run.ir_path.path),
+        "data": str(run.data_path.path),
         "draws": str(run.draws_path),
         "output": str(run.output_dir),
     }
@@ -668,7 +669,7 @@ def simulate_dry_run_document[ActionT, CommandT](
         data_path=run.data_path,
         extra={
             "truth": str(run.truth_path),
-            "simulated_data": str(run.simulated_data_path),
+            "simulated_data": str(run.simulated_data_path.path),
         },
     )
 
@@ -747,7 +748,7 @@ def prepare_posterior_predictive_run(
             "--model",
             str(model_path),
             "--data",
-            str(engine_data_path),
+            str(engine_data_path.path),
             "--fit",
             str(fit_path),
             "--seed",
@@ -785,7 +786,7 @@ def prepare_posterior_check_run(request: PosteriorCheckRequest) -> PreparedRunDi
             "--model",
             str(model_path),
             "--data",
-            str(engine_data_path),
+            str(engine_data_path.path),
             "--fit",
             str(fit_path),
             *seed_args,
@@ -849,20 +850,20 @@ def run_command_dry_run_document(
 def _model_command_document(
     *,
     model_name: str,
-    ir_path: Path,
+    ir_path: IrArtifact,
     output_dir: Path,
     description: dict[str, object],
     dims_path: Path | None,
-    data_path: Path | None,
+    data_path: CanonicalDataArtifact | None,
     extra: dict[str, str],
 ) -> ModelCommandDryRunDocument:
     document: dict[str, object] = {
         "model": model_name,
-        "ir": str(ir_path),
+        "ir": str(ir_path.path),
         "output": str(output_dir),
     }
     if data_path is not None:
-        document["data"] = str(data_path)
+        document["data"] = str(data_path.path)
     document.update(extra)
     document.update(description)
     if dims_path is not None:
@@ -925,14 +926,16 @@ def _require_run_artifacts(paths: tuple[Path, ...]) -> None:
 
 
 def _write_data_manifest(
-    output_dir: Path, data_path: Path, additional_data_paths: tuple[Path, ...] = ()
+    output_dir: Path,
+    data_path: CanonicalDataArtifact,
+    additional_data_paths: tuple[CanonicalDataArtifact, ...] = (),
 ) -> None:
     artifacts = {
-        path.name: {
+        artifact.path.name: {
             "format": "bayescycle.data.json.v1",
-            "path": path.name,
+            "path": artifact.path.name,
         }
-        for path in (data_path, *additional_data_paths)
+        for artifact in (data_path, *additional_data_paths)
     }
     manifest = {
         "manifest_format": "bayescycle.run-manifest.v1",

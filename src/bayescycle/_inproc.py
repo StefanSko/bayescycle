@@ -61,7 +61,7 @@ def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
             "Install with `bayescycle[inproc]` or use `--backend bayesite`."
         ) from exc
     command.draws_path.unlink(missing_ok=True)
-    data = _load_data(command.data_path)
+    data = _load_data(command.data_path.path)
     try:
         model_cls = cast(_BindableModel, command.loaded_model.model_cls)
         bound = model_cls.bind(**data)
@@ -75,7 +75,7 @@ def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
             max_tree_depth=command.settings.max_tree_depth,
         )
         fingerprint = model_data_fingerprint(
-            command.ir_path.read_bytes(), command.data_path.read_bytes()
+            command.ir_path.path.read_bytes(), command.data_path.path.read_bytes()
         )
         write_posterior_ndjson(
             command.draws_path,
@@ -111,7 +111,7 @@ def run_jaxstanv5_prior_predictive(command: Jaxstanv5PriorPredictiveCommand) -> 
             "Install with `bayescycle[inproc]` or use `--backend bayesite`."
         ) from exc
     command.output_path.unlink(missing_ok=True)
-    data = _load_data(command.data_path)
+    data = _load_data(command.data_path.path)
     try:
         result = simulate_prior_predictive(
             command.loaded_model.model_cls,
