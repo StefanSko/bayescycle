@@ -7,7 +7,21 @@ from pathlib import Path
 import pytest
 
 import bayescycle._dims as dims_module
-from bayescycle._cli import main
+from bayescycle._cli import ExecutePlan, ShowPlan, _intent_from_flags, _intent_skips_execution, main
+
+
+def test_cli_intent_from_flags_maps_plan_flags_to_explicit_intent() -> None:
+    show_plan = _intent_from_flags(show_plan=True)
+    dry_run = _intent_from_flags(dry_run=True)
+    execute = _intent_from_flags()
+
+    assert isinstance(show_plan, ShowPlan)
+    assert isinstance(dry_run, ShowPlan)
+    assert isinstance(execute, ExecutePlan)
+    assert _intent_skips_execution(show_plan)
+    assert _intent_skips_execution(dry_run)
+    assert not _intent_skips_execution(execute)
+
 
 FAKE_BAYESITE_USAGE = "\n".join(
     f"usage: bayesite {command}"
