@@ -130,9 +130,11 @@ class PlannedModelRunContext:
 
     model_name: str
     model_source_path: Path
+    model_source_sha256: str
     loaded_model: LoadedModel
     ir_path: IrArtifact
     data_source_path: Path
+    data_source_sha256: str
     data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
@@ -145,9 +147,11 @@ class PlannedModelScenarioContext:
 
     model_name: str
     model_source_path: Path
+    model_source_sha256: str
     loaded_model: LoadedModel
     ir_path: IrArtifact
     scenario_source_path: Path
+    scenario_source_sha256: str
     scenario_path: Path
     dims_path: Path | None
     output_dir: Path
@@ -378,6 +382,7 @@ class SimulateRunPlan[ActionT]:
 
     context: PlannedModelRunContext
     truth_source_path: Path
+    truth_source_sha256: str
     truth_path: Path
     simulated_data_path: CanonicalDataArtifact
     backend: str
@@ -419,13 +424,14 @@ class RunMetadataModel:
 
     name: str
     source_path: Path
+    source_sha256: str
     ir_path: Path
 
     def as_json(self, run_dir: Path) -> dict[str, object]:
         return {
             "name": self.name,
             "source_path": str(self.source_path),
-            "sha256": _sha256_uri(self.source_path),
+            "sha256": self.source_sha256,
             "ir_path": _relative_run_path(run_dir, self.ir_path),
         }
 
@@ -436,6 +442,7 @@ class RunMetadataInput:
 
     role: str
     source_path: Path
+    source_sha256: str
     materialized_path: Path
     artifact_format: str | None = None
 
@@ -443,7 +450,7 @@ class RunMetadataInput:
         document: dict[str, object] = {
             "role": self.role,
             "source_path": str(self.source_path),
-            "sha256": _sha256_uri(self.source_path),
+            "sha256": self.source_sha256,
             "path": _relative_run_path(run_dir, self.materialized_path),
         }
         if self.artifact_format is not None:
@@ -623,6 +630,7 @@ def plan_simulate_run[ActionT, CommandT](
     output_path = CanonicalDataArtifact(output_dir / "simulated_data.json")
     _reject_reserved_engine_args(request.engine_args, output_path.path)
     truth_source = _require_input_file(request.truth_path, "truth")
+    truth_source_sha256 = _sha256_uri(truth_source)
     context = plan_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -634,6 +642,7 @@ def plan_simulate_run[ActionT, CommandT](
     return SimulateRunPlan(
         context=context,
         truth_source_path=truth_source,
+        truth_source_sha256=truth_source_sha256,
         truth_path=truth_path,
         simulated_data_path=output_path,
         backend=request.backend,
@@ -659,6 +668,7 @@ def materialize_simulate_run[ActionT, CommandT](
                 RunMetadataInput(
                     role="truth",
                     source_path=plan.truth_source_path,
+                    source_sha256=plan.truth_source_sha256,
                     materialized_path=plan.truth_path,
                 ),
             ),
@@ -864,7 +874,9 @@ def plan_model_run_context(
 ) -> PlannedModelRunContext:
     """Plan shared model/data run directory inputs without writing them."""
     source_model_path = model_path.expanduser().resolve()
+    source_model_sha256 = _sha256_uri(source_model_path)
     source_data_path = _require_input_file(data_path, "data")
+    source_data_sha256 = _sha256_uri(source_data_path)
     try:
         data_doc = read_data_doc(source_data_path)
     except DataDocError as exc:
@@ -877,9 +889,11 @@ def plan_model_run_context(
     return PlannedModelRunContext(
         model_name=loaded_model.name,
         model_source_path=source_model_path,
+        model_source_sha256=source_model_sha256,
         loaded_model=loaded_model,
         ir_path=IrArtifact(output_dir / "model.ir.json"),
         data_source_path=source_data_path,
+        data_source_sha256=source_data_sha256,
         data_path=CanonicalDataArtifact(output_dir / "data.json"),
         dims_path=dims_path,
         output_dir=output_dir,
@@ -912,7 +926,9 @@ def plan_model_scenario_context(
 ) -> PlannedModelScenarioContext:
     """Plan shared model/scenario run directory inputs without writing them."""
     source_model_path = model_path.expanduser().resolve()
+    source_model_sha256 = _sha256_uri(source_model_path)
     scenario_source = _require_input_file(scenario_path, "scenario")
+    scenario_source_sha256 = _sha256_uri(scenario_source)
     _validate_output_dir(output_dir)
     loaded_model = load_model(source_model_path, model_name)
     dims_path = _planned_dims_path(output_dir, loaded_model.model_cls, loaded_model.meta)
@@ -920,9 +936,11 @@ def plan_model_scenario_context(
     return PlannedModelScenarioContext(
         model_name=loaded_model.name,
         model_source_path=source_model_path,
+        model_source_sha256=source_model_sha256,
         loaded_model=loaded_model,
         ir_path=IrArtifact(output_dir / "model.ir.json"),
         scenario_source_path=scenario_source,
+        scenario_source_sha256=scenario_source_sha256,
         scenario_path=output_dir / "scenario.json",
         dims_path=dims_path,
         output_dir=output_dir,
@@ -1119,7 +1137,7 @@ def _require_run_artifacts(paths: tuple[Path, ...]) -> None:
 
 
 def _reject_existing_output_artifacts(paths: tuple[Path, ...]) -> None:
-    existing = tuple(path for path in paths if path.exists())
+    existing = tuple(path for path in paths if path.exists() or path.is_symlink())
     if not existing:
         return
     names = ", ".join(path.name for path in existing)
@@ -1144,12 +1162,14 @@ def _model_data_run_metadata(
         model=RunMetadataModel(
             name=context.model_name,
             source_path=context.model_source_path,
+            source_sha256=context.model_source_sha256,
             ir_path=context.ir_path.path,
         ),
         inputs=(
             RunMetadataInput(
                 role="data",
                 source_path=context.data_source_path,
+                source_sha256=context.data_source_sha256,
                 materialized_path=context.data_path.path,
                 artifact_format=DATA_DOC_FORMAT,
             ),
@@ -1172,12 +1192,14 @@ def _model_scenario_run_metadata(
         model=RunMetadataModel(
             name=context.model_name,
             source_path=context.model_source_path,
+            source_sha256=context.model_source_sha256,
             ir_path=context.ir_path.path,
         ),
         inputs=(
             RunMetadataInput(
                 role="scenario",
                 source_path=context.scenario_source_path,
+                source_sha256=context.scenario_source_sha256,
                 materialized_path=context.scenario_path,
             ),
         ),
@@ -1249,7 +1271,7 @@ def _write_optional_dims_sidecar(
 
 
 def _validate_output_dir(path: Path) -> None:
-    if path.exists() and not path.is_dir():
+    if (path.exists() or path.is_symlink()) and not path.is_dir():
         raise WorkflowError(f"output path exists and is not a directory: {path}")
     if path.exists() and any(path.iterdir()):
         raise WorkflowError(f"output directory is not empty: {path}; choose a new run directory")
