@@ -11,7 +11,8 @@ from bayescycle._integrations.descriptions import (
     InProcessSettingsPlanDescription,
 )
 from bayescycle._settings import PriorPredictiveSettings
-from bayescycle._workflow import PlannedModelRunContext, PriorPredictiveRequest, SampleRequest
+from bayescycle._workflow.contexts import PlannedModelRunContext
+from bayescycle._workflow.requests import PriorPredictiveRequest, SampleRequest
 from bayescycle.backends.jaxstanv5.commands import (
     Jaxstanv5PriorPredictiveCommand,
     Jaxstanv5SampleCommand,

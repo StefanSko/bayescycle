@@ -8,18 +8,20 @@ from pathlib import Path
 from bayescycle._integrations.descriptions import ExternalCommandPlanDescription
 from bayescycle._integrations.external_command import ExternalCommand, run_external_command
 from bayescycle._run_artifacts.references import BackendPrivateArtifact, CanonicalDataArtifact
-from bayescycle._workflow import (
-    DiagnoseRequest,
+from bayescycle._workflow.contexts import (
     DiagnoseRunContext,
     PlannedModelRunContext,
     PlannedModelScenarioContext,
-    PosteriorCheckRequest,
     PosteriorCheckRunContext,
-    PosteriorPredictiveRequest,
     PosteriorPredictiveRunContext,
+    RecoverCheckRunContext,
+)
+from bayescycle._workflow.requests import (
+    DiagnoseRequest,
+    PosteriorCheckRequest,
+    PosteriorPredictiveRequest,
     PriorPredictiveRequest,
     RecoverCheckRequest,
-    RecoverCheckRunContext,
     RecoverRequest,
     SampleRequest,
     SbcRequest,
