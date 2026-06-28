@@ -615,7 +615,9 @@ def test_sample_uses_preflight_resolved_engine_after_model_changes_cwd(
     )
 
 
-def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -> None:
+def test_sample_force_option_is_removed_and_does_not_mutate_stale_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     model_file = _write_simple_model(tmp_path)
     data_file = _write_input_data(tmp_path)
     output_dir = tmp_path / "run"
@@ -649,8 +651,38 @@ def test_sample_force_clears_stale_posterior_when_engine_fails(tmp_path: Path) -
         ]
     )
 
-    assert code == 19
-    assert not stale_posterior.exists()
+    assert code == 2
+    assert "unrecognized arguments: --force" in capsys.readouterr().err
+    assert stale_posterior.read_text(encoding="utf-8") == "stale draws\n"
+
+
+def test_diagnose_refuses_to_overwrite_existing_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    diagnostics = run_dir / "diagnostics.json"
+    diagnostics.write_text('{"old": true}\n', encoding="utf-8")
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text('{\"old\": false}\\n')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(["diagnose", str(run_dir), "--engine", str(fake_engine)])
+
+    assert code == 2
+    assert "output artifact already exists" in capsys.readouterr().err
+    assert diagnostics.read_text(encoding="utf-8") == '{"old": true}\n'
 
 
 def test_prior_predictive_dry_run_prints_plan_without_materializing_run(
