@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +36,10 @@ class FakeSampleAction:
 @dataclass(frozen=True)
 class FakeCommand:
     output_dir: Path
+
+
+def _sha256_uri(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
 @dataclass(frozen=True)
@@ -178,6 +184,64 @@ def test_run_directory_materialization_rechecks_output_absence(tmp_path: Path) -
 
     with pytest.raises(WorkflowError, match="output artifact already exists"):
         materialize_run_directory_command(plan, backend)
+
+
+def test_run_directory_output_guard_treats_dangling_symlink_as_existing(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
+    (run_dir / "diagnostics.json").symlink_to(run_dir / "missing-diagnostics.json")
+
+    with pytest.raises(WorkflowError, match="output artifact already exists"):
+        plan_diagnose_run(DiagnoseRequest(run_dir=run_dir), FakeDiagnoseBackend())
+
+
+def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    original_model = (
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n"
+    )
+    model_file.write_text(original_model, encoding="utf-8")
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    original_model_hash = _sha256_uri(model_file)
+    original_data_hash = _sha256_uri(data_file)
+    backend = FakeSampleBackend()
+
+    plan = plan_sample_run(
+        SampleRequest(
+            model_path=model_file,
+            data_path=data_file,
+            output_dir=tmp_path / "run",
+            model_name=None,
+            backend="bayesite",
+            sampler=SamplerSettings(
+                seed=None,
+                chains=None,
+                warmup=None,
+                draws=None,
+                max_tree_depth=None,
+                target_accept=None,
+            ),
+            engine_args=(),
+        ),
+        backend,
+    )
+    model_file.write_text(f"{original_model}\n# edited after planning\n", encoding="utf-8")
+    data_file.write_text('{"y": 9.0}\n', encoding="utf-8")
+
+    materialize_sample_run(plan, backend)
+
+    run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
+    assert run_metadata["model"]["sha256"] == original_model_hash
+    assert run_metadata["inputs"][0]["sha256"] == original_data_hash
 
 
 def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
