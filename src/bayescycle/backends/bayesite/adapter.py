@@ -5,52 +5,41 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact
-from bayescycle._commands import BayesiteCommand
-from bayescycle._engine import run_bayesite_command
-from bayescycle._errors import WorkflowError
-from bayescycle._workflow import (
-    DiagnoseRequest,
+from bayescycle._integrations.descriptions import ExternalCommandPlanDescription
+from bayescycle._integrations.external_command import ExternalCommand, run_external_command
+from bayescycle._run_artifacts.references import BackendPrivateArtifact, CanonicalDataArtifact
+from bayescycle._workflow.contexts import (
     DiagnoseRunContext,
-    EngineBackendPlanDescription,
     PlannedModelRunContext,
     PlannedModelScenarioContext,
-    PosteriorCheckRequest,
     PosteriorCheckRunContext,
-    PosteriorPredictiveRequest,
     PosteriorPredictiveRunContext,
+    RecoverCheckRunContext,
+)
+from bayescycle._workflow.requests import (
+    DiagnoseRequest,
+    PosteriorCheckRequest,
+    PosteriorPredictiveRequest,
     PriorPredictiveRequest,
     RecoverCheckRequest,
-    RecoverCheckRunContext,
     RecoverRequest,
     SampleRequest,
     SbcRequest,
     SimulateRequest,
 )
-from bayescycle.data import DataDocError, read_data_doc, write_bayesite_data_doc, write_data_doc
-
-
-@dataclass(frozen=True)
-class MaterializeBayesiteData:
-    """Materialize canonical Bayescycle data into a Bayesite-native private file."""
-
-    canonical_path: CanonicalDataArtifact
-    native_path: BackendPrivateArtifact
-
-
-@dataclass(frozen=True)
-class CanonicalizeGeneratedData:
-    """Canonicalize Bayesite-native generated data after engine execution."""
-
-    native_path: BackendPrivateArtifact
-    canonical_path: CanonicalDataArtifact
+from bayescycle.backends.bayesite.data_materialization import (
+    CanonicalizeGeneratedData,
+    MaterializeBayesiteData,
+    canonicalize_generated_data,
+    materialize_bayesite_data,
+)
 
 
 @dataclass(frozen=True)
 class BayesiteAction:
     """Planned Bayesite action before backend-private files exist."""
 
-    engine_command: BayesiteCommand
+    command: ExternalCommand
     input_materializations: tuple[MaterializeBayesiteData, ...] = ()
     postprocess: tuple[CanonicalizeGeneratedData, ...] = ()
 
@@ -59,7 +48,7 @@ class BayesiteAction:
 class BayesitePreparedCommand:
     """Materialized Bayesite command plus backend-owned postprocessing steps."""
 
-    engine_command: BayesiteCommand
+    command: ExternalCommand
     postprocess: tuple[CanonicalizeGeneratedData, ...] = ()
 
 
@@ -76,7 +65,7 @@ class BayesiteBackend:
         draws_path = context.output_dir / "posterior.ndjson"
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "sample",
@@ -106,7 +95,7 @@ class BayesiteBackend:
         output_path = context.output_dir / "prior_predictive.ndjson"
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "prior-predictive",
@@ -140,7 +129,7 @@ class BayesiteBackend:
         )
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "simulate",
@@ -177,7 +166,7 @@ class BayesiteBackend:
         """Plan the Bayesite recover action for a planned run directory."""
         output_path = context.output_dir / "recovery.json"
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "recover",
@@ -199,7 +188,7 @@ class BayesiteBackend:
         """Plan the Bayesite SBC action for a planned run directory."""
         output_path = context.output_dir / "sbc.json"
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "sbc",
@@ -221,7 +210,7 @@ class BayesiteBackend:
     ) -> BayesiteAction:
         """Plan the Bayesite diagnose action for an existing run directory."""
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "diagnose",
@@ -240,7 +229,7 @@ class BayesiteBackend:
         """Plan the Bayesite posterior-predictive action for an existing run directory."""
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.run_dir) / "data.json")
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "posterior-predictive",
@@ -271,7 +260,7 @@ class BayesiteBackend:
         """Plan the Bayesite posterior-check action for an existing run directory."""
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.run_dir) / "data.json")
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "posterior-check",
@@ -304,7 +293,7 @@ class BayesiteBackend:
             ("--targets", str(context.targets_path)) if context.targets_path is not None else ()
         )
         return BayesiteAction(
-            engine_command=BayesiteCommand(
+            command=ExternalCommand(
                 argv=(
                     self.engine,
                     "recover-check",
@@ -322,51 +311,34 @@ class BayesiteBackend:
             )
         )
 
-    def describe(self, action: BayesiteAction) -> EngineBackendPlanDescription:
+    def describe(self, action: BayesiteAction) -> ExternalCommandPlanDescription:
         """Return Bayesite-owned plan description for a planned action."""
         backend_simulated_data = (
             action.postprocess[0].native_path.path if action.postprocess else None
         )
-        return EngineBackendPlanDescription(
-            engine_command=action.engine_command.argv,
+        return ExternalCommandPlanDescription(
+            backend="bayesite",
+            command=action.command.argv,
             backend_simulated_data=backend_simulated_data,
         )
 
     def materialize(self, action: BayesiteAction) -> BayesitePreparedCommand:
         """Materialize Bayesite-private inputs and return an executable command."""
         for materialization in action.input_materializations:
-            _materialize_engine_data(materialization)
+            materialize_bayesite_data(materialization)
         return BayesitePreparedCommand(
-            engine_command=action.engine_command,
+            command=action.command,
             postprocess=action.postprocess,
         )
 
     def execute(self, command: BayesitePreparedCommand) -> int:
         """Execute a materialized Bayesite command and backend-owned postprocessing."""
-        code = run_bayesite_command(command.engine_command)
+        code = run_external_command(command.command)
         if code != 0:
             return code
         for step in command.postprocess:
-            _canonicalize_generated_data(step)
+            canonicalize_generated_data(step)
         return 0
-
-
-def _materialize_engine_data(step: MaterializeBayesiteData) -> None:
-    try:
-        doc = read_data_doc(step.canonical_path.path)
-        write_bayesite_data_doc(step.native_path.path, doc)
-    except DataDocError as exc:
-        raise WorkflowError(f"invalid data artifact for Bayesite backend: {exc}") from exc
-
-
-def _canonicalize_generated_data(step: CanonicalizeGeneratedData) -> None:
-    try:
-        generated = read_data_doc(step.native_path.path)
-        write_data_doc(step.canonical_path.path, generated)
-    except DataDocError as exc:
-        raise WorkflowError(
-            f"Bayesite simulate did not produce a valid data artifact: {exc}"
-        ) from exc
 
 
 def _backend_dir(output_dir: Path) -> Path:

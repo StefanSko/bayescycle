@@ -11,30 +11,23 @@ from pathlib import Path
 from typing import cast
 
 from bayescycle import __version__
-from bayescycle._backend_plan import (
+from bayescycle._errors import WorkflowError
+from bayescycle._model_loader import ModelLoadError
+from bayescycle._settings import SamplerSettings
+from bayescycle._workflow.backend_plan import (
     BackendPlanRequest,
     resolve_backend_plan,
     resolve_backend_plan_file,
 )
-from bayescycle._backends import BayesiteBackend, Jaxstanv5Backend
-from bayescycle._errors import WorkflowError
-from bayescycle._inproc import InProcessBackendError
-from bayescycle._model_loader import ModelLoadError
-from bayescycle._settings import SamplerSettings
-from bayescycle._workflow import (
-    ActionBackend,
-    DiagnoseRequest,
-    PosteriorCheckRequest,
-    PosteriorPredictiveRequest,
-    PriorPredictiveBackend,
-    PriorPredictiveRequest,
-    RecoverCheckRequest,
-    RecoverRequest,
-    RunDirectoryCommandPlan,
-    SampleBackend,
-    SampleRequest,
-    SbcRequest,
-    SimulateRequest,
+from bayescycle._workflow.documents import (
+    prior_predictive_plan_document,
+    recover_plan_document,
+    run_command_plan_document,
+    sample_plan_document,
+    sbc_plan_document,
+    simulate_plan_document,
+)
+from bayescycle._workflow.operations import (
     materialize_prior_predictive_run,
     materialize_recover_run,
     materialize_run_directory_command,
@@ -50,17 +43,27 @@ from bayescycle._workflow import (
     plan_sample_run,
     plan_sbc_run,
     plan_simulate_run,
-    prior_predictive_plan_document,
-    recover_plan_document,
-    run_command_plan_document,
-    sample_plan_document,
-    sbc_plan_document,
-    simulate_plan_document,
 )
-from bayescycle.backends.bayesite_engine import (
+from bayescycle._workflow.plans import RunDirectoryCommandPlan
+from bayescycle._workflow.protocols import ActionBackend, PriorPredictiveBackend, SampleBackend
+from bayescycle._workflow.requests import (
+    DiagnoseRequest,
+    PosteriorCheckRequest,
+    PosteriorPredictiveRequest,
+    PriorPredictiveRequest,
+    RecoverCheckRequest,
+    RecoverRequest,
+    SampleRequest,
+    SbcRequest,
+    SimulateRequest,
+)
+from bayescycle.backends.bayesite import BayesiteBackend
+from bayescycle.backends.bayesite.preflight import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
 )
+from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
+from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
 
 @dataclass(frozen=True)

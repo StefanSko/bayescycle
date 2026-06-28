@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import bayescycle._dims as dims_module
+import bayescycle._run_artifacts.dimensions as dims_module
 from bayescycle._cli import (
     ExecutePlan,
     ShowPlan,
@@ -168,7 +168,7 @@ def _write_fake_out_engine(tmp_path: Path) -> Path:
     return fake_engine
 
 
-def test_sample_dry_run_prints_engine_command_without_materializing_run(
+def test_sample_dry_run_prints_command_without_materializing_run(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -208,9 +208,11 @@ def test_sample_dry_run_prints_engine_command_without_materializing_run(
 
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
+        "backend": "bayesite",
+        "integration_mode": "external-command",
         "data": str(run_data_path),
         "draws": str(output_dir / "posterior.ndjson"),
-        "engine_command": [
+        "command": [
             "bayesite",
             "sample",
             "--model",
@@ -253,7 +255,7 @@ def test_sample_show_plan_prints_plan_without_materializing_run(
     assert printed["model"] == "Simple"
     assert printed["data"] == str(output_dir / "data.json")
     assert printed["draws"] == str(output_dir / "posterior.ndjson")
-    assert printed["engine_command"][:2] == ["bayesite", "sample"]
+    assert printed["command"][:2] == ["bayesite", "sample"]
     assert not output_dir.exists()
 
 
@@ -291,7 +293,7 @@ def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
     ir_path = output_dir / "model.ir.json"
     printed = json.loads(capsys.readouterr().out)
     assert printed["draws"] == str(output_dir / "posterior.ndjson")
-    assert printed["engine_command"] == [
+    assert printed["command"] == [
         "bayesite",
         "sample",
         "--model",
@@ -351,6 +353,7 @@ def test_sample_dry_run_supports_jaxstanv5_backend(
     printed.pop("dims", None)
     assert printed == {
         "backend": "jaxstanv5",
+        "integration_mode": "in-process-python",
         "data": str(output_dir / "data.json"),
         "draws": str(output_dir / "posterior.ndjson"),
         "ir": str(output_dir / "model.ir.json"),
@@ -778,8 +781,10 @@ def test_prior_predictive_dry_run_prints_plan_without_materializing_run(
     assert not output_dir.exists()
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
+        "backend": "bayesite",
+        "integration_mode": "external-command",
         "data": str(run_data_path),
-        "engine_command": [
+        "command": [
             "bayesite",
             "prior-predictive",
             "--model",
@@ -833,6 +838,7 @@ def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
     printed.pop("dims", None)
     assert printed == {
         "backend": "jaxstanv5",
+        "integration_mode": "in-process-python",
         "data": str(output_dir / "data.json"),
         "ir": str(output_dir / "model.ir.json"),
         "model": "NormalMean",
@@ -1052,7 +1058,10 @@ def test_simulate_invokes_engine_with_owned_truth_and_canonical_output(tmp_path:
         "variables": {"y": {"dtype": "float64", "shape": [], "values": [1.5]}},
     }
     assert json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))["artifacts"] == {
-        "data.json": {"format": "bayescycle.data.json.v1", "path": "data.json"},
+        "data.json": {
+            "format": "bayescycle.data.json.v1",
+            "path": "data.json",
+        },
         "simulated_data.json": {
             "format": "bayescycle.data.json.v1",
             "path": "simulated_data.json",
@@ -1192,7 +1201,9 @@ def test_recover_dry_run_prints_plan_without_materializing_run(
     assert not output_dir.exists()
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
-        "engine_command": [
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": [
             "bayesite",
             "recover",
             "--model",
@@ -1236,7 +1247,9 @@ def test_sbc_dry_run_prints_plan_with_replicates_without_materializing_run(
     assert not output_dir.exists()
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
-        "engine_command": [
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": [
             "bayesite",
             "sbc",
             "--model",
@@ -1334,7 +1347,9 @@ def test_diagnose_show_plan_uses_run_directory_artifacts(
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
-        "engine_command": [
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": [
             "bayesite",
             "diagnose",
             "--fit",
@@ -1387,7 +1402,9 @@ def test_posterior_predictive_dry_run_uses_run_directory_artifacts_and_seed(
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
-        "engine_command": [
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": [
             "bayesite",
             "posterior-predictive",
             "--model",
@@ -1450,7 +1467,9 @@ def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
-        "engine_command": [
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": [
             "bayesite",
             "posterior-check",
             "--model",
@@ -1525,7 +1544,9 @@ def test_recover_check_dry_run_uses_fit_truth_targets_and_interval(
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
-        "engine_command": [
+        "backend": "bayesite",
+        "integration_mode": "external-command",
+        "command": [
             "bayesite",
             "recover-check",
             "--fit",

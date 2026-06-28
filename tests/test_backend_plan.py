@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from bayescycle._backend_plan import (
+from bayescycle._errors import WorkflowError
+from bayescycle._workflow.backend_plan import (
     BackendPlanRequest,
     ExplicitMixedBackendPlan,
     SingleBackendPlan,
     resolve_backend_plan,
     resolve_backend_plan_file,
 )
-from bayescycle._errors import WorkflowError
 
 
 def test_single_backend_plan_applies_to_all_stages() -> None:

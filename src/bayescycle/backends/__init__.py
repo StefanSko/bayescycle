@@ -1,4 +1,4 @@
-"""First-party backend adapters."""
+"""First-party backend adapter packages."""
 
 from bayescycle.backends.bayesite import BayesiteBackend
 from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend

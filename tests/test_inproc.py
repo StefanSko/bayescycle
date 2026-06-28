@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from bayescycle._inproc import InProcessBackendError, _load_data, _load_sample_function
+from bayescycle.backends.jaxstanv5.runner import (
+    InProcessBackendError,
+    _load_data,
+    _load_sample_function,
+)
 
 
 def test_load_data_materializes_canonical_data_doc(tmp_path: Path) -> None:

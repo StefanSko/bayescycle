@@ -5,16 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import overload
 
-from bayescycle._commands import Jaxstanv5PriorPredictiveCommand, Jaxstanv5SampleCommand
 from bayescycle._errors import WorkflowError
-from bayescycle._inproc import run_jaxstanv5_prior_predictive, run_jaxstanv5_sample
-from bayescycle._settings import PriorPredictiveSettings
-from bayescycle._workflow import (
+from bayescycle._integrations.descriptions import (
     InProcessSamplePlanDescription,
     InProcessSettingsPlanDescription,
-    PlannedModelRunContext,
-    PriorPredictiveRequest,
-    SampleRequest,
+)
+from bayescycle._settings import PriorPredictiveSettings
+from bayescycle._workflow.contexts import PlannedModelRunContext
+from bayescycle._workflow.requests import PriorPredictiveRequest, SampleRequest
+from bayescycle.backends.jaxstanv5.commands import (
+    Jaxstanv5PriorPredictiveCommand,
+    Jaxstanv5SampleCommand,
+)
+from bayescycle.backends.jaxstanv5.runner import (
+    run_jaxstanv5_prior_predictive,
+    run_jaxstanv5_sample,
 )
 
 

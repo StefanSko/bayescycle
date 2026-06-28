@@ -7,8 +7,15 @@ from typing import Protocol, cast
 
 from jaxstanv5.model.bound import BoundModel
 
-from bayescycle._commands import Jaxstanv5PriorPredictiveCommand, Jaxstanv5SampleCommand
-from bayescycle.data import DataDocError, data_doc_to_plain_json, read_data_doc
+from bayescycle._run_artifacts.canonical_data import (
+    DataDocError,
+    data_doc_to_plain_json,
+    read_data_doc,
+)
+from bayescycle.backends.jaxstanv5.commands import (
+    Jaxstanv5PriorPredictiveCommand,
+    Jaxstanv5SampleCommand,
+)
 
 
 class InProcessBackendError(RuntimeError):
@@ -48,7 +55,7 @@ def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
     """Run jaxstanv5 sampling in this Python process and write posterior.ndjson."""
     sample = _load_sample_function()
     try:
-        from bayescycle._posterior_ndjson import (
+        from bayescycle._run_artifacts.posterior_ndjson import (
             PosteriorArtifactError,
             PosteriorArtifactSettings,
             _SamplerResult,
@@ -99,7 +106,7 @@ def run_jaxstanv5_prior_predictive(command: Jaxstanv5PriorPredictiveCommand) -> 
     """Run jaxstanv5 prior-predictive simulation and write prior_predictive.ndjson."""
     simulate_prior_predictive = _load_prior_predictive_function()
     try:
-        from bayescycle._prior_predictive_ndjson import (
+        from bayescycle._run_artifacts.prior_predictive_ndjson import (
             PriorPredictiveArtifactError,
             _PriorPredictiveResult,
             write_prior_predictive_ndjson,

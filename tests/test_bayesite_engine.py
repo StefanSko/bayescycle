@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from bayescycle._errors import WorkflowError
-from bayescycle.backends.bayesite_engine import (
+from bayescycle.backends.bayesite.preflight import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
 )

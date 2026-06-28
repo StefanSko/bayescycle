@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bayescycle._posterior_ndjson import PosteriorArtifactError, _probability_float
+from bayescycle._run_artifacts.posterior_ndjson import PosteriorArtifactError, _probability_float
 
 
 def test_probability_float_clamps_float32_acceptance_roundoff() -> None:

@@ -42,3 +42,55 @@
 - No distribution math.
 - No plotting, report generation, notebooks, or artifact product layer.
 - No hidden discovery of remote engines or environments.
+
+## Module invariants
+
+This section is intentionally last. Update it whenever modules move so the source
+layout keeps matching the architecture.
+
+- `bayescycle._cli` parses CLI input, performs user-facing backend selection,
+  runs Bayesite preflight, and wires concrete backend adapters into workflow
+  operations. It must not own artifact schemas, sampler semantics, or backend
+  execution details.
+- `bayescycle._workflow.requests` contains loose CLI input normalized into typed
+  immutable requests. It must not read or write the filesystem.
+- `bayescycle._workflow.contexts` contains planned path/model/data contexts. It
+  may name workflow-owned paths, but it must not materialize them.
+- `bayescycle._workflow.plans` contains immutable run plans that pair workflow
+  paths with backend actions. It must not know concrete backend implementation
+  details.
+- `bayescycle._workflow.protocols` defines narrow backend capability protocols.
+  It may depend on typed requests, contexts, and plan descriptions, but not on
+  first-party backend modules.
+- `bayescycle._workflow.operations` owns explicit planning and materialization
+  transitions. It may load models, validate inputs, write workflow-owned run
+  inputs, and call backend capability methods; it must not run samplers or
+  interpret sampler telemetry.
+- `bayescycle._workflow.documents` renders typed plans to JSON-ready dry-plan
+  documents. It must only lower backend-provided descriptions; it must not infer
+  backend settings.
+- `bayescycle._workflow.filesystem` contains generic file/path guards and copy
+  helpers. It must not know model, sampler, or backend semantics.
+- `bayescycle._workflow.backend_plan` resolves multi-stage backend intent before
+  run-directory writes. It must reject implicit mixed plans and backend-specific
+  options that do not correspond to a selected backend.
+- `bayescycle.data` is the stable public import surface for canonical data
+  artifact helpers. It may re-export the canonical data API, but it must not
+  grow workflow orchestration or backend-specific behavior.
+- `bayescycle._run_artifacts` owns durable artifact references, format markers,
+  serializers, and compatibility rules for the run-directory contract. It must
+  not import workflow orchestration or concrete backend adapters.
+- `bayescycle._integrations.descriptions` owns the closed plan-description ADT
+  for integration modes. It distinguishes `external-command` from
+  `in-process-python` without selecting concrete backends.
+- `bayescycle._integrations.external_command` owns the Unix-style subprocess
+  boundary: argv, owned output clearing, exit code. It must not contain
+  Bayesite-specific semantics.
+- `bayescycle.backends.bayesite` is a first-party external-command adapter. It
+  may build Bayesite argv, materialize Bayesite-private files under
+  `.bayesite/`, preflight the selected binary, and canonicalize generated data;
+  it must not expose Bayesite-private files as workflow-stage artifacts.
+- `bayescycle.backends.jaxstanv5` is a first-party in-process Python adapter. It
+  may call public jaxstanv5 runtime APIs and serialize their explicitly exposed
+  results; it must not make BlackJAX or JAX implementation details part of the
+  workflow contract.

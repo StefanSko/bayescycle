@@ -1,21 +1,13 @@
-"""Typed backend command values."""
+"""Typed in-process jaxstanv5 command values."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from bayescycle._artifacts import CanonicalDataArtifact, IrArtifact
 from bayescycle._model_loader import LoadedModel
+from bayescycle._run_artifacts.references import CanonicalDataArtifact, IrArtifact
 from bayescycle._settings import ResolvedPriorPredictiveSettings, ResolvedSamplerSettings
-
-
-@dataclass(frozen=True)
-class BayesiteCommand:
-    """A concrete Bayesite command ready for subprocess execution."""
-
-    argv: tuple[str, ...]
-    output_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
