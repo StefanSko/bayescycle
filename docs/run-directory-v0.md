@@ -21,6 +21,7 @@ run/
 ```text
 run/
   manifest.json               # narrow artifact-format manifest
+  run.json                    # append-only run provenance metadata
   dims.json                   # explicit jaxstanv5 dimension metadata sidecar
   diagnostics.json            # diagnostics report for posterior.ndjson
   prior_predictive.ndjson     # prior-predictive draws when produced
@@ -38,6 +39,11 @@ run/
 [`canonical-data-artifacts.md`](canonical-data-artifacts.md). Backend adapters may
 create backend-private materializations such as `run/.bayesite/data.json`, but
 those files are not workflow-stage artifacts.
+
+`run.json` uses `bayescycle.run.v1` and records the prepared run kind, selected
+backend, model source hash, input source hashes, materialized input paths, and
+expected output artifact paths. It is intended as a narrow provenance index for
+future study ledgers; the run directory remains the durable artifact contract.
 
 `dims.json` may only contain dimension labels and coordinates explicitly exposed
 by `jaxstanv5`; bayescycle must not infer labels from names, shapes, or data.
