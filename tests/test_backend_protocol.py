@@ -363,9 +363,7 @@ def test_recover_metadata_hashes_materialized_scenario(tmp_path: Path) -> None:
     materialize_recover_run(plan, backend)
 
     run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
-    scenario_input = next(
-        entry for entry in run_metadata["inputs"] if entry["role"] == "scenario"
-    )
+    scenario_input = next(entry for entry in run_metadata["inputs"] if entry["role"] == "scenario")
     assert scenario_input["sha256"] == _sha256_uri(tmp_path / "run" / "scenario.json")
 
 

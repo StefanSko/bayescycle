@@ -382,7 +382,6 @@ class SimulateRunPlan[ActionT]:
 
     context: PlannedModelRunContext
     truth_source_path: Path
-    truth_source_sha256: str
     truth_path: Path
     simulated_data_path: CanonicalDataArtifact
     backend: str
@@ -630,7 +629,6 @@ def plan_simulate_run[ActionT, CommandT](
     output_path = CanonicalDataArtifact(output_dir / "simulated_data.json")
     _reject_reserved_engine_args(request.engine_args, output_path.path)
     truth_source = _require_input_file(request.truth_path, "truth")
-    truth_source_sha256 = _sha256_uri(truth_source)
     context = plan_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -642,7 +640,6 @@ def plan_simulate_run[ActionT, CommandT](
     return SimulateRunPlan(
         context=context,
         truth_source_path=truth_source,
-        truth_source_sha256=truth_source_sha256,
         truth_path=truth_path,
         simulated_data_path=output_path,
         backend=request.backend,
@@ -658,6 +655,7 @@ def materialize_simulate_run[ActionT, CommandT](
         plan.context, additional_data_paths=(plan.simulated_data_path,)
     )
     _copy_required_input(plan.truth_source_path, plan.truth_path, "truth")
+    truth_sha256 = _sha256_uri(plan.truth_path)
     _write_run_metadata(
         context.output_dir,
         _model_data_run_metadata(
@@ -668,7 +666,7 @@ def materialize_simulate_run[ActionT, CommandT](
                 RunMetadataInput(
                     role="truth",
                     source_path=plan.truth_source_path,
-                    source_sha256=plan.truth_source_sha256,
+                    source_sha256=truth_sha256,
                     materialized_path=plan.truth_path,
                 ),
             ),
@@ -954,10 +952,11 @@ def materialize_model_scenario_context(
     _ensure_output_dir(context.output_dir)
     context.ir_path.path.write_bytes(canonical_bytes(context.loaded_model.meta))
     _copy_required_input(context.scenario_source_path, context.scenario_path, "scenario")
+    scenario_sha256 = _sha256_uri(context.scenario_path)
     dims_path = _write_optional_dims_sidecar(
         context.output_dir, context.loaded_model.model_cls, context.loaded_model.meta
     )
-    return replace(context, dims_path=dims_path)
+    return replace(context, dims_path=dims_path, scenario_source_sha256=scenario_sha256)
 
 
 def sample_plan_document[ActionT, CommandT](
