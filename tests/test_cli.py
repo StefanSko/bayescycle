@@ -189,6 +189,34 @@ def test_sample_dry_run_writes_ir_and_data_and_prints_engine_command(
     }
 
 
+def test_sample_show_plan_writes_ir_and_data_and_prints_plan(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--show-plan",
+        ]
+    )
+
+    assert code == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["model"] == "Simple"
+    assert printed["data"] == str(output_dir / "data.json")
+    assert printed["draws"] == str(output_dir / "posterior.ndjson")
+    assert printed["engine_command"][:2] == ["bayesite", "sample"]
+
+
 def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

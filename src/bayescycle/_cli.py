@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -34,19 +35,20 @@ from bayescycle._workflow import (
     SampleRequest,
     SbcRequest,
     SimulateRequest,
-    dry_run_document,
+    materialize_sample_run,
+    plan_sample_run,
     prepare_diagnose_run,
     prepare_posterior_check_run,
     prepare_posterior_predictive_run,
     prepare_prior_predictive_run,
     prepare_recover_check_run,
     prepare_recover_run,
-    prepare_sample_run,
     prepare_sbc_run,
     prepare_simulate_run,
     prior_predictive_dry_run_document,
     recover_dry_run_document,
     run_command_dry_run_document,
+    sample_plan_document,
     sbc_dry_run_document,
     simulate_dry_run_document,
 )
@@ -54,6 +56,19 @@ from bayescycle.backends.bayesite_engine import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
 )
+
+
+@dataclass(frozen=True)
+class ShowPlan:
+    """CLI intent to show the sample plan without executing it."""
+
+
+@dataclass(frozen=True)
+class ExecutePlan:
+    """CLI intent to execute the sample plan."""
+
+
+SampleIntent = ShowPlan | ExecutePlan
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -120,9 +135,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--target-accept", dest="target_accept", help="target NUTS acceptance rate")
     sample.add_argument("--force", action="store_true", help="reuse a non-empty output directory")
     sample.add_argument(
+        "--show-plan",
+        action="store_true",
+        help="show the planned sample command without executing it",
+    )
+    sample.add_argument(
         "--dry-run",
         action="store_true",
-        help="prepare IR/data files and print the planned engine command",
+        help=argparse.SUPPRESS,
     )
 
     prior_predictive = subparsers.add_parser(
@@ -343,24 +363,33 @@ def _sample(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        dry_run = cast(bool, namespace.dry_run)
+        intent: SampleIntent = (
+            ShowPlan()
+            if cast(bool, namespace.show_plan) or cast(bool, namespace.dry_run)
+            else ExecutePlan()
+        )
         if request.backend == "bayesite":
-            engine = _preflight_bayesite_unless_dry_run(request.engine, dry_run, "sample", "sample")
-            return _sample_with_backend(BayesiteBackend(engine), request, dry_run=dry_run)
-        return _sample_with_backend(Jaxstanv5Backend(), request, dry_run=dry_run)
+            engine = _preflight_bayesite_unless_dry_run(
+                request.engine, isinstance(intent, ShowPlan), "sample", "sample"
+            )
+            return _sample_with_backend(BayesiteBackend(engine), request, intent=intent)
+        return _sample_with_backend(Jaxstanv5Backend(), request, intent=intent)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
 
 
 def _sample_with_backend[CommandT: DryRunCommand](
-    backend: SampleBackend[CommandT], request: SampleRequest, *, dry_run: bool
+    backend: SampleBackend[CommandT], request: SampleRequest, *, intent: SampleIntent
 ) -> int:
-    prepared = prepare_sample_run(request, backend)
-    if dry_run:
-        print(json.dumps(dry_run_document(prepared), indent=2, sort_keys=True))
-        return 0
-    return backend.run_sample(prepared.command)
+    plan = plan_sample_run(request, backend)
+    match intent:
+        case ShowPlan():
+            print(json.dumps(sample_plan_document(plan), indent=2, sort_keys=True))
+            return 0
+        case ExecutePlan():
+            prepared = materialize_sample_run(plan, backend)
+            return backend.execute(prepared.command)
 
 
 def _prior_predictive(namespace: argparse.Namespace) -> int:

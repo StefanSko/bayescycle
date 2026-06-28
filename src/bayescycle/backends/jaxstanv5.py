@@ -31,7 +31,7 @@ class Jaxstanv5Backend:
             settings=request.sampler.resolve_for_in_process(),
         )
 
-    def run_sample(self, command: Jaxstanv5SampleCommand) -> int:
+    def execute(self, command: Jaxstanv5SampleCommand) -> int:
         """Execute an in-process jaxstanv5 sample command."""
         return run_jaxstanv5_sample(command)
 

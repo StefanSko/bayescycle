@@ -151,7 +151,7 @@ class SampleBackend[CommandT: DryRunCommand](Protocol):
     ) -> CommandT:
         """Build a typed sample command from a prepared run context."""
 
-    def run_sample(self, command: CommandT) -> int:
+    def execute(self, command: CommandT) -> int:
         """Execute a typed sample command."""
 
 
@@ -204,8 +204,8 @@ class SbcBackend[CommandT: DryRunCommand](Protocol):
 
 
 @dataclass(frozen=True)
-class PreparedSampleRun[CommandT: DryRunCommand]:
-    """A run directory and sample command produced from a sample request."""
+class SampleRunPlan[CommandT: DryRunCommand]:
+    """A sample run plan with prepared run-directory inputs and command."""
 
     model_name: str
     ir_path: Path
@@ -336,10 +336,10 @@ class RunCommandDryRunDocument(TypedDict):
     engine_command: list[str]
 
 
-def prepare_sample_run[CommandT: DryRunCommand](
+def plan_sample_run[CommandT: DryRunCommand](
     request: SampleRequest, backend: SampleBackend[CommandT]
-) -> PreparedSampleRun[CommandT]:
-    """Load model metadata, write IR/data files, and build a typed sample command."""
+) -> SampleRunPlan[CommandT]:
+    """Plan a sample run and prepare its run-directory inputs."""
     _validate_backend(request.backend)
     output_dir = request.output_dir.expanduser().resolve()
     draws_path = output_dir / "posterior.ndjson"
@@ -353,7 +353,7 @@ def prepare_sample_run[CommandT: DryRunCommand](
         force=request.force,
     )
     command = backend.build_sample_command(context, request)
-    return PreparedSampleRun(
+    return SampleRunPlan(
         model_name=context.model_name,
         ir_path=context.ir_path,
         data_path=context.data_path,
@@ -362,6 +362,17 @@ def prepare_sample_run[CommandT: DryRunCommand](
         draws_path=draws_path,
         command=command,
     )
+
+
+def materialize_sample_run[CommandT: DryRunCommand](
+    plan: SampleRunPlan[CommandT], backend: SampleBackend[CommandT]
+) -> SampleRunPlan[CommandT]:
+    """Materialize a planned sample run for execution.
+
+    Sample planning currently prepares run-directory inputs; this function marks the
+    explicit transition from CLI execution intent to an executable prepared run.
+    """
+    return plan
 
 
 def prepare_prior_predictive_run[CommandT: DryRunCommand](
@@ -547,10 +558,10 @@ def prepare_model_scenario_context(
     )
 
 
-def dry_run_document[CommandT: DryRunCommand](
-    run: PreparedSampleRun[CommandT],
+def sample_plan_document[CommandT: DryRunCommand](
+    run: SampleRunPlan[CommandT],
 ) -> DryRunDocument:
-    """Return a serializable sample dry-run summary."""
+    """Return a serializable sample plan summary."""
     document: dict[str, object] = {
         "model": run.model_name,
         "ir": str(run.ir_path),

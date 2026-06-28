@@ -48,7 +48,7 @@ class BayesiteBackend:
             output_paths=(draws_path,),
         )
 
-    def run_sample(self, command: BayesiteCommand) -> int:
+    def execute(self, command: BayesiteCommand) -> int:
         """Execute a Bayesite sample command."""
         return run_bayesite_command(command)
 
