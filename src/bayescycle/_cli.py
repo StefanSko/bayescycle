@@ -65,10 +65,10 @@ class ShowPlan:
 
 @dataclass(frozen=True)
 class ExecutePlan:
-    """CLI intent to execute the sample plan."""
+    """CLI intent to execute the prepared command."""
 
 
-SampleIntent = ShowPlan | ExecutePlan
+type CliIntent = ShowPlan | ExecutePlan
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -363,14 +363,13 @@ def _sample(namespace: argparse.Namespace) -> int:
             engine_args=tuple(cast(list[str], namespace.engine_args)),
             force=cast(bool, namespace.force),
         )
-        intent: SampleIntent = (
-            ShowPlan()
-            if cast(bool, namespace.show_plan) or cast(bool, namespace.dry_run)
-            else ExecutePlan()
+        intent = _intent_from_flags(
+            show_plan=cast(bool, namespace.show_plan),
+            dry_run=cast(bool, namespace.dry_run),
         )
         if request.backend == "bayesite":
             engine = _preflight_bayesite_unless_dry_run(
-                request.engine, isinstance(intent, ShowPlan), "sample", "sample"
+                request.engine, _intent_skips_execution(intent), "sample", "sample"
             )
             return _sample_with_backend(BayesiteBackend(engine), request, intent=intent)
         return _sample_with_backend(Jaxstanv5Backend(), request, intent=intent)
@@ -380,7 +379,7 @@ def _sample(namespace: argparse.Namespace) -> int:
 
 
 def _sample_with_backend[CommandT: DryRunCommand](
-    backend: SampleBackend[CommandT], request: SampleRequest, *, intent: SampleIntent
+    backend: SampleBackend[CommandT], request: SampleRequest, *, intent: CliIntent
 ) -> int:
     plan = plan_sample_run(request, backend)
     match intent:
@@ -658,8 +657,18 @@ def _workflow_plan(namespace: argparse.Namespace) -> int:
         return 2
 
 
+def _intent_from_flags(*, show_plan: bool = False, dry_run: bool = False) -> CliIntent:
+    if show_plan or dry_run:
+        return ShowPlan()
+    return ExecutePlan()
+
+
+def _intent_skips_execution(intent: CliIntent) -> bool:
+    return isinstance(intent, ShowPlan)
+
+
 def _preflight_bayesite_unless_dry_run(engine: str, dry_run: bool, command: str, stage: str) -> str:
-    if dry_run:
+    if _intent_skips_execution(_intent_from_flags(dry_run=dry_run)):
         return engine
     info = preflight_bayesite_engine(engine, (BayesiteCommandRequirement(command, stage),))
     return str(info.executable)
