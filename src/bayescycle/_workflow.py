@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from collections.abc import Mapping
@@ -17,7 +18,7 @@ from bayescycle._dims import dims_sidecar_for_model, write_dims_sidecar
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import LoadedModel, load_model
 from bayescycle._settings import SamplerSettings
-from bayescycle.data import DataDoc, DataDocError, read_data_doc, write_data_doc
+from bayescycle.data import DATA_DOC_FORMAT, DataDoc, DataDocError, read_data_doc, write_data_doc
 
 
 @dataclass(frozen=True)
@@ -128,8 +129,10 @@ class PlannedModelRunContext:
     """Planned model/data run-directory inputs before durable writes."""
 
     model_name: str
+    model_source_path: Path
     loaded_model: LoadedModel
     ir_path: IrArtifact
+    data_source_path: Path
     data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
@@ -141,6 +144,7 @@ class PlannedModelScenarioContext:
     """Planned model/scenario run-directory inputs before durable writes."""
 
     model_name: str
+    model_source_path: Path
     loaded_model: LoadedModel
     ir_path: IrArtifact
     scenario_source_path: Path
@@ -354,6 +358,7 @@ class SampleRunPlan[ActionT]:
 
     context: PlannedModelRunContext
     draws_path: Path
+    backend: str
     action: ActionT
 
 
@@ -363,6 +368,7 @@ class PriorPredictiveRunPlan[ActionT]:
 
     context: PlannedModelRunContext
     prior_predictive_path: Path
+    backend: str
     action: ActionT
 
 
@@ -374,6 +380,7 @@ class SimulateRunPlan[ActionT]:
     truth_source_path: Path
     truth_path: Path
     simulated_data_path: CanonicalDataArtifact
+    backend: str
     action: ActionT
 
 
@@ -383,6 +390,7 @@ class RecoverRunPlan[ActionT]:
 
     context: PlannedModelScenarioContext
     recovery_path: Path
+    backend: str
     action: ActionT
 
 
@@ -392,6 +400,7 @@ class SbcRunPlan[ActionT]:
 
     context: PlannedModelScenarioContext
     sbc_path: Path
+    backend: str
     action: ActionT
 
 
@@ -402,6 +411,83 @@ class RunDirectoryCommandPlan[ActionT]:
     run_dir: Path
     output_path: Path
     action: ActionT
+
+
+@dataclass(frozen=True)
+class RunMetadataModel:
+    """Model source recorded in a run metadata document."""
+
+    name: str
+    source_path: Path
+    ir_path: Path
+
+    def as_json(self, run_dir: Path) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "source_path": str(self.source_path),
+            "sha256": _sha256_uri(self.source_path),
+            "ir_path": _relative_run_path(run_dir, self.ir_path),
+        }
+
+
+@dataclass(frozen=True)
+class RunMetadataInput:
+    """Input source recorded in a run metadata document."""
+
+    role: str
+    source_path: Path
+    materialized_path: Path
+    artifact_format: str | None = None
+
+    def as_json(self, run_dir: Path) -> dict[str, object]:
+        document: dict[str, object] = {
+            "role": self.role,
+            "source_path": str(self.source_path),
+            "sha256": _sha256_uri(self.source_path),
+            "path": _relative_run_path(run_dir, self.materialized_path),
+        }
+        if self.artifact_format is not None:
+            document["format"] = self.artifact_format
+        return document
+
+
+@dataclass(frozen=True)
+class RunMetadataOutput:
+    """Declared run output recorded in a run metadata document."""
+
+    role: str
+    path: Path
+    artifact_format: str | None = None
+
+    def as_json(self, run_dir: Path) -> dict[str, object]:
+        document: dict[str, object] = {
+            "role": self.role,
+            "path": _relative_run_path(run_dir, self.path),
+        }
+        if self.artifact_format is not None:
+            document["format"] = self.artifact_format
+        return document
+
+
+@dataclass(frozen=True)
+class RunMetadata:
+    """Append-only metadata for a prepared run directory."""
+
+    kind: str
+    backend: str
+    model: RunMetadataModel
+    inputs: tuple[RunMetadataInput, ...]
+    outputs: tuple[RunMetadataOutput, ...]
+
+    def as_json(self, run_dir: Path) -> dict[str, object]:
+        return {
+            "format": "bayescycle.run.v1",
+            "kind": self.kind,
+            "backend": self.backend,
+            "model": self.model.as_json(run_dir),
+            "inputs": [entry.as_json(run_dir) for entry in self.inputs],
+            "outputs": [entry.as_json(run_dir) for entry in self.outputs],
+        }
 
 
 class SamplePlanDocument(TypedDict):
@@ -462,14 +548,28 @@ def plan_sample_run[ActionT, CommandT](
         output_dir=output_dir,
     )
     action = backend.plan_sample_action(context, request)
-    return SampleRunPlan(context=context, draws_path=draws_path, action=action)
+    return SampleRunPlan(
+        context=context,
+        draws_path=draws_path,
+        backend=request.backend,
+        action=action,
+    )
 
 
 def materialize_sample_run[ActionT, CommandT](
     plan: SampleRunPlan[ActionT], backend: SampleBackend[ActionT, CommandT]
 ) -> CommandT:
     """Materialize a planned sample run for execution."""
-    materialize_model_run_context(plan.context)
+    context = materialize_model_run_context(plan.context)
+    _write_run_metadata(
+        context.output_dir,
+        _model_data_run_metadata(
+            context,
+            kind="sample",
+            backend=plan.backend,
+            outputs=(RunMetadataOutput(role="posterior", path=plan.draws_path),),
+        ),
+    )
     return backend.materialize(plan.action)
 
 
@@ -492,6 +592,7 @@ def plan_prior_predictive_run[ActionT, CommandT](
     return PriorPredictiveRunPlan(
         context=context,
         prior_predictive_path=output_path,
+        backend=request.backend,
         action=action,
     )
 
@@ -500,7 +601,18 @@ def materialize_prior_predictive_run[ActionT, CommandT](
     plan: PriorPredictiveRunPlan[ActionT], backend: PriorPredictiveBackend[ActionT, CommandT]
 ) -> CommandT:
     """Materialize a planned prior-predictive run for execution."""
-    materialize_model_run_context(plan.context)
+    context = materialize_model_run_context(plan.context)
+    _write_run_metadata(
+        context.output_dir,
+        _model_data_run_metadata(
+            context,
+            kind="prior-predictive",
+            backend=plan.backend,
+            outputs=(
+                RunMetadataOutput(role="prior_predictive", path=plan.prior_predictive_path),
+            ),
+        ),
+    )
     return backend.materialize(plan.action)
 
 
@@ -526,6 +638,7 @@ def plan_simulate_run[ActionT, CommandT](
         truth_source_path=truth_source,
         truth_path=truth_path,
         simulated_data_path=output_path,
+        backend=request.backend,
         action=action,
     )
 
@@ -534,8 +647,32 @@ def materialize_simulate_run[ActionT, CommandT](
     plan: SimulateRunPlan[ActionT], backend: SimulateBackend[ActionT, CommandT]
 ) -> CommandT:
     """Materialize a planned simulation run for execution."""
-    materialize_model_run_context(plan.context, additional_data_paths=(plan.simulated_data_path,))
+    context = materialize_model_run_context(
+        plan.context, additional_data_paths=(plan.simulated_data_path,)
+    )
     _copy_required_input(plan.truth_source_path, plan.truth_path, "truth")
+    _write_run_metadata(
+        context.output_dir,
+        _model_data_run_metadata(
+            context,
+            kind="simulate",
+            backend=plan.backend,
+            extra_inputs=(
+                RunMetadataInput(
+                    role="truth",
+                    source_path=plan.truth_source_path,
+                    materialized_path=plan.truth_path,
+                ),
+            ),
+            outputs=(
+                RunMetadataOutput(
+                    role="simulated_data",
+                    path=plan.simulated_data_path.path,
+                    artifact_format=DATA_DOC_FORMAT,
+                ),
+            ),
+        ),
+    )
     return backend.materialize(plan.action)
 
 
@@ -554,14 +691,28 @@ def plan_recover_run[ActionT, CommandT](
         output_dir=output_dir,
     )
     action = backend.plan_recover_action(context, request)
-    return RecoverRunPlan(context=context, recovery_path=output_path, action=action)
+    return RecoverRunPlan(
+        context=context,
+        recovery_path=output_path,
+        backend=request.backend,
+        action=action,
+    )
 
 
 def materialize_recover_run[ActionT, CommandT](
     plan: RecoverRunPlan[ActionT], backend: RecoverBackend[ActionT, CommandT]
 ) -> CommandT:
     """Materialize a planned single-scenario recovery run for execution."""
-    materialize_model_scenario_context(plan.context)
+    context = materialize_model_scenario_context(plan.context)
+    _write_run_metadata(
+        context.output_dir,
+        _model_scenario_run_metadata(
+            context,
+            kind="recover",
+            backend=plan.backend,
+            outputs=(RunMetadataOutput(role="recovery", path=plan.recovery_path),),
+        ),
+    )
     return backend.materialize(plan.action)
 
 
@@ -580,14 +731,28 @@ def plan_sbc_run[ActionT, CommandT](
         output_dir=output_dir,
     )
     action = backend.plan_sbc_action(context, request)
-    return SbcRunPlan(context=context, sbc_path=output_path, action=action)
+    return SbcRunPlan(
+        context=context,
+        sbc_path=output_path,
+        backend=request.backend,
+        action=action,
+    )
 
 
 def materialize_sbc_run[ActionT, CommandT](
     plan: SbcRunPlan[ActionT], backend: SbcBackend[ActionT, CommandT]
 ) -> CommandT:
     """Materialize a planned SBC run for execution."""
-    materialize_model_scenario_context(plan.context)
+    context = materialize_model_scenario_context(plan.context)
+    _write_run_metadata(
+        context.output_dir,
+        _model_scenario_run_metadata(
+            context,
+            kind="sbc",
+            backend=plan.backend,
+            outputs=(RunMetadataOutput(role="sbc", path=plan.sbc_path),),
+        ),
+    )
     return backend.materialize(plan.action)
 
 
@@ -699,6 +864,7 @@ def plan_model_run_context(
     output_dir: Path,
 ) -> PlannedModelRunContext:
     """Plan shared model/data run directory inputs without writing them."""
+    source_model_path = model_path.expanduser().resolve()
     source_data_path = _require_input_file(data_path, "data")
     try:
         data_doc = read_data_doc(source_data_path)
@@ -706,13 +872,15 @@ def plan_model_run_context(
         raise WorkflowError(f"invalid data file: {exc}") from exc
 
     _validate_output_dir(output_dir)
-    loaded_model = load_model(model_path, model_name)
+    loaded_model = load_model(source_model_path, model_name)
     dims_path = _planned_dims_path(output_dir, loaded_model.model_cls, loaded_model.meta)
 
     return PlannedModelRunContext(
         model_name=loaded_model.name,
+        model_source_path=source_model_path,
         loaded_model=loaded_model,
         ir_path=IrArtifact(output_dir / "model.ir.json"),
+        data_source_path=source_data_path,
         data_path=CanonicalDataArtifact(output_dir / "data.json"),
         dims_path=dims_path,
         output_dir=output_dir,
@@ -744,13 +912,15 @@ def plan_model_scenario_context(
     output_dir: Path,
 ) -> PlannedModelScenarioContext:
     """Plan shared model/scenario run directory inputs without writing them."""
+    source_model_path = model_path.expanduser().resolve()
     scenario_source = _require_input_file(scenario_path, "scenario")
     _validate_output_dir(output_dir)
-    loaded_model = load_model(model_path, model_name)
+    loaded_model = load_model(source_model_path, model_name)
     dims_path = _planned_dims_path(output_dir, loaded_model.model_cls, loaded_model.meta)
 
     return PlannedModelScenarioContext(
         model_name=loaded_model.name,
+        model_source_path=source_model_path,
         loaded_model=loaded_model,
         ir_path=IrArtifact(output_dir / "model.ir.json"),
         scenario_source_path=scenario_source,
@@ -961,6 +1131,67 @@ def _reject_existing_output_artifacts(paths: tuple[Path, ...]) -> None:
     )
 
 
+def _model_data_run_metadata(
+    context: PlannedModelRunContext,
+    *,
+    kind: str,
+    backend: str,
+    outputs: tuple[RunMetadataOutput, ...],
+    extra_inputs: tuple[RunMetadataInput, ...] = (),
+) -> RunMetadata:
+    return RunMetadata(
+        kind=kind,
+        backend=backend,
+        model=RunMetadataModel(
+            name=context.model_name,
+            source_path=context.model_source_path,
+            ir_path=context.ir_path.path,
+        ),
+        inputs=(
+            RunMetadataInput(
+                role="data",
+                source_path=context.data_source_path,
+                materialized_path=context.data_path.path,
+                artifact_format=DATA_DOC_FORMAT,
+            ),
+            *extra_inputs,
+        ),
+        outputs=outputs,
+    )
+
+
+def _model_scenario_run_metadata(
+    context: PlannedModelScenarioContext,
+    *,
+    kind: str,
+    backend: str,
+    outputs: tuple[RunMetadataOutput, ...],
+) -> RunMetadata:
+    return RunMetadata(
+        kind=kind,
+        backend=backend,
+        model=RunMetadataModel(
+            name=context.model_name,
+            source_path=context.model_source_path,
+            ir_path=context.ir_path.path,
+        ),
+        inputs=(
+            RunMetadataInput(
+                role="scenario",
+                source_path=context.scenario_source_path,
+                materialized_path=context.scenario_path,
+            ),
+        ),
+        outputs=outputs,
+    )
+
+
+def _write_run_metadata(run_dir: Path, metadata: RunMetadata) -> None:
+    with (run_dir / "run.json").open("x", encoding="utf-8") as f:
+        json.dump(metadata.as_json(run_dir), f, indent=2)
+        f.write("\n")
+
+
 def _write_data_manifest(
     output_dir: Path,
     data_path: CanonicalDataArtifact,
@@ -980,6 +1211,17 @@ def _write_data_manifest(
     with (output_dir / "manifest.json").open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
         f.write("\n")
+
+
+def _sha256_uri(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def _relative_run_path(run_dir: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(run_dir))
+    except ValueError:
+        return str(path)
 
 
 def _planned_dims_path(output_dir: Path, model_cls: type[object], meta: ModelMeta) -> Path | None:
