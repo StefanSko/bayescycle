@@ -608,9 +608,7 @@ def materialize_prior_predictive_run[ActionT, CommandT](
             context,
             kind="prior-predictive",
             backend=plan.backend,
-            outputs=(
-                RunMetadataOutput(role="prior_predictive", path=plan.prior_predictive_path),
-            ),
+            outputs=(RunMetadataOutput(role="prior_predictive", path=plan.prior_predictive_path),),
         ),
     )
     return backend.materialize(plan.action)
