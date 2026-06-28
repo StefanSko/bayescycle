@@ -585,8 +585,7 @@ def test_run_directory_commands_execute_through_bayesite_backend(
 
 
 def test_first_party_backends_do_not_expose_operation_specific_runners() -> None:
-    from bayescycle.backends.bayesite import BayesiteBackend
-    from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
+    from bayescycle.backends import BayesiteBackend, Jaxstanv5Backend
 
     for backend in (BayesiteBackend("bayesite"), Jaxstanv5Backend()):
         assert hasattr(backend, "execute")
