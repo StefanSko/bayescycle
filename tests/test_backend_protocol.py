@@ -17,12 +17,19 @@ from bayescycle._workflow import (
     InProcessSamplePlanDescription,
     InProcessSettingsPlanDescription,
     PlannedModelRunContext,
+    PlannedModelScenarioContext,
+    RecoverRequest,
     SampleRequest,
+    SimulateRequest,
     backend_plan_description_fields,
+    materialize_recover_run,
     materialize_run_directory_command,
     materialize_sample_run,
+    materialize_simulate_run,
     plan_diagnose_run,
+    plan_recover_run,
     plan_sample_run,
+    plan_simulate_run,
     sample_plan_document,
 )
 
@@ -47,6 +54,16 @@ class FakeDiagnoseAction:
     output_path: Path
 
 
+@dataclass(frozen=True)
+class FakeSimulateAction:
+    output_dir: Path
+
+
+@dataclass(frozen=True)
+class FakeRecoverAction:
+    output_dir: Path
+
+
 class FakeDiagnoseBackend:
     def plan_diagnose_action(
         self, context: DiagnoseRunContext, request: DiagnoseRequest
@@ -60,6 +77,38 @@ class FakeDiagnoseBackend:
 
     def materialize(self, action: FakeDiagnoseAction) -> FakeCommand:
         return FakeCommand(output_dir=action.output_path.parent)
+
+    def execute(self, command: FakeCommand) -> int:
+        return 0
+
+
+class FakeSimulateBackend:
+    def plan_simulate_action(
+        self, context: PlannedModelRunContext, request: SimulateRequest, truth_path: Path
+    ) -> FakeSimulateAction:
+        return FakeSimulateAction(output_dir=context.output_dir)
+
+    def describe(self, action: FakeSimulateAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(engine_command=("fake", "simulate"))
+
+    def materialize(self, action: FakeSimulateAction) -> FakeCommand:
+        return FakeCommand(output_dir=action.output_dir)
+
+    def execute(self, command: FakeCommand) -> int:
+        return 0
+
+
+class FakeRecoverBackend:
+    def plan_recover_action(
+        self, context: PlannedModelScenarioContext, request: RecoverRequest
+    ) -> FakeRecoverAction:
+        return FakeRecoverAction(output_dir=context.output_dir)
+
+    def describe(self, action: FakeRecoverAction) -> EngineBackendPlanDescription:
+        return EngineBackendPlanDescription(engine_command=("fake", "recover"))
+
+    def materialize(self, action: FakeRecoverAction) -> FakeCommand:
+        return FakeCommand(output_dir=action.output_dir)
 
     def execute(self, command: FakeCommand) -> int:
         return 0
@@ -242,6 +291,82 @@ def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Pa
     run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
     assert run_metadata["model"]["sha256"] == original_model_hash
     assert run_metadata["inputs"][0]["sha256"] == original_data_hash
+
+
+def test_simulate_metadata_hashes_materialized_truth(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    truth_file = tmp_path / "truth.json"
+    truth_file.write_text('{"mu": 0.0}\n', encoding="utf-8")
+    backend = FakeSimulateBackend()
+
+    plan = plan_simulate_run(
+        SimulateRequest(
+            model_path=model_file,
+            data_path=data_file,
+            truth_path=truth_file,
+            output_dir=tmp_path / "run",
+            model_name=None,
+            backend="bayesite",
+            seed=None,
+            engine_args=(),
+        ),
+        backend,
+    )
+    truth_file.write_text('{"mu": 9.0}\n', encoding="utf-8")
+
+    materialize_simulate_run(plan, backend)
+
+    run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
+    truth_input = next(entry for entry in run_metadata["inputs"] if entry["role"] == "truth")
+    assert truth_input["sha256"] == _sha256_uri(tmp_path / "run" / "truth.json")
+
+
+def test_recover_metadata_hashes_materialized_scenario(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    scenario_file = tmp_path / "scenario.json"
+    scenario_file.write_text('{"data": {"y": 0.25}}\n', encoding="utf-8")
+    backend = FakeRecoverBackend()
+
+    plan = plan_recover_run(
+        RecoverRequest(
+            model_path=model_file,
+            scenario_path=scenario_file,
+            output_dir=tmp_path / "run",
+            model_name=None,
+            backend="bayesite",
+            engine_args=(),
+        ),
+        backend,
+    )
+    scenario_file.write_text('{"data": {"y": 9.0}}\n', encoding="utf-8")
+
+    materialize_recover_run(plan, backend)
+
+    run_metadata = json.loads((tmp_path / "run" / "run.json").read_text(encoding="utf-8"))
+    scenario_input = next(
+        entry for entry in run_metadata["inputs"] if entry["role"] == "scenario"
+    )
+    assert scenario_input["sha256"] == _sha256_uri(tmp_path / "run" / "scenario.json")
 
 
 def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
