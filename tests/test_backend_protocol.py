@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from bayescycle._artifacts import BackendPrivateArtifact, CanonicalDataArtifact, IrArtifact
+from bayescycle._errors import WorkflowError
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow import (
     EngineBackendPlanDescription,
@@ -138,6 +139,49 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
 
     assert command == FakeCommand(output_dir=output_dir.resolve())
     assert backend.execute(command) == 17
+
+
+def test_materialization_preserves_no_force_output_dir_guard(tmp_path: Path) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from jaxstanv5 import Observed, model\n"
+        "from jaxstanv5.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Simple:\n"
+        "    y = Observed(Normal(0.0, 1.0))\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+    output_dir = tmp_path / "run"
+    backend = FakeSampleBackend()
+
+    plan = plan_sample_run(
+        SampleRequest(
+            model_path=model_file,
+            data_path=data_file,
+            output_dir=output_dir,
+            model_name=None,
+            backend="bayesite",
+            sampler=SamplerSettings(
+                seed=None,
+                chains=None,
+                warmup=None,
+                draws=None,
+                max_tree_depth=None,
+                target_accept=None,
+            ),
+            engine_args=(),
+            force=False,
+        ),
+        backend,
+    )
+    output_dir.mkdir()
+    (output_dir / "stale.txt").write_text("created after planning\n", encoding="utf-8")
+
+    with pytest.raises(WorkflowError, match="output directory is not empty"):
+        materialize_sample_run(plan, backend)
 
 
 def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> None:

@@ -138,6 +138,7 @@ class PlannedModelRunContext:
     data_path: CanonicalDataArtifact
     dims_path: Path | None
     output_dir: Path
+    force: bool
     data_doc: DataDoc
 
 
@@ -152,6 +153,7 @@ class PlannedModelScenarioContext:
     scenario_path: Path
     dims_path: Path | None
     output_dir: Path
+    force: bool
 
 
 @dataclass(frozen=True)
@@ -723,6 +725,7 @@ def plan_model_run_context(
         data_path=CanonicalDataArtifact(output_dir / "data.json"),
         dims_path=dims_path,
         output_dir=output_dir,
+        force=force,
         data_doc=data_doc,
     )
 
@@ -733,7 +736,7 @@ def materialize_model_run_context(
     additional_data_paths: tuple[CanonicalDataArtifact, ...] = (),
 ) -> PlannedModelRunContext:
     """Materialize shared model/data run-directory inputs."""
-    _ensure_output_dir(context.output_dir, force=True)
+    _ensure_output_dir(context.output_dir, force=context.force)
     context.ir_path.path.write_bytes(canonical_bytes(context.loaded_model.meta))
     write_data_doc(context.data_path.path, context.data_doc)
     _write_data_manifest(context.output_dir, context.data_path, additional_data_paths)
@@ -765,6 +768,7 @@ def plan_model_scenario_context(
         scenario_path=output_dir / "scenario.json",
         dims_path=dims_path,
         output_dir=output_dir,
+        force=force,
     )
 
 
@@ -772,7 +776,7 @@ def materialize_model_scenario_context(
     context: PlannedModelScenarioContext,
 ) -> PlannedModelScenarioContext:
     """Materialize shared model/scenario run-directory inputs."""
-    _ensure_output_dir(context.output_dir, force=True)
+    _ensure_output_dir(context.output_dir, force=context.force)
     context.ir_path.path.write_bytes(canonical_bytes(context.loaded_model.meta))
     _copy_required_input(context.scenario_source_path, context.scenario_path, "scenario")
     dims_path = _write_optional_dims_sidecar(
