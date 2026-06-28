@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -114,6 +115,10 @@ def _write_input_data(tmp_path: Path) -> Path:
     data_file = tmp_path / "input.json"
     data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
     return data_file
+
+
+def _sha256_uri(path: Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
 
 
 def _write_empty_data(tmp_path: Path) -> Path:
@@ -613,6 +618,61 @@ def test_sample_uses_preflight_resolved_engine_after_model_changes_cwd(
     assert (tmp_path / "run" / "posterior.ndjson").read_text(encoding="utf-8") == (
         "posterior written by resolved engine\n"
     )
+
+
+def test_sample_writes_run_metadata_for_future_provenance(tmp_path: Path) -> None:
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+    fake_engine = tmp_path / "fake_bayesite.py"
+    fake_engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "args = sys.argv[1:]\n"
+        + _fake_bayesite_usage_prelude()
+        + "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text('draws\\n')\n",
+        encoding="utf-8",
+    )
+    fake_engine.chmod(0o755)
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--engine",
+            str(fake_engine),
+        ]
+    )
+
+    assert code == 0
+    assert json.loads((output_dir / "run.json").read_text(encoding="utf-8")) == {
+        "format": "bayescycle.run.v1",
+        "kind": "sample",
+        "backend": "bayesite",
+        "model": {
+            "name": "Simple",
+            "source_path": str(model_file.resolve()),
+            "sha256": _sha256_uri(model_file),
+            "ir_path": "model.ir.json",
+        },
+        "inputs": [
+            {
+                "role": "data",
+                "source_path": str(data_file.resolve()),
+                "sha256": _sha256_uri(data_file),
+                "path": "data.json",
+                "format": "bayescycle.data.json.v1",
+            }
+        ],
+        "outputs": [{"role": "posterior", "path": "posterior.ndjson"}],
+    }
 
 
 def test_sample_force_option_is_removed_and_does_not_mutate_stale_run(
