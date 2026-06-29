@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import cast
 
 from bayescycle import __version__
+from bayescycle._backend_runtime import (
+    BackendRuntimeOptions,
+    resolve_prior_predictive_backend,
+    resolve_sample_backend,
+)
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._settings import SamplerSettings
@@ -68,7 +73,6 @@ from bayescycle.backends.bayesite.preflight import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
 )
-from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
 from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
 
@@ -350,12 +354,7 @@ def _add_show_plan_argument(parser: argparse.ArgumentParser, *, help_text: str) 
 
 def _sample(namespace: argparse.Namespace) -> int:
     try:
-        explicit_engine = cast(str | None, namespace.engine)
-        backend_id = _resolve_backend(cast(str, namespace.backend), BackendCapability.SAMPLE)
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
-        engine = explicit_engine or str(BAYESITE)
+        intent = _intent_from_namespace(namespace)
         request = SampleRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
@@ -370,13 +369,15 @@ def _sample(namespace: argparse.Namespace) -> int:
                 target_accept=cast(str | None, namespace.target_accept),
             ),
         )
-        intent = _intent_from_namespace(namespace)
-        if backend_id == BAYESITE:
-            engine = _preflight_bayesite_for_intent(engine, intent, "sample", "sample")
-            return _sample_with_backend(
-                BayesiteBackend(engine, extra_args=engine_args), request, intent=intent
+        backend = resolve_sample_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
             )
-        return _sample_with_backend(Jaxstanv5Backend(), request, intent=intent)
+        )
+        return _sample_with_backend(backend, request, intent=intent)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -397,14 +398,7 @@ def _sample_with_backend[ActionT, CommandT](
 
 def _prior_predictive(namespace: argparse.Namespace) -> int:
     try:
-        explicit_engine = cast(str | None, namespace.engine)
-        backend_id = _resolve_backend(
-            cast(str, namespace.backend), BackendCapability.PRIOR_PREDICTIVE
-        )
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
-        engine = explicit_engine or str(BAYESITE)
+        intent = _intent_from_namespace(namespace)
         request = PriorPredictiveRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
@@ -413,15 +407,15 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
             seed=cast(str | None, namespace.seed),
             draws=cast(str | None, namespace.draws),
         )
-        intent = _intent_from_namespace(namespace)
-        if backend_id == BAYESITE:
-            engine = _preflight_bayesite_for_intent(
-                engine, intent, "prior-predictive", "prior-predictive"
+        backend = resolve_prior_predictive_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
             )
-            return _prior_predictive_with_backend(
-                BayesiteBackend(engine, extra_args=engine_args), request, intent=intent
-            )
-        return _prior_predictive_with_backend(Jaxstanv5Backend(), request, intent=intent)
+        )
+        return _prior_predictive_with_backend(backend, request, intent=intent)
     except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
