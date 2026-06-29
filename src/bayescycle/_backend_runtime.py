@@ -13,8 +13,12 @@ from bayescycle._workflow.capabilities import (
     BackendId,
 )
 from bayescycle._workflow.protocols import (
+    DiagnoseBackend,
+    PosteriorCheckBackend,
+    PosteriorPredictiveBackend,
     PriorPredictiveBackend,
     RecoverBackend,
+    RecoverCheckBackend,
     SampleBackend,
     SbcBackend,
     SimulateBackend,
@@ -42,6 +46,10 @@ type OpaquePriorPredictiveBackend = PriorPredictiveBackend[Any, Any]
 type OpaqueSimulateBackend = SimulateBackend[Any, Any]
 type OpaqueRecoverBackend = RecoverBackend[Any, Any]
 type OpaqueSbcBackend = SbcBackend[Any, Any]
+type OpaqueDiagnoseBackend = DiagnoseBackend[Any, Any]
+type OpaquePosteriorPredictiveBackend = PosteriorPredictiveBackend[Any, Any]
+type OpaquePosteriorCheckBackend = PosteriorCheckBackend[Any, Any]
+type OpaqueRecoverCheckBackend = RecoverCheckBackend[Any, Any]
 
 
 def resolve_sample_backend(options: BackendRuntimeOptions) -> OpaqueSampleBackend:
@@ -93,6 +101,50 @@ def resolve_sbc_backend(options: BackendRuntimeOptions) -> OpaqueSbcBackend:
         return _bayesite_backend(options, command="sbc", stage="sbc")
     _reject_bayesite_options_for_non_bayesite(backend, options)
     raise _unsupported_runtime_backend(backend, BackendCapability.SBC)
+
+
+def resolve_diagnose_backend(options: BackendRuntimeOptions) -> OpaqueDiagnoseBackend:
+    """Resolve a backend object with diagnose capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.DIAGNOSE)
+    if backend == BAYESITE:
+        return _bayesite_backend(options, command="diagnose", stage="diagnose")
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.DIAGNOSE)
+
+
+def resolve_posterior_predictive_backend(
+    options: BackendRuntimeOptions,
+) -> OpaquePosteriorPredictiveBackend:
+    """Resolve a backend object with posterior-predictive capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.POSTERIOR_PREDICTIVE)
+    if backend == BAYESITE:
+        return _bayesite_backend(
+            options,
+            command="posterior-predictive",
+            stage="posterior-predictive",
+        )
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.POSTERIOR_PREDICTIVE)
+
+
+def resolve_posterior_check_backend(
+    options: BackendRuntimeOptions,
+) -> OpaquePosteriorCheckBackend:
+    """Resolve a backend object with posterior-check capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.POSTERIOR_CHECK)
+    if backend == BAYESITE:
+        return _bayesite_backend(options, command="posterior-check", stage="posterior-check")
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.POSTERIOR_CHECK)
+
+
+def resolve_recover_check_backend(options: BackendRuntimeOptions) -> OpaqueRecoverCheckBackend:
+    """Resolve a backend object with recover-check capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.RECOVER_CHECK)
+    if backend == BAYESITE:
+        return _bayesite_backend(options, command="recover-check", stage="recover-check")
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.RECOVER_CHECK)
 
 
 def _resolve_backend(value: str, capability: BackendCapability) -> BackendId:

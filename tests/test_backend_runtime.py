@@ -8,8 +8,12 @@ import pytest
 
 from bayescycle._backend_runtime import (
     BackendRuntimeOptions,
+    resolve_diagnose_backend,
+    resolve_posterior_check_backend,
+    resolve_posterior_predictive_backend,
     resolve_prior_predictive_backend,
     resolve_recover_backend,
+    resolve_recover_check_backend,
     resolve_sample_backend,
     resolve_sbc_backend,
     resolve_simulate_backend,
@@ -137,6 +141,50 @@ def test_simulate_backend_runtime_rejects_unsupported_backend() -> None:
         match="backend jaxstanv5 does not support bayescycle capability simulate",
     ):
         resolve_simulate_backend(
+            BackendRuntimeOptions(
+                backend="jaxstanv5",
+                engine=None,
+                extra_args=(),
+                preflight=False,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("resolver", "command"),
+    (
+        (resolve_diagnose_backend, "diagnose"),
+        (resolve_posterior_predictive_backend, "posterior-predictive"),
+        (resolve_posterior_check_backend, "posterior-check"),
+        (resolve_recover_check_backend, "recover-check"),
+    ),
+)
+def test_existing_run_command_runtime_preflights_and_builds_bayesite_backend(
+    tmp_path: Path,
+    resolver: Callable[[BackendRuntimeOptions], object],
+    command: str,
+) -> None:
+    engine = _write_fake_bayesite(tmp_path, command)
+
+    backend = resolver(
+        BackendRuntimeOptions(
+            backend="bayesite",
+            engine=str(engine),
+            extra_args=(),
+            preflight=True,
+        )
+    )
+
+    assert isinstance(backend, BayesiteBackend)
+    assert backend.engine == str(engine.resolve())
+
+
+def test_posterior_check_backend_runtime_rejects_unsupported_backend() -> None:
+    with pytest.raises(
+        WorkflowError,
+        match="backend jaxstanv5 does not support bayescycle capability posterior-check",
+    ):
+        resolve_posterior_check_backend(
             BackendRuntimeOptions(
                 backend="jaxstanv5",
                 engine=None,

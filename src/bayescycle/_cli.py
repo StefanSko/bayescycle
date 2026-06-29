@@ -13,8 +13,12 @@ from typing import cast
 from bayescycle import __version__
 from bayescycle._backend_runtime import (
     BackendRuntimeOptions,
+    resolve_diagnose_backend,
+    resolve_posterior_check_backend,
+    resolve_posterior_predictive_backend,
     resolve_prior_predictive_backend,
     resolve_recover_backend,
+    resolve_recover_check_backend,
     resolve_sample_backend,
     resolve_sbc_backend,
     resolve_simulate_backend,
@@ -27,12 +31,7 @@ from bayescycle._workflow.backend_plan import (
     resolve_backend_plan,
     resolve_backend_plan_file,
 )
-from bayescycle._workflow.capabilities import (
-    BAYESITE,
-    FIRST_PARTY_BACKENDS,
-    BackendCapability,
-    BackendId,
-)
+from bayescycle._workflow.capabilities import BAYESITE, FIRST_PARTY_BACKENDS
 from bayescycle._workflow.documents import (
     prior_predictive_plan_document,
     recover_plan_document,
@@ -70,11 +69,6 @@ from bayescycle._workflow.requests import (
     SampleRequest,
     SbcRequest,
     SimulateRequest,
-)
-from bayescycle.backends.bayesite import BayesiteBackend
-from bayescycle.backends.bayesite.preflight import (
-    BayesiteCommandRequirement,
-    preflight_bayesite_engine,
 )
 from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
@@ -539,10 +533,14 @@ def _diagnose(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
         intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(
-            cast(str | None, namespace.engine) or str(BAYESITE), intent, "diagnose", "diagnose"
+        backend = resolve_diagnose_backend(
+            BackendRuntimeOptions(
+                backend=str(BAYESITE),
+                engine=cast(str | None, namespace.engine),
+                extra_args=(),
+                preflight=not _intent_skips_execution(intent),
+            )
         )
-        backend = BayesiteBackend(engine)
         plan = plan_diagnose_run(
             DiagnoseRequest(run_dir=cast(Path, namespace.run_dir)),
             backend,
@@ -557,13 +555,14 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
         intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(
-            cast(str | None, namespace.engine) or str(BAYESITE),
-            intent,
-            "posterior-predictive",
-            "posterior-predictive",
+        backend = resolve_posterior_predictive_backend(
+            BackendRuntimeOptions(
+                backend=str(BAYESITE),
+                engine=cast(str | None, namespace.engine),
+                extra_args=(),
+                preflight=not _intent_skips_execution(intent),
+            )
         )
-        backend = BayesiteBackend(engine)
         plan = plan_posterior_predictive_run(
             PosteriorPredictiveRequest(
                 run_dir=cast(Path, namespace.run_dir),
@@ -579,18 +578,15 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
 
 def _posterior_check(namespace: argparse.Namespace) -> int:
     try:
-        explicit_engine = cast(str | None, namespace.engine)
-        backend_id = _resolve_backend(
-            cast(str, namespace.backend), BackendCapability.POSTERIOR_CHECK
-        )
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
         intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(
-            explicit_engine or str(BAYESITE), intent, "posterior-check", "posterior-check"
+        backend = resolve_posterior_check_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
+            )
         )
-        backend = BayesiteBackend(engine, extra_args=engine_args)
         plan = plan_posterior_check_run(
             PosteriorCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
@@ -606,16 +602,15 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
 
 def _recover_check(namespace: argparse.Namespace) -> int:
     try:
-        explicit_engine = cast(str | None, namespace.engine)
-        backend_id = _resolve_backend(cast(str, namespace.backend), BackendCapability.RECOVER_CHECK)
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
         intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(
-            explicit_engine or str(BAYESITE), intent, "recover-check", "recover-check"
+        backend = resolve_recover_check_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
+            )
         )
-        backend = BayesiteBackend(engine, extra_args=engine_args)
         plan = plan_recover_check_run(
             RecoverCheckRequest(
                 run_dir=cast(Path, namespace.run_dir),
@@ -690,37 +685,11 @@ def _intent_skips_execution(intent: CliIntent) -> bool:
     return isinstance(intent, ShowPlan)
 
 
-def _preflight_bayesite_for_intent(engine: str, intent: CliIntent, command: str, stage: str) -> str:
-    if _intent_skips_execution(intent):
-        return engine
-    info = preflight_bayesite_engine(engine, (BayesiteCommandRequirement(command, stage),))
-    return str(info.executable)
-
-
 def _reject_forwarded_engine_args(engine_args: tuple[str, ...]) -> None:
     if engine_args:
         raise WorkflowError(
             "engine passthrough after -- is only supported for model-level backend commands"
         )
-
-
-def _resolve_backend(value: str, capability: BackendCapability) -> BackendId:
-    backend = FIRST_PARTY_BACKENDS.resolve(value)
-    FIRST_PARTY_BACKENDS.require(backend, capability)
-    return backend
-
-
-def _reject_engine_for_non_bayesite(backend: BackendId, explicit_engine: str | None) -> None:
-    if backend != BAYESITE and explicit_engine is not None:
-        raise WorkflowError(
-            "--engine configures the bayesite backend, but no bayesite backend stage was selected. "
-            "Did you mean --backend bayesite?"
-        )
-
-
-def _reject_engine_args_for_non_bayesite(backend: BackendId, engine_args: tuple[str, ...]) -> None:
-    if backend != BAYESITE and engine_args:
-        raise WorkflowError("engine passthrough after -- is only supported for --backend bayesite")
 
 
 def _split_engine_args(argv: Sequence[str] | None) -> tuple[list[str], list[str]]:
