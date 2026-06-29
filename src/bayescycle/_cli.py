@@ -14,7 +14,10 @@ from bayescycle import __version__
 from bayescycle._backend_runtime import (
     BackendRuntimeOptions,
     resolve_prior_predictive_backend,
+    resolve_recover_backend,
     resolve_sample_backend,
+    resolve_sbc_backend,
+    resolve_simulate_backend,
 )
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import ModelLoadError
@@ -441,12 +444,7 @@ def _prior_predictive_with_backend[ActionT, CommandT](
 
 def _simulate(namespace: argparse.Namespace) -> int:
     try:
-        backend_id = _resolve_backend(cast(str, namespace.backend), BackendCapability.SIMULATE)
-        explicit_engine = cast(str | None, namespace.engine)
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
-        engine = explicit_engine or str(BAYESITE)
+        intent = _intent_from_namespace(namespace)
         request = SimulateRequest(
             model_path=cast(Path, namespace.model_path),
             data_path=cast(Path, namespace.data),
@@ -455,9 +453,14 @@ def _simulate(namespace: argparse.Namespace) -> int:
             model_name=cast(str | None, namespace.model_name),
             seed=cast(str | None, namespace.seed),
         )
-        intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(engine, intent, "simulate", "simulate")
-        backend = BayesiteBackend(engine, extra_args=engine_args)
+        backend = resolve_simulate_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
+            )
+        )
         plan = plan_simulate_run(request, backend)
         match intent:
             case ShowPlan():
@@ -473,21 +476,21 @@ def _simulate(namespace: argparse.Namespace) -> int:
 
 def _recover(namespace: argparse.Namespace) -> int:
     try:
-        backend_id = _resolve_backend(cast(str, namespace.backend), BackendCapability.RECOVER)
-        explicit_engine = cast(str | None, namespace.engine)
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
-        engine = explicit_engine or str(BAYESITE)
+        intent = _intent_from_namespace(namespace)
         request = RecoverRequest(
             model_path=cast(Path, namespace.model_path),
             scenario_path=cast(Path, namespace.scenario),
             output_dir=cast(Path, namespace.output),
             model_name=cast(str | None, namespace.model_name),
         )
-        intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(engine, intent, "recover", "recover")
-        backend = BayesiteBackend(engine, extra_args=engine_args)
+        backend = resolve_recover_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
+            )
+        )
         plan = plan_recover_run(request, backend)
         match intent:
             case ShowPlan():
@@ -503,12 +506,7 @@ def _recover(namespace: argparse.Namespace) -> int:
 
 def _sbc(namespace: argparse.Namespace) -> int:
     try:
-        backend_id = _resolve_backend(cast(str, namespace.backend), BackendCapability.SBC)
-        explicit_engine = cast(str | None, namespace.engine)
-        _reject_engine_for_non_bayesite(backend_id, explicit_engine)
-        engine_args = tuple(cast(list[str], namespace.engine_args))
-        _reject_engine_args_for_non_bayesite(backend_id, engine_args)
-        engine = explicit_engine or str(BAYESITE)
+        intent = _intent_from_namespace(namespace)
         request = SbcRequest(
             model_path=cast(Path, namespace.model_path),
             scenario_path=cast(Path, namespace.scenario),
@@ -516,9 +514,14 @@ def _sbc(namespace: argparse.Namespace) -> int:
             model_name=cast(str | None, namespace.model_name),
             replicates=cast(str | None, namespace.replicates),
         )
-        intent = _intent_from_namespace(namespace)
-        engine = _preflight_bayesite_for_intent(engine, intent, "sbc", "sbc")
-        backend = BayesiteBackend(engine, extra_args=engine_args)
+        backend = resolve_sbc_backend(
+            BackendRuntimeOptions(
+                backend=cast(str, namespace.backend),
+                engine=cast(str | None, namespace.engine),
+                extra_args=tuple(cast(list[str], namespace.engine_args)),
+                preflight=not _intent_skips_execution(intent),
+            )
+        )
         plan = plan_sbc_run(request, backend)
         match intent:
             case ShowPlan():

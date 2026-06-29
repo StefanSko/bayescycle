@@ -12,7 +12,13 @@ from bayescycle._workflow.capabilities import (
     BackendCapability,
     BackendId,
 )
-from bayescycle._workflow.protocols import PriorPredictiveBackend, SampleBackend
+from bayescycle._workflow.protocols import (
+    PriorPredictiveBackend,
+    RecoverBackend,
+    SampleBackend,
+    SbcBackend,
+    SimulateBackend,
+)
 from bayescycle.backends.bayesite import BayesiteBackend
 from bayescycle.backends.bayesite.preflight import (
     BayesiteCommandRequirement,
@@ -33,6 +39,9 @@ class BackendRuntimeOptions:
 
 type OpaqueSampleBackend = SampleBackend[Any, Any]
 type OpaquePriorPredictiveBackend = PriorPredictiveBackend[Any, Any]
+type OpaqueSimulateBackend = SimulateBackend[Any, Any]
+type OpaqueRecoverBackend = RecoverBackend[Any, Any]
+type OpaqueSbcBackend = SbcBackend[Any, Any]
 
 
 def resolve_sample_backend(options: BackendRuntimeOptions) -> OpaqueSampleBackend:
@@ -57,6 +66,33 @@ def resolve_prior_predictive_backend(
         )
     _reject_bayesite_options_for_non_bayesite(backend, options)
     return Jaxstanv5Backend()
+
+
+def resolve_simulate_backend(options: BackendRuntimeOptions) -> OpaqueSimulateBackend:
+    """Resolve a backend object with simulate capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.SIMULATE)
+    if backend == BAYESITE:
+        return _bayesite_backend(options, command="simulate", stage="simulate")
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.SIMULATE)
+
+
+def resolve_recover_backend(options: BackendRuntimeOptions) -> OpaqueRecoverBackend:
+    """Resolve a backend object with recover capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.RECOVER)
+    if backend == BAYESITE:
+        return _bayesite_backend(options, command="recover", stage="recover")
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.RECOVER)
+
+
+def resolve_sbc_backend(options: BackendRuntimeOptions) -> OpaqueSbcBackend:
+    """Resolve a backend object with SBC capability."""
+    backend = _resolve_backend(options.backend, BackendCapability.SBC)
+    if backend == BAYESITE:
+        return _bayesite_backend(options, command="sbc", stage="sbc")
+    _reject_bayesite_options_for_non_bayesite(backend, options)
+    raise _unsupported_runtime_backend(backend, BackendCapability.SBC)
 
 
 def _resolve_backend(value: str, capability: BackendCapability) -> BackendId:
@@ -92,3 +128,13 @@ def _reject_bayesite_options_for_non_bayesite(
         )
     if options.extra_args:
         raise WorkflowError("engine passthrough after -- is only supported for --backend bayesite")
+
+
+def _unsupported_runtime_backend(
+    backend: BackendId,
+    capability: BackendCapability,
+) -> WorkflowError:
+    return WorkflowError(
+        f"backend {backend} passed capability validation but has no runtime adapter for "
+        f"bayescycle capability {capability.value}"
+    )

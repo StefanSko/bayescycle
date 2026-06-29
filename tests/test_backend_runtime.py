@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,10 @@ import pytest
 from bayescycle._backend_runtime import (
     BackendRuntimeOptions,
     resolve_prior_predictive_backend,
+    resolve_recover_backend,
     resolve_sample_backend,
+    resolve_sbc_backend,
+    resolve_simulate_backend,
 )
 from bayescycle._errors import WorkflowError
 from bayescycle.backends.bayesite import BayesiteBackend
@@ -96,3 +100,47 @@ def test_prior_predictive_backend_runtime_resolves_jaxstanv5_backend() -> None:
     )
 
     assert isinstance(backend, Jaxstanv5Backend)
+
+
+@pytest.mark.parametrize(
+    ("resolver", "command"),
+    (
+        (resolve_simulate_backend, "simulate"),
+        (resolve_recover_backend, "recover"),
+        (resolve_sbc_backend, "sbc"),
+    ),
+)
+def test_model_command_runtime_preflights_and_builds_bayesite_backend(
+    tmp_path: Path,
+    resolver: Callable[[BackendRuntimeOptions], object],
+    command: str,
+) -> None:
+    engine = _write_fake_bayesite(tmp_path, command)
+
+    backend = resolver(
+        BackendRuntimeOptions(
+            backend="bayesite",
+            engine=str(engine),
+            extra_args=("--experimental",),
+            preflight=True,
+        )
+    )
+
+    assert isinstance(backend, BayesiteBackend)
+    assert backend.engine == str(engine.resolve())
+    assert backend.extra_args == ("--experimental",)
+
+
+def test_simulate_backend_runtime_rejects_unsupported_backend() -> None:
+    with pytest.raises(
+        WorkflowError,
+        match="backend jaxstanv5 does not support bayescycle capability simulate",
+    ):
+        resolve_simulate_backend(
+            BackendRuntimeOptions(
+                backend="jaxstanv5",
+                engine=None,
+                extra_args=(),
+                preflight=False,
+            )
+        )
