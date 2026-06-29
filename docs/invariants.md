@@ -48,10 +48,15 @@
 This section is intentionally last. Update it whenever modules move so the source
 layout keeps matching the architecture.
 
-- `bayescycle._cli` parses CLI input, performs user-facing backend selection,
-  runs Bayesite preflight, and wires concrete backend adapters into workflow
-  operations. It must not own artifact schemas, sampler semantics, or backend
+- `bayescycle._cli` parses CLI input, builds logical requests, and wires
+  capability-specific backend handles into workflow operations. It must not own
+  artifact schemas, sampler semantics, concrete backend construction, or backend
   execution details.
+- `bayescycle._backend_runtime` resolves concrete first-party runtime backend
+  adapters from explicit backend selection into capability-specific backend
+  protocol objects. It may import concrete backend adapters and run Bayesite
+  preflight, but it must not own workflow artifact schemas, sampler semantics,
+  or command execution.
 - `bayescycle._workflow.capabilities` owns the closed workflow-capability ADT,
   open backend identity value, and immutable first-party backend catalog. It may
   validate backend/capability support, but it must not import concrete backend
