@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from bayescycle._errors import WorkflowError
 from bayescycle._integrations.descriptions import ExternalCommandPlanDescription
 from bayescycle._integrations.external_command import ExternalCommand, run_external_command
 from bayescycle._run_artifacts.references import BackendPrivateArtifact, CanonicalDataArtifact
+from bayescycle._settings import SamplerSettings
 from bayescycle._workflow.contexts import (
     DiagnoseRunContext,
     PlannedModelRunContext,
@@ -57,6 +59,12 @@ class BayesiteBackend:
     """Bayesite subprocess backend capabilities."""
 
     engine: str
+    extra_args: tuple[str, ...] = ()
+
+    @property
+    def backend_id(self) -> str:
+        """Return the stable backend identifier for run metadata."""
+        return "bayesite"
 
     def plan_sample_action(
         self, context: PlannedModelRunContext, request: SampleRequest
@@ -64,6 +72,7 @@ class BayesiteBackend:
         """Plan the Bayesite sample action for a planned run directory."""
         draws_path = context.output_dir / "posterior.ndjson"
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
+        extra_args = _validated_extra_args(self.extra_args, draws_path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -73,10 +82,10 @@ class BayesiteBackend:
                     str(context.ir_path.path),
                     "--data",
                     str(engine_data_path.path),
-                    *request.sampler.to_engine_args(),
+                    *_bayesite_sampler_args(request.sampler),
                     "--out",
                     str(draws_path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(draws_path,),
             ),
@@ -94,6 +103,7 @@ class BayesiteBackend:
         """Plan the Bayesite prior-predictive action for a planned run directory."""
         output_path = context.output_dir / "prior_predictive.ndjson"
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
+        extra_args = _validated_extra_args(self.extra_args, output_path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -107,7 +117,7 @@ class BayesiteBackend:
                     *_optional_arg("--draws", request.draws),
                     "--out",
                     str(output_path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(output_path,),
             ),
@@ -128,6 +138,7 @@ class BayesiteBackend:
             _backend_dir(context.output_dir) / "simulated_data.json"
         )
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.output_dir) / "data.json")
+        extra_args = _validated_extra_args(self.extra_args, canonical_output_path.path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -142,7 +153,7 @@ class BayesiteBackend:
                     *_optional_arg("--seed", request.seed),
                     "--out",
                     str(native_output_path.path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(canonical_output_path.path, native_output_path.path),
             ),
@@ -165,6 +176,7 @@ class BayesiteBackend:
     ) -> BayesiteAction:
         """Plan the Bayesite recover action for a planned run directory."""
         output_path = context.output_dir / "recovery.json"
+        extra_args = _validated_extra_args(self.extra_args, output_path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -176,7 +188,7 @@ class BayesiteBackend:
                     str(context.scenario_path),
                     "--out",
                     str(output_path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(output_path,),
             )
@@ -187,6 +199,7 @@ class BayesiteBackend:
     ) -> BayesiteAction:
         """Plan the Bayesite SBC action for a planned run directory."""
         output_path = context.output_dir / "sbc.json"
+        extra_args = _validated_extra_args(self.extra_args, output_path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -199,7 +212,7 @@ class BayesiteBackend:
                     *_optional_arg("--replicates", request.replicates),
                     "--out",
                     str(output_path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(output_path,),
             )
@@ -259,6 +272,7 @@ class BayesiteBackend:
     ) -> BayesiteAction:
         """Plan the Bayesite posterior-check action for an existing run directory."""
         engine_data_path = BackendPrivateArtifact(_backend_dir(context.run_dir) / "data.json")
+        extra_args = _validated_extra_args(self.extra_args, context.output_path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -273,7 +287,7 @@ class BayesiteBackend:
                     *_optional_arg("--seed", request.seed),
                     "--out",
                     str(context.output_path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(context.output_path,),
             ),
@@ -292,6 +306,7 @@ class BayesiteBackend:
         targets_args = (
             ("--targets", str(context.targets_path)) if context.targets_path is not None else ()
         )
+        extra_args = _validated_extra_args(self.extra_args, context.output_path)
         return BayesiteAction(
             command=ExternalCommand(
                 argv=(
@@ -305,7 +320,7 @@ class BayesiteBackend:
                     *_optional_arg("--interval", request.interval),
                     "--out",
                     str(context.output_path),
-                    *request.engine_args,
+                    *extra_args,
                 ),
                 output_paths=(context.output_path,),
             )
@@ -343,6 +358,35 @@ class BayesiteBackend:
 
 def _backend_dir(output_dir: Path) -> Path:
     return output_dir / ".bayesite"
+
+
+def _bayesite_sampler_args(settings: SamplerSettings) -> tuple[str, ...]:
+    """Render logical sampler settings as Bayesite CLI arguments."""
+    args: list[str] = []
+    if settings.seed is not None:
+        args.extend(("--seed", settings.seed))
+    if settings.chains is not None:
+        args.extend(("--chains", settings.chains))
+    if settings.warmup is not None:
+        args.extend(("--warmup", settings.warmup))
+    if settings.draws is not None:
+        args.extend(("--draws", settings.draws))
+    if settings.max_tree_depth is not None:
+        args.extend(("--max-treedepth", settings.max_tree_depth))
+    if settings.target_accept is not None:
+        args.extend(("--target-accept", settings.target_accept))
+    return tuple(args)
+
+
+def _validated_extra_args(extra_args: tuple[str, ...], output_path: Path) -> tuple[str, ...]:
+    for arg in extra_args:
+        if arg == "--out" or arg.startswith("--out="):
+            raise WorkflowError(
+                "forwarded engine args may not include --out; "
+                f"bayescycle writes output to {output_path}. "
+                "Use Bayesite directly for custom output or streaming."
+            )
+    return extra_args
 
 
 def _optional_arg(flag: str, value: str | None) -> tuple[str, ...]:

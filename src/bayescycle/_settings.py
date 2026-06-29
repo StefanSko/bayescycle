@@ -76,23 +76,6 @@ class SamplerSettings:
     max_tree_depth: str | None
     target_accept: str | None
 
-    def to_engine_args(self) -> tuple[str, ...]:
-        """Return Bayesite CLI arguments for explicitly requested settings."""
-        args: list[str] = []
-        if self.seed is not None:
-            args.extend(("--seed", self.seed))
-        if self.chains is not None:
-            args.extend(("--chains", self.chains))
-        if self.warmup is not None:
-            args.extend(("--warmup", self.warmup))
-        if self.draws is not None:
-            args.extend(("--draws", self.draws))
-        if self.max_tree_depth is not None:
-            args.extend(("--max-treedepth", self.max_tree_depth))
-        if self.target_accept is not None:
-            args.extend(("--target-accept", self.target_accept))
-        return tuple(args)
-
     def resolve_for_in_process(self) -> ResolvedSamplerSettings:
         """Parse sampler settings for direct Python execution."""
         seed = parse_nonnegative_int(self.seed, "--seed", default=DEFAULT_SEED)

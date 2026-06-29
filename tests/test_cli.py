@@ -971,7 +971,10 @@ def test_simulate_jaxstanv5_backend_reports_unsupported_without_engine_preflight
     )
 
     assert code == 2
-    assert "not supported on --backend jaxstanv5" in capsys.readouterr().err
+    assert (
+        "backend jaxstanv5 does not support bayescycle capability simulate"
+        in capsys.readouterr().err
+    )
     assert not output_dir.exists()
 
 
@@ -1515,7 +1518,10 @@ def test_posterior_check_jaxstanv5_backend_reports_unsupported(
     code = main(["posterior-check", str(run_dir), "--backend", "jaxstanv5", "--dry-run"])
 
     assert code == 2
-    assert "not supported on --backend jaxstanv5" in capsys.readouterr().err
+    assert (
+        "backend jaxstanv5 does not support bayescycle capability posterior-check"
+        in capsys.readouterr().err
+    )
 
 
 def test_recover_check_dry_run_uses_fit_truth_targets_and_interval(

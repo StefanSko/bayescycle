@@ -80,11 +80,8 @@ def plan_sample_run[ActionT, CommandT](
     request: SampleRequest, backend: SampleBackend[ActionT, CommandT]
 ) -> SampleRunPlan[ActionT]:
     """Plan a sample run without durable filesystem writes."""
-    _validate_backend(request.backend)
     output_dir = request.output_dir.expanduser().resolve()
     draws_path = output_dir / "posterior.ndjson"
-    _reject_reserved_engine_args(request.engine_args, draws_path)
-    _reject_in_process_engine_args(request.backend, request.engine_args)
     context = plan_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -95,7 +92,7 @@ def plan_sample_run[ActionT, CommandT](
     return SampleRunPlan(
         context=context,
         draws_path=draws_path,
-        backend=request.backend,
+        backend=backend.backend_id,
         action=action,
     )
 
@@ -121,11 +118,8 @@ def plan_prior_predictive_run[ActionT, CommandT](
     request: PriorPredictiveRequest, backend: PriorPredictiveBackend[ActionT, CommandT]
 ) -> PriorPredictiveRunPlan[ActionT]:
     """Plan a prior-predictive run without durable filesystem writes."""
-    _validate_backend(request.backend)
     output_dir = request.output_dir.expanduser().resolve()
     output_path = output_dir / "prior_predictive.ndjson"
-    _reject_reserved_engine_args(request.engine_args, output_path)
-    _reject_in_process_engine_args(request.backend, request.engine_args)
     context = plan_model_run_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -136,7 +130,7 @@ def plan_prior_predictive_run[ActionT, CommandT](
     return PriorPredictiveRunPlan(
         context=context,
         prior_predictive_path=output_path,
-        backend=request.backend,
+        backend=backend.backend_id,
         action=action,
     )
 
@@ -162,10 +156,8 @@ def plan_simulate_run[ActionT, CommandT](
     request: SimulateRequest, backend: SimulateBackend[ActionT, CommandT]
 ) -> SimulateRunPlan[ActionT]:
     """Plan a simulation run without durable filesystem writes."""
-    _validate_bayesite_only(request.backend, "simulate")
     output_dir = request.output_dir.expanduser().resolve()
     output_path = CanonicalDataArtifact(output_dir / "simulated_data.json")
-    _reject_reserved_engine_args(request.engine_args, output_path.path)
     truth_source = _require_input_file(request.truth_path, "truth")
     context = plan_model_run_context(
         model_path=request.model_path,
@@ -180,7 +172,7 @@ def plan_simulate_run[ActionT, CommandT](
         truth_source_path=truth_source,
         truth_path=truth_path,
         simulated_data_path=output_path,
-        backend=request.backend,
+        backend=backend.backend_id,
         action=action,
     )
 
@@ -224,10 +216,8 @@ def plan_recover_run[ActionT, CommandT](
     request: RecoverRequest, backend: RecoverBackend[ActionT, CommandT]
 ) -> RecoverRunPlan[ActionT]:
     """Plan a single-scenario recovery run without durable filesystem writes."""
-    _validate_bayesite_only(request.backend, "recover")
     output_dir = request.output_dir.expanduser().resolve()
     output_path = output_dir / "recovery.json"
-    _reject_reserved_engine_args(request.engine_args, output_path)
     context = plan_model_scenario_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -238,7 +228,7 @@ def plan_recover_run[ActionT, CommandT](
     return RecoverRunPlan(
         context=context,
         recovery_path=output_path,
-        backend=request.backend,
+        backend=backend.backend_id,
         action=action,
     )
 
@@ -264,10 +254,8 @@ def plan_sbc_run[ActionT, CommandT](
     request: SbcRequest, backend: SbcBackend[ActionT, CommandT]
 ) -> SbcRunPlan[ActionT]:
     """Plan an SBC run without durable filesystem writes."""
-    _validate_bayesite_only(request.backend, "sbc")
     output_dir = request.output_dir.expanduser().resolve()
     output_path = output_dir / "sbc.json"
-    _reject_reserved_engine_args(request.engine_args, output_path)
     context = plan_model_scenario_context(
         model_path=request.model_path,
         model_name=request.model_name,
@@ -278,7 +266,7 @@ def plan_sbc_run[ActionT, CommandT](
     return SbcRunPlan(
         context=context,
         sbc_path=output_path,
-        backend=request.backend,
+        backend=backend.backend_id,
         action=action,
     )
 
@@ -342,13 +330,11 @@ def plan_posterior_check_run[ActionT, CommandT](
     backend: PosteriorCheckBackend[ActionT, CommandT],
 ) -> RunDirectoryCommandPlan[ActionT]:
     """Plan a posterior-check command from an existing run directory."""
-    _validate_bayesite_only(request.backend, "posterior-check")
     run_dir = request.run_dir.expanduser().resolve()
     model_path = IrArtifact(run_dir / "model.ir.json")
     data_path = CanonicalDataArtifact(run_dir / "data.json")
     fit_path = run_dir / "posterior.ndjson"
     output_path = run_dir / "posterior_check.json"
-    _reject_reserved_engine_args(request.engine_args, output_path)
     _require_run_artifacts((model_path.path, data_path.path, fit_path))
     _reject_existing_output_artifacts((output_path,))
     context = PosteriorCheckRunContext(
@@ -367,11 +353,9 @@ def plan_recover_check_run[ActionT, CommandT](
     backend: RecoverCheckBackend[ActionT, CommandT],
 ) -> RunDirectoryCommandPlan[ActionT]:
     """Plan a recover-check command from an existing run directory."""
-    _validate_bayesite_only(request.backend, "recover-check")
     run_dir = request.run_dir.expanduser().resolve()
     fit_path = run_dir / "posterior.ndjson"
     output_path = run_dir / "recovery_check.json"
-    _reject_reserved_engine_args(request.engine_args, output_path)
     _require_run_artifacts((fit_path,))
     _reject_existing_output_artifacts((output_path,))
     truth_path = request.truth_path.expanduser().resolve()
@@ -495,32 +479,6 @@ def materialize_model_scenario_context(
         context.output_dir, context.loaded_model.model_cls, context.loaded_model.meta
     )
     return replace(context, dims_path=dims_path, scenario_source_sha256=scenario_sha256)
-
-
-def _validate_backend(backend: str) -> None:
-    if backend not in {"bayesite", "jaxstanv5"}:
-        raise WorkflowError("--backend must be 'bayesite' or 'jaxstanv5'")
-
-
-def _validate_bayesite_only(backend: str, command: str) -> None:
-    _validate_backend(backend)
-    if backend != "bayesite":
-        raise WorkflowError(f"bayescycle {command} is not supported on --backend {backend}")
-
-
-def _reject_in_process_engine_args(backend: str, engine_args: tuple[str, ...]) -> None:
-    if backend == "jaxstanv5" and engine_args:
-        raise WorkflowError("engine passthrough after -- is only supported for --backend bayesite")
-
-
-def _reject_reserved_engine_args(engine_args: tuple[str, ...], output_path: Path) -> None:
-    for arg in engine_args:
-        if arg == "--out" or arg.startswith("--out="):
-            raise WorkflowError(
-                "forwarded engine args may not include --out; "
-                f"bayescycle writes output to {output_path}. "
-                "Use Bayesite directly for custom output or streaming."
-            )
 
 
 def _model_data_run_metadata(

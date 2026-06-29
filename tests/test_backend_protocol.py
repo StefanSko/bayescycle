@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import pytest
@@ -39,8 +39,12 @@ from bayescycle._workflow.operations import (
 )
 from bayescycle._workflow.requests import (
     DiagnoseRequest,
+    PosteriorCheckRequest,
+    PriorPredictiveRequest,
+    RecoverCheckRequest,
     RecoverRequest,
     SampleRequest,
+    SbcRequest,
     SimulateRequest,
 )
 
@@ -76,6 +80,10 @@ class FakeRecoverAction:
 
 
 class FakeDiagnoseBackend:
+    @property
+    def backend_id(self) -> str:
+        return "fake"
+
     def plan_diagnose_action(
         self, context: DiagnoseRunContext, request: DiagnoseRequest
     ) -> FakeDiagnoseAction:
@@ -94,6 +102,10 @@ class FakeDiagnoseBackend:
 
 
 class FakeSimulateBackend:
+    @property
+    def backend_id(self) -> str:
+        return "fake"
+
     def plan_simulate_action(
         self, context: PlannedModelRunContext, request: SimulateRequest, truth_path: Path
     ) -> FakeSimulateAction:
@@ -110,6 +122,10 @@ class FakeSimulateBackend:
 
 
 class FakeRecoverBackend:
+    @property
+    def backend_id(self) -> str:
+        return "fake"
+
     def plan_recover_action(
         self, context: PlannedModelScenarioContext, request: RecoverRequest
     ) -> FakeRecoverAction:
@@ -126,10 +142,13 @@ class FakeRecoverBackend:
 
 
 class FakeSampleBackend:
+    @property
+    def backend_id(self) -> str:
+        return "fake"
+
     def plan_sample_action(
         self, context: PlannedModelRunContext, request: SampleRequest
     ) -> FakeSampleAction:
-        assert request.backend == "bayesite"
         return FakeSampleAction(
             output_dir=context.output_dir,
             draws_path=context.output_dir / "posterior.ndjson",
@@ -148,6 +167,32 @@ class FakeSampleBackend:
     def execute(self, command: FakeCommand) -> int:
         assert command.output_dir.is_dir()
         return 17
+
+
+def test_logical_requests_do_not_carry_backend_selection_or_engine_passthrough() -> None:
+    request_types = (
+        SampleRequest,
+        PriorPredictiveRequest,
+        SimulateRequest,
+        RecoverRequest,
+        SbcRequest,
+        PosteriorCheckRequest,
+        RecoverCheckRequest,
+    )
+    for request_type in request_types:
+        names = {field.name for field in fields(request_type)}
+        assert "backend" not in names
+        assert "engine_args" not in names
+
+    settings = SamplerSettings(
+        seed=None,
+        chains=None,
+        warmup=None,
+        draws=None,
+        max_tree_depth=None,
+        target_accept=None,
+    )
+    assert not hasattr(settings, "to_engine_args")
 
 
 def test_backend_plan_description_is_closed_adt_lowered_by_workflow(
@@ -210,7 +255,6 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
         data_path=data_file,
         output_dir=output_dir,
         model_name=None,
-        backend="bayesite",
         sampler=SamplerSettings(
             seed=None,
             chains=None,
@@ -219,11 +263,11 @@ def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> 
             max_tree_depth=None,
             target_accept=None,
         ),
-        engine_args=(),
     )
 
     plan = plan_sample_run(request, backend)
 
+    assert plan.backend == "fake"
     assert plan.context.ir_path == IrArtifact(output_dir.resolve() / "model.ir.json")
     assert plan.context.data_path == CanonicalDataArtifact(output_dir.resolve() / "data.json")
     assert plan.action == FakeSampleAction(
@@ -292,7 +336,6 @@ def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Pa
             data_path=data_file,
             output_dir=tmp_path / "run",
             model_name=None,
-            backend="bayesite",
             sampler=SamplerSettings(
                 seed=None,
                 chains=None,
@@ -301,7 +344,6 @@ def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Pa
                 max_tree_depth=None,
                 target_accept=None,
             ),
-            engine_args=(),
         ),
         backend,
     )
@@ -339,9 +381,7 @@ def test_simulate_metadata_hashes_materialized_truth(tmp_path: Path) -> None:
             truth_path=truth_file,
             output_dir=tmp_path / "run",
             model_name=None,
-            backend="bayesite",
             seed=None,
-            engine_args=(),
         ),
         backend,
     )
@@ -375,8 +415,6 @@ def test_recover_metadata_hashes_materialized_scenario(tmp_path: Path) -> None:
             scenario_path=scenario_file,
             output_dir=tmp_path / "run",
             model_name=None,
-            backend="bayesite",
-            engine_args=(),
         ),
         backend,
     )
@@ -411,7 +449,6 @@ def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
             data_path=data_file,
             output_dir=output_dir,
             model_name=None,
-            backend="bayesite",
             sampler=SamplerSettings(
                 seed=None,
                 chains=None,
@@ -420,7 +457,6 @@ def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
                 max_tree_depth=None,
                 target_accept=None,
             ),
-            engine_args=(),
         ),
         backend,
     )

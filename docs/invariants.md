@@ -52,8 +52,14 @@ layout keeps matching the architecture.
   runs Bayesite preflight, and wires concrete backend adapters into workflow
   operations. It must not own artifact schemas, sampler semantics, or backend
   execution details.
-- `bayescycle._workflow.requests` contains loose CLI input normalized into typed
-  immutable requests. It must not read or write the filesystem.
+- `bayescycle._workflow.capabilities` owns the closed workflow-capability ADT,
+  open backend identity value, and immutable first-party backend catalog. It may
+  validate backend/capability support, but it must not import concrete backend
+  adapters or execute backend code.
+- `bayescycle._workflow.requests` contains backend-neutral logical CLI input
+  normalized into typed immutable requests. Backend selection, backend-private
+  passthrough flags, and backend-native option rendering must live outside these
+  request dataclasses. It must not read or write the filesystem.
 - `bayescycle._workflow.contexts` contains planned path/model/data contexts. It
   may name workflow-owned paths, but it must not materialize them.
 - `bayescycle._workflow.plans` contains immutable run plans that pair workflow
@@ -87,7 +93,8 @@ layout keeps matching the architecture.
   boundary: argv, owned output clearing, exit code. It must not contain
   Bayesite-specific semantics.
 - `bayescycle.backends.bayesite` is a first-party external-command adapter. It
-  may build Bayesite argv, materialize Bayesite-private files under
+  may build Bayesite argv, render logical settings as Bayesite CLI flags,
+  validate Bayesite passthrough flags, materialize Bayesite-private files under
   `.bayesite/`, preflight the selected binary, and canonicalize generated data;
   it must not expose Bayesite-private files as workflow-stage artifacts.
 - `bayescycle.backends.jaxstanv5` is a first-party in-process Python adapter. It
