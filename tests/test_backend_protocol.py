@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -544,80 +545,36 @@ def test_bayesite_action_owns_data_materialization_and_postprocess(
     )
 
 
-def test_run_directory_commands_execute_through_bayesite_backend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_directory_commands_execute_through_bayesite_backend(tmp_path: Path) -> None:
     import bayescycle._cli as cli
-    from bayescycle._integrations.external_command import ExternalCommand
-    from bayescycle.backends.bayesite.adapter import BayesiteAction, BayesitePreparedCommand
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "posterior.ndjson").write_text("{}\n", encoding="utf-8")
-    seen: dict[str, object] = {}
-
-    class RecordingBayesiteBackend:
-        def __init__(self, engine: str) -> None:
-            self.engine = engine
-            seen["engine"] = engine
-
-        def plan_diagnose_action(
-            self, context: DiagnoseRunContext, request: DiagnoseRequest
-        ) -> BayesiteAction:
-            action = BayesiteAction(
-                command=ExternalCommand(
-                    argv=(
-                        self.engine,
-                        "diagnose",
-                        "--fit",
-                        str(context.fit_path),
-                        "--out",
-                        str(context.output_path),
-                    ),
-                    output_paths=(context.output_path,),
-                )
-            )
-            seen["action"] = action
-            return action
-
-        def describe(self, action: BayesiteAction) -> ExternalCommandPlanDescription:
-            return ExternalCommandPlanDescription(backend="bayesite", command=action.command.argv)
-
-        def materialize(self, action: BayesiteAction) -> BayesitePreparedCommand:
-            return BayesitePreparedCommand(action.command)
-
-        def execute(self, command: BayesitePreparedCommand) -> int:
-            seen["command"] = command
-            return 23
-
-    monkeypatch.setattr(cli, "BayesiteBackend", RecordingBayesiteBackend)
-    monkeypatch.setattr(
-        cli,
-        "_preflight_bayesite_for_intent",
-        lambda engine, _intent, _command, _requirement: engine,
+    engine = tmp_path / "fake_bayesite.py"
+    engine.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if not args or args in (['--help'], ['__bayescycle_capability_probe__']):\n"
+        "    print('usage: bayesite diagnose')\n"
+        "    raise SystemExit(0)\n"
+        "out_index = args.index('--out')\n"
+        "Path(args[out_index + 1]).write_text(' '.join(args) + '\\n', encoding='utf-8')\n",
+        encoding="utf-8",
     )
+    engine.chmod(0o755)
 
-    code = cli.main(["diagnose", str(run_dir), "--engine", "fake-bayesite"])
+    code = cli.main(["diagnose", str(run_dir), "--engine", str(engine)])
 
-    assert code == 23
-    expected_action = BayesiteAction(
-        command=ExternalCommand(
-            argv=(
-                "fake-bayesite",
-                "diagnose",
-                "--fit",
-                str(run_dir / "posterior.ndjson"),
-                "--out",
-                str(run_dir / "diagnostics.json"),
-            ),
-            output_paths=(run_dir / "diagnostics.json",),
-        ),
+    assert code == 0
+    resolved_run = run_dir.resolve()
+    assert (run_dir / "diagnostics.json").read_text(encoding="utf-8") == (
+        "diagnose "
+        f"--fit {resolved_run / 'posterior.ndjson'} "
+        f"--out {resolved_run / 'diagnostics.json'}\n"
     )
-    assert seen == {
-        "engine": "fake-bayesite",
-        "action": expected_action,
-        "command": BayesitePreparedCommand(command=expected_action.command),
-    }
 
 
 def test_first_party_backends_do_not_expose_operation_specific_runners() -> None:
