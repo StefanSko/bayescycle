@@ -1,32 +1,23 @@
 # ruff: noqa: E501
 """Build a self-contained HTML walkthrough of the full bayescycle workflow.
 
-This regenerates ``workflow-walkthrough.html`` from a demo directory that was
-produced by running the commands documented in the walkthrough itself. It covers
-the complete McElreath-style loop: the *simulation gate* (prior predictive,
-simulate, recovery, single-scenario recover, SBC) followed by the *real fit*
-(sample, diagnose, posterior predictive, posterior check) and ArviZ
-visualization.
+This regenerates ``workflow-walkthrough.html`` from a demo directory produced by
+``docs/build-walkthroughs.sh``. It covers a *non-linear* McElreath-style loop on
+a single backend (Bayesite):
 
-Expected demo layout (see the commands embedded in the page)::
+  * Iteration 1 -- a model with deliberately wide priors fails the
+    prior-predictive gate, so the workflow goes BACK TO SQUARE ONE and the model
+    is respecified before anything else runs.
+  * Iteration 2 -- the simulation gate (prior predictive, simulate, recover,
+    single-scenario recover, SBC) followed by the real fit (sample, diagnose,
+    posterior predictive, posterior check) and ArviZ visualization.
 
-    DEMO/
-      model.py
-      data.json                inputs.json  truth.json  targets.json
-      recover_scenario.json    sbc_scenario.json
-      run-prior/               prior_predictive.ndjson (+ ir/data/dims)
-      run-sim/                 simulated_data.json (+ truth/ir/data/dims, canonical data)
-      run-recover-fit/         posterior.ndjson  recovery_check.json (+ ir/data/dims)
-      run-recover/             recovery.json (+ ir/scenario/dims)
-      run-sbc/                 sbc.json (+ ir/scenario/dims)
-      run/                     model.ir.json data.json dims.json posterior.ndjson
-                               diagnostics.json posterior_predictive.ndjson
-                               posterior_check.json fit.nc
-      viz/                     prior_predictive.png trace.png rank.png energies.png
-                               posterior.png forest.png ess-rhat.png ppc.png
+Every command writes an append-only ``run.json`` (``bayescycle.run.v1``)
+provenance record; those records serialize directly into the SQLite index built
+by ``docs/run-provenance-db.py``.
 
-Pass the demo directory as ``argv[1]`` or via ``BAYESCYCLE_WALKTHROUGH_DIR``.
-The generated HTML embeds every image as base64 and has no external assets.
+Pass the demo's ``complete/`` directory as ``argv[1]`` or via
+``BAYESCYCLE_WALKTHROUGH_DIR``. The generated HTML embeds every image as base64.
 """
 
 from __future__ import annotations
@@ -44,18 +35,13 @@ DEMO = Path(
     if len(sys.argv) > 1
     else os.environ.get(
         "BAYESCYCLE_WALKTHROUGH_DIR",
-        "/tmp/bayescycle-complete-workflow",
+        "/tmp/bayescycle-walkthrough/complete",
     )
 )
 VIZ = DEMO / "viz"
 OUT = Path(__file__).with_name("workflow-walkthrough.html")
 
 TRUTH = {"alpha": 1.25, "beta": 2.40, "sigma": 0.75}
-BAYESITE_VIZ_SOURCE = (
-    "bayesite-viz @ "
-    "git+https://github.com/StefanSko/bayesite-viz.git@"
-    "a2809452d1c753885602fae824d789bb627d5cb6"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -91,32 +77,23 @@ def file_chip(direction: str, path: str, note: str = "") -> str:
         "derived": "DERIVED",
     }.get(d, direction.upper())
     note_html = f' <span class="chip-note">{esc(note)}</span>' if note else ""
-    return (
-        f'<div class="filechip {cls}">'
-        f'<span class="chip-dir">{label}</span>'
-        f'<span class="chip-path mono">{esc(path)}</span>'
-        f"{note_html}</div>"
-    )
+    return f'<div class="filechip {cls}"><span class="chip-dir">{label}</span><span class="chip-path mono">{esc(path)}</span>{note_html}</div>'
 
 
 def img_data_uri(path: Path) -> str:
-    raw = path.read_bytes()
-    b64 = base64.b64encode(raw).decode("ascii")
-    return f"data:image/png;base64,{b64}"
+    return f"data:image/png;base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
 
 
 def quantile(xs: list[float], q: float) -> float:
     xs = sorted(xs)
     pos = q * (len(xs) - 1)
-    lo = math.floor(pos)
-    hi = math.ceil(pos)
+    lo, hi = math.floor(pos), math.ceil(pos)
     if lo == hi:
         return xs[lo]
     return xs[lo] * (hi - pos) + xs[hi] * (pos - lo)
 
 
 def truncate(value: object, keep: int = 6) -> object:
-    """Recursively trim long lists for display."""
     if isinstance(value, list):
         head = [truncate(v, keep) for v in value[:keep]]
         if len(value) > keep:
@@ -137,9 +114,16 @@ def mean_sd(xs: list[float]) -> tuple[float, float]:
     return m, sd
 
 
+def pp_y_range(path: Path) -> tuple[float, float]:
+    lines = read_ndjson(path)
+    ys = [v for d in lines[1:-1] if "values" in d for v in d["values"]["y"]]
+    return min(ys), max(ys)
+
+
 # ---------------------------------------------------------------------------
 # Gather artifacts.
 # ---------------------------------------------------------------------------
+model_v1_src = (DEMO / "model_v1.py").read_text()
 model_src = (DEMO / "model.py").read_text()
 
 data = json.loads((DEMO / "data.json").read_text())
@@ -153,17 +137,29 @@ data_summary = {
     "y_range": [round(min(y_all), 4), round(max(y_all), 4)],
     "x_head": [round(v, 4) for v in x_all[:5]],
     "y_head": [round(v, 4) for v in y_all[:5]],
-    "data_size_bytes": (DEMO / "data.json").stat().st_size,
 }
 
 ir_obj = json.loads((DEMO / "run" / "model.ir.json").read_text())
 ir_pretty = json.dumps(ir_obj, indent=2)
 ir_lines = ir_pretty.splitlines()
-if len(ir_lines) > 48:
-    ir_pretty = "\n".join(ir_lines[:48] + [f"... (+{len(ir_lines) - 48} more lines)"])
+if len(ir_lines) > 44:
+    ir_pretty = "\n".join(ir_lines[:44] + [f"... (+{len(ir_lines) - 44} more lines)"])
 dims_obj = json.loads((DEMO / "run" / "dims.json").read_text())
 
-# Prior predictive (in-process) -------------------------------------------------
+# Rejected (wide-prior) prior predictive -----------------------------------
+rej_lo, rej_hi = pp_y_range(DEMO / "run-prior-rejected" / "prior_predictive.ndjson")
+rej_header = read_ndjson(DEMO / "run-prior-rejected" / "prior_predictive.ndjson")[0]
+rej_param_summary = {}
+for name in ("alpha", "beta", "sigma"):
+    xs = [
+        d["values"][name]
+        for d in read_ndjson(DEMO / "run-prior-rejected" / "prior_predictive.ndjson")[1:-1]
+        if "values" in d
+    ]
+    m, sd = mean_sd(xs)
+    rej_param_summary[name] = {"prior_mean": round(m, 2), "prior_sd": round(sd, 2)}
+
+# Accepted prior predictive (in-process style summary) ---------------------
 pp_lines = read_ndjson(DEMO / "run-prior" / "prior_predictive.ndjson")
 pp_header = pp_lines[0]
 pp_draws = pp_lines[1:-1]
@@ -181,11 +177,10 @@ pp_summary = {
     "site_roles": {s["name"]: s["role"] for s in pp_header["sites"]},
     "prior_parameter_summary": pp_param_summary,
     "prior_predictive_y_range": [round(min(pp_y_flat), 2), round(max(pp_y_flat), 2)],
-    "file_size_bytes": (DEMO / "run-prior" / "prior_predictive.ndjson").stat().st_size,
 }
 pp_first_display = truncate(pp_draws[0], keep=4)
 
-# Simulate ---------------------------------------------------------------------
+# Simulate -----------------------------------------------------------------
 sim_doc = json.loads((DEMO / "run-sim" / "simulated_data.json").read_text())
 sim_variables = sim_doc.get("variables", sim_doc)
 sim_y_value = sim_variables["y"]
@@ -200,17 +195,17 @@ sim_summary = {
     "note": "canonical bayescycle data document; adapters materialize backend-native runtime inputs",
 }
 
-# Recovery fit + recover-check -------------------------------------------------
+# Recovery fit + recover-check ---------------------------------------------
 rec_fit_header = read_ndjson(DEMO / "run-recover-fit" / "posterior.ndjson")[0]
 recovery_check = json.loads((DEMO / "run-recover-fit" / "recovery_check.json").read_text())
 
-# Single-scenario recover ------------------------------------------------------
+# Single-scenario recover --------------------------------------------------
 recover = json.loads((DEMO / "run-recover" / "recovery.json").read_text())
 
-# SBC --------------------------------------------------------------------------
+# SBC ----------------------------------------------------------------------
 sbc = json.loads((DEMO / "run-sbc" / "sbc.json").read_text())
 
-# Real fit ---------------------------------------------------------------------
+# Real fit -----------------------------------------------------------------
 posterior_lines = read_ndjson(DEMO / "run" / "posterior.ndjson")
 post_header = posterior_lines[0]
 post_first = posterior_lines[1]
@@ -260,16 +255,23 @@ ppc_summary = {
     "source_fit_seed": ppc_header["source_fit_seed"],
     "draw_count": ppc_header["draw_count"],
     "site_order": ppc_header["site_order"],
-    "file_size_bytes": (DEMO / "run" / "posterior_predictive.ndjson").stat().st_size,
     "line_count": len(ppc_lines),
 }
-
 posterior_check = json.loads((DEMO / "run" / "posterior_check.json").read_text())
+
+# Provenance (run.json across the whole subtree) ---------------------------
+run_metadata_example = json.loads((DEMO / "run" / "run.json").read_text())
+provenance_runs = []
+for run_dir in sorted(DEMO.glob("run*")):
+    rj = run_dir / "run.json"
+    if rj.is_file():
+        provenance_runs.append((run_dir.name, json.loads(rj.read_text())))
 
 
 # ---------------------------------------------------------------------------
 # Visualizations.
 # ---------------------------------------------------------------------------
+prior_rejected_plot = VIZ / "prior_predictive_rejected.png"
 prior_plot = VIZ / "prior_predictive.png"
 arviz_plots = [
     ("trace.png", "Trace", "Per-parameter chains overlaid; well-mixed and stationary."),
@@ -291,11 +293,7 @@ arviz_plots = [
 
 
 def plot_figure(path: Path, title: str, caption: str) -> str:
-    return (
-        f'<figure class="plot"><h3>{esc(title)}</h3>'
-        f'<img alt="{esc(title)}" src="{img_data_uri(path)}"/>'
-        f"<figcaption>{esc(caption)}</figcaption></figure>"
-    )
+    return f'<figure class="plot"><h3>{esc(title)}</h3><img alt="{esc(title)}" src="{img_data_uri(path)}"/><figcaption>{esc(caption)}</figcaption></figure>'
 
 
 arviz_section = "\n".join(
@@ -306,66 +304,56 @@ arviz_section = "\n".join(
 
 
 # ---------------------------------------------------------------------------
-# Commands as displayed.
+# Commands as displayed (single backend: Bayesite).
 # ---------------------------------------------------------------------------
-cmd_prior = (
-    "bayescycle prior-predictive model.py --data inputs.json \\\n"
-    "  -o run-prior/ --backend jaxstanv5 --seed 123 --draws 400"
+ENG = "--engine $BAYESITE"
+cmd_prior_rej = f"bayescycle prior-predictive model_v1.py --data inputs.json \\\n  -o run-prior-rejected/ --backend bayesite {ENG} --seed 123 --draws 400"
+cmd_prior = f"bayescycle prior-predictive model.py --data inputs.json \\\n  -o run-prior/ --backend bayesite {ENG} --seed 123 --draws 400"
+cmd_sim = f"bayescycle simulate model.py --data inputs.json --truth truth.json \\\n  -o run-sim/ --backend bayesite {ENG} --seed 1"
+cmd_recfit = f"bayescycle sample model.py --data run-sim/simulated_data.json \\\n  -o run-recover-fit/ --backend bayesite {ENG} --seed 2 \\\n  --chains 4 --warmup 400 --draws 500"
+cmd_reccheck = f"bayescycle recover-check run-recover-fit/ --truth truth.json \\\n  --targets targets.json --interval 0.8 {ENG}"
+cmd_recover = f"bayescycle recover model.py --scenario recover_scenario.json -o run-recover/ {ENG}"
+cmd_sbc = f"bayescycle sbc model.py --scenario sbc_scenario.json -o run-sbc/ --replicates 48 {ENG}"
+cmd_sample = f"bayescycle sample model.py --data data.json -o run/ \\\n  --backend bayesite {ENG} --seed 123 --chains 4 \\\n  --warmup 400 --draws 500 --max-treedepth 8 --target-accept 0.9"
+cmd_diagnose = f"bayescycle diagnose run/ {ENG}"
+cmd_ppc = f"bayescycle posterior-predictive run/ --seed 456 {ENG}"
+cmd_pcheck = f"bayescycle posterior-check run/ --seed 789 {ENG}"
+BAYESITE_VIZ_SOURCE = (
+    "bayesite-viz @ "
+    "git+https://github.com/StefanSko/bayesite-viz.git@"
+    "a2809452d1c753885602fae824d789bb627d5cb6"
 )
-cmd_prior_bayesite = (
-    "bayescycle prior-predictive model.py --data inputs.json \\\n"
-    "  -o run-prior/ --seed 123 --draws 400   # --backend bayesite (default)"
-)
-cmd_sim = (
-    "bayescycle simulate model.py --data inputs.json --truth truth.json \\\n  -o run-sim/ --seed 1"
-)
-cmd_recfit = (
-    "bayescycle sample model.py --data run-sim/simulated_data.json \\\n"
-    "  -o run-recover-fit/ --backend bayesite --seed 2 \\\n"
-    "  --chains 4 --warmup 400 --draws 500"
-)
-cmd_reccheck = (
-    "bayescycle recover-check run-recover-fit/ --truth truth.json \\\n"
-    "  --targets targets.json --interval 0.8"
-)
-cmd_recover = "bayescycle recover model.py --scenario recover_scenario.json -o run-recover/"
-cmd_sbc = "bayescycle sbc model.py --scenario sbc_scenario.json -o run-sbc/ --replicates 64"
-cmd_sample = (
-    "bayescycle sample model.py --data data.json -o run/ \\\n"
-    "  --backend jaxstanv5 --seed 123 --chains 4 \\\n"
-    "  --warmup 300 --draws 500 --max-treedepth 8 --target-accept 0.85"
-)
-cmd_diagnose = "bayescycle diagnose run/"
-cmd_ppc = "bayescycle posterior-predictive run/ --seed 456"
-cmd_pcheck = "bayescycle posterior-check run/ --seed 789"
 cmd_export = (
-    f'BAYESITE_VIZ_SOURCE="{BAYESITE_VIZ_SOURCE}"\n\n'
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-idata run/ -o run/fit.nc --validate require\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-viz trace     run/fit.nc -o viz/trace.png\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-viz rank      run/fit.nc -o viz/rank.png\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-viz energies  run/fit.nc -o viz/energies.png\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
+    f'BAYESITE_VIZ_SOURCE="{BAYESITE_VIZ_SOURCE}"\n'
+    "# In restricted environments without that pinned Git source, substitute a\n"
+    '# local checkout: BAYESITE_VIZ_SOURCE="$(pwd)/../bayesite-viz" (difficulties #5).\n'
+    "# bayesite-idata reads an *unwrapped* data.json; stage run/.bayesite/data.json (difficulties #6).\n\n"
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \\\n'
+    "  bayesite-idata run/ -o run/fit.nc --validate require --bayesite $BAYESITE\n"
+    "for verb in trace rank energies forest ess-rhat; do\n"
+    '  uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \\\n'
+    '    bayesite-viz "$verb" run/fit.nc -o "viz/$verb.png"\n'
+    "done\n"
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \\\n'
     "  bayesite-viz posterior run/fit.nc --kind hist -o viz/posterior.png\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-viz forest    run/fit.nc -o viz/forest.png\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-viz ess-rhat  run/fit.nc -o viz/ess-rhat.png\n"
-    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" -- \\\n'
-    "  bayesite-viz ppc       run/fit.nc --kind dist -o viz/ppc.png"
+    'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \\\n'
+    "  bayesite-viz ppc run/fit.nc --kind dist -o viz/ppc.png"
 )
 
 
 def io_table_html() -> str:
     rows = [
         (
-            "bayescycle prior-predictive --backend jaxstanv5",
+            "bayescycle prior-predictive (v1 wide)",
+            ["model_v1.py", "inputs.json"],
+            ["run-prior-rejected/prior_predictive.ndjson"],
+            "gate FAILS -> respecify",
+        ),
+        (
+            "bayescycle prior-predictive (v2)",
             ["model.py", "inputs.json"],
             ["run-prior/prior_predictive.ndjson"],
-            "simulation gate",
+            "gate passes",
         ),
         (
             "bayescycle simulate",
@@ -374,7 +362,7 @@ def io_table_html() -> str:
             "fake data from truth",
         ),
         (
-            "bayescycle sample --backend bayesite",
+            "bayescycle sample (recover fit)",
             ["model.py", "run-sim/simulated_data.json"],
             ["run-recover-fit/posterior.ndjson"],
             "fit the fake data",
@@ -398,10 +386,10 @@ def io_table_html() -> str:
             "calibration ranks",
         ),
         (
-            "bayescycle sample --backend jaxstanv5",
+            "bayescycle sample (real fit)",
             ["model.py", "data.json"],
             ["run/posterior.ndjson"],
-            "real fit, in-process",
+            "real fit",
         ),
         ("bayescycle diagnose", ["run/posterior.ndjson"], ["run/diagnostics.json"], ""),
         (
@@ -416,8 +404,7 @@ def io_table_html() -> str:
             ["run/posterior_check.json"],
             "",
         ),
-        ("bayesite-idata", ["run/*"], ["run/fit.nc"], "ArviZ NetCDF"),
-        ("bayesite-viz <verb>", ["run/fit.nc"], ["viz/<verb>.png"], "matplotlib/ArviZ"),
+        ("bayesite-idata / bayesite-viz", ["run/* (staged)"], ["run/fit.nc", "viz/*.png"], "ArviZ"),
     ]
 
     def files(items: list[str], cls: str) -> str:
@@ -426,99 +413,15 @@ def io_table_html() -> str:
     body = ""
     for cmd, reads, writes, note in rows:
         note_html = f'<div class="io-note">{esc(note)}</div>' if note else ""
-        body += (
-            "<tr>"
-            f'<td class="mono io-cmd">{esc(cmd)}{note_html}</td>'
-            f"<td>{files(reads, 'f-read')}</td>"
-            f"<td>{files(writes, 'f-write')}</td>"
-            "</tr>"
-        )
+        body += f'<tr><td class="mono io-cmd">{esc(cmd)}{note_html}</td><td>{files(reads, "f-read")}</td><td>{files(writes, "f-write")}</td></tr>'
     return (
-        '<table class="io-table"><thead><tr>'
-        "<th>command</th><th>reads</th><th>writes</th>"
-        "</tr></thead><tbody>" + body + "</tbody></table>"
+        '<table class="io-table"><thead><tr><th>command</th><th>reads</th><th>writes</th></tr></thead><tbody>'
+        + body
+        + "</tbody></table>"
     )
 
 
-def tree_html() -> str:
-    groups = [
-        (
-            "run-prior/",
-            [
-                (
-                    "prior_predictive.ndjson",
-                    "bayescycle prior-predictive &mdash; declared-data-conditioned site draws",
-                )
-            ],
-        ),
-        (
-            "run-sim/",
-            [
-                (
-                    "simulated_data.json",
-                    "bayescycle simulate &mdash; canonical inputs + generated observed y",
-                )
-            ],
-        ),
-        (
-            "run-recover-fit/",
-            [
-                ("posterior.ndjson", "bayescycle sample &mdash; fit of the simulated data"),
-                (
-                    "recovery_check.json",
-                    "bayescycle recover-check &mdash; fit-vs-truth rank/interval facts",
-                ),
-            ],
-        ),
-        (
-            "run-recover/",
-            [("recovery.json", "bayescycle recover &mdash; single-scenario recovery facts")],
-        ),
-        (
-            "run-sbc/",
-            [("sbc.json", "bayescycle sbc &mdash; calibration rank facts over replicates")],
-        ),
-        (
-            "run/",
-            [
-                ("model.ir.json", "bayescycle sample &mdash; canonical IR compiled from model.py"),
-                (
-                    "data.json",
-                    "bayescycle sample &mdash; canonical bayescycle.data.json.v1 input snapshot",
-                ),
-                ("dims.json", "bayescycle sample &mdash; jaxstanv5 dimension/coord metadata"),
-                ("posterior.ndjson", "bayescycle sample &mdash; jaxstanv5/BlackJAX draws + stats"),
-                (
-                    "diagnostics.json",
-                    "bayescycle diagnose &mdash; recomputed R-hat/ESS/sample-stats",
-                ),
-                (
-                    "posterior_predictive.ndjson",
-                    "bayescycle posterior-predictive &mdash; replicated y",
-                ),
-                (
-                    "posterior_check.json",
-                    "bayescycle posterior-check &mdash; observed-vs-replicated facts",
-                ),
-                ("fit.nc", "bayesite-idata &mdash; ArviZ InferenceData (NetCDF)"),
-            ],
-        ),
-        ("viz/", [("*.png", "bayesite-viz &mdash; ArviZ diagnostic + prior-predictive plots")]),
-    ]
-    lines = []
-    for directory, files in groups:
-        lines.append(f'<div class="tree-dir mono">{esc(directory)}</div>')
-        for name, origin in files:
-            lines.append(
-                '<div class="tree-row">'
-                f'<span class="tree-file mono">{esc(name)}</span>'
-                f'<span class="tree-origin">&larr; {origin}</span></div>'
-            )
-    return f'<div class="tree">{"".join(lines)}</div>'
-
-
 def rank_bars(histogram: list[int], bins: int = 24) -> str:
-    """Coarsen a rank histogram into a compact sparkline of bars."""
     if not histogram:
         return ""
     size = math.ceil(len(histogram) / bins)
@@ -537,27 +440,9 @@ def recovery_check_table() -> str:
         t = recovery_check["targets"][name]
         contains = recovery_check["interval_contains_truth_by_target"][name]
         mark = '<span class="ok">in</span>' if contains else '<span class="bad">out</span>'
-        rows += (
-            "<tr>"
-            f'<td class="mono">{name}</td>'
-            f"<td>{t['truth']:.3f}</td>"
-            f"<td>{t['mean']:.4f}</td>"
-            f"<td>{t['lower']:.4f}</td>"
-            f"<td>{t['upper']:.4f}</td>"
-            f"<td>{mark}</td>"
-            f"<td>{t['rank']}/{t['rank_bounds']['max']}</td>"
-            f"<td>{t['rhat']:.4f}</td>"
-            f"<td>{t['ess']:.0f}</td>"
-            "</tr>"
-        )
-    return (
-        '<table class="data"><thead><tr>'
-        f"<th>target</th><th>truth</th><th>post. mean</th>"
-        f"<th>{int(recovery_check['interval'] * 100)}% lo</th>"
-        f"<th>{int(recovery_check['interval'] * 100)}% hi</th>"
-        "<th>truth?</th><th>rank</th><th>R-hat</th><th>ESS</th>"
-        "</tr></thead><tbody>" + rows + "</tbody></table>"
-    )
+        rows += f'<tr><td class="mono">{name}</td><td>{t["truth"]:.3f}</td><td>{t["mean"]:.4f}</td><td>{t["lower"]:.4f}</td><td>{t["upper"]:.4f}</td><td>{mark}</td><td>{t["rank"]}/{t["rank_bounds"]["max"]}</td><td>{t["rhat"]:.4f}</td><td>{t["ess"]:.0f}</td></tr>'
+    pct = int(recovery_check["interval"] * 100)
+    return f'<table class="data"><thead><tr><th>target</th><th>truth</th><th>post. mean</th><th>{pct}% lo</th><th>{pct}% hi</th><th>truth?</th><th>rank</th><th>R-hat</th><th>ESS</th></tr></thead><tbody>{rows}</tbody></table>'
 
 
 def recover_table() -> str:
@@ -566,40 +451,16 @@ def recover_table() -> str:
         p = recover["parameters"][name]
         contains = recover["interval_contains_truth_by_parameter"][name]
         mark = '<span class="ok">in</span>' if contains else '<span class="bad">out</span>'
-        rows += (
-            "<tr>"
-            f'<td class="mono">{name}</td>'
-            f"<td>{p['truth']:.4f}</td>"
-            f"<td>{p['mean']:.4f}</td>"
-            f"<td>{p['lower']:.4f}</td>"
-            f"<td>{p['upper']:.4f}</td>"
-            f"<td>{mark}</td>"
-            f"<td>{p['rank']}/{p['rank_bounds']['max']}</td>"
-            f"<td>{p['rhat']:.4f}</td>"
-            f"<td>{p['ess']:.0f}</td>"
-            "</tr>"
-        )
-    return (
-        '<table class="data"><thead><tr>'
-        "<th>param</th><th>prior truth</th><th>post. mean</th>"
-        f"<th>{int(recover['interval'] * 100)}% lo</th><th>{int(recover['interval'] * 100)}% hi</th>"
-        "<th>truth?</th><th>rank</th><th>R-hat</th><th>ESS</th>"
-        "</tr></thead><tbody>" + rows + "</tbody></table>"
-    )
+        rows += f'<tr><td class="mono">{name}</td><td>{p["truth"]:.4f}</td><td>{p["mean"]:.4f}</td><td>{p["lower"]:.4f}</td><td>{p["upper"]:.4f}</td><td>{mark}</td><td>{p["rank"]}/{p["rank_bounds"]["max"]}</td><td>{p["rhat"]:.4f}</td><td>{p["ess"]:.0f}</td></tr>'
+    pct = int(recover["interval"] * 100)
+    return f'<table class="data"><thead><tr><th>param</th><th>prior truth</th><th>post. mean</th><th>{pct}% lo</th><th>{pct}% hi</th><th>truth?</th><th>rank</th><th>R-hat</th><th>ESS</th></tr></thead><tbody>{rows}</tbody></table>'
 
 
 def sbc_section_html() -> str:
     rows = ""
     for name in sbc["parameter_order"]:
         p = sbc["parameters"][name]
-        rows += (
-            '<div class="sbc-row">'
-            f'<span class="sbc-name mono">{esc(name)}</span>'
-            f"{rank_bars(p['rank_histogram'])}"
-            f'<span class="sbc-meta">rank in 0..{p["rank_bounds"]["max"]}, '
-            f"{sbc['replicate_count']} replicates</span>"
-            "</div>"
-        )
+        rows += f'<div class="sbc-row"><span class="sbc-name mono">{esc(name)}</span>{rank_bars(p["rank_histogram"])}<span class="sbc-meta">rank in 0..{p["rank_bounds"]["max"]}, {sbc["replicate_count"]} replicates</span></div>'
     return f'<div class="sbc">{rows}</div>'
 
 
@@ -609,49 +470,26 @@ def posterior_check_table() -> str:
     rows = ""
     for c in checks:
         s = c["summary"]
-        total = s["replicated_draw_count"]
-        le = s["count_replicated_less_equal_observed"]
-        rows += (
-            "<tr>"
-            f'<td class="mono">{esc(c["statistic"])}</td>'
-            f"<td>{s['observed']:.4f}</td>"
-            f"<td>{s['replicated_mean']:.4f}</td>"
-            f"<td>{s['replicated_min']:.4f}</td>"
-            f"<td>{s['replicated_max']:.4f}</td>"
-            f"<td>{le}/{total}</td>"
-            "</tr>"
-        )
-    return (
-        '<table class="data"><thead><tr>'
-        "<th>statistic</th><th>observed</th><th>replicated mean</th>"
-        "<th>repl. min</th><th>repl. max</th><th>#rep&le;obs</th>"
-        "</tr></thead><tbody>" + rows + "</tbody></table>"
-    )
+        rows += f'<tr><td class="mono">{esc(c["statistic"])}</td><td>{s["observed"]:.4f}</td><td>{s["replicated_mean"]:.4f}</td><td>{s["replicated_min"]:.4f}</td><td>{s["replicated_max"]:.4f}</td><td>{s["count_replicated_less_equal_observed"]}/{s["replicated_draw_count"]}</td></tr>'
+    return f'<table class="data"><thead><tr><th>statistic</th><th>observed</th><th>replicated mean</th><th>repl. min</th><th>repl. max</th><th>#rep&le;obs</th></tr></thead><tbody>{rows}</tbody></table>'
 
 
 def param_table() -> str:
     rows = ""
     for name in ("alpha", "beta", "sigma"):
         s = posterior_summary[name]
-        rows += (
-            "<tr>"
-            f'<td class="mono">{name}</td>'
-            f"<td>{TRUTH[name]:.3f}</td>"
-            f"<td>{s['mean']:.4f}</td>"
-            f"<td>{s['sd']:.4f}</td>"
-            f"<td>{s['q025']:.4f}</td>"
-            f"<td>{s['median']:.4f}</td>"
-            f"<td>{s['q975']:.4f}</td>"
-            f"<td>{diagnostics['rhat'][name]:.4f}</td>"
-            f"<td>{diagnostics['ess'][name]:.0f}</td>"
-            "</tr>"
-        )
-    return (
-        '<table class="data"><thead><tr>'
-        "<th>param</th><th>true</th><th>mean</th><th>sd</th>"
-        "<th>2.5%</th><th>median</th><th>97.5%</th><th>R-hat</th><th>ESS</th>"
-        "</tr></thead><tbody>" + rows + "</tbody></table>"
-    )
+        rows += f'<tr><td class="mono">{name}</td><td>{TRUTH[name]:.3f}</td><td>{s["mean"]:.4f}</td><td>{s["sd"]:.4f}</td><td>{s["q025"]:.4f}</td><td>{s["median"]:.4f}</td><td>{s["q975"]:.4f}</td><td>{diagnostics["rhat"][name]:.4f}</td><td>{diagnostics["ess"][name]:.0f}</td></tr>'
+    return f'<table class="data"><thead><tr><th>param</th><th>true</th><th>mean</th><th>sd</th><th>2.5%</th><th>median</th><th>97.5%</th><th>R-hat</th><th>ESS</th></tr></thead><tbody>{rows}</tbody></table>'
+
+
+def provenance_table() -> str:
+    rows = ""
+    for name, doc in provenance_runs:
+        ins = ", ".join(i["role"] for i in doc["inputs"]) or "&mdash;"
+        outs = ", ".join(o["role"] for o in doc["outputs"])
+        model_sha = doc["model"]["sha256"].replace("sha256:", "")[:10]
+        rows += f'<tr><td class="mono">{esc(name)}/</td><td class="mono">{doc["kind"]}</td><td class="mono">{doc["backend"]}</td><td class="mono">{esc(model_sha)}&hellip;</td><td>{ins}</td><td>{outs}</td></tr>'
+    return f'<table class="data"><thead><tr><th>run dir</th><th>kind</th><th>backend</th><th>model sha256</th><th>inputs</th><th>outputs</th></tr></thead><tbody>{rows}</tbody></table>'
 
 
 # ---------------------------------------------------------------------------
@@ -659,10 +497,7 @@ def param_table() -> str:
 # ---------------------------------------------------------------------------
 def section(num: str, title: str, body: str, subtitle: str = "") -> str:
     sub = f'<p class="lead">{subtitle}</p>' if subtitle else ""
-    return (
-        f'<section class="step"><h2><span class="num">{num}</span>{esc(title)}</h2>'
-        f"{sub}{body}</section>"
-    )
+    return f'<section class="step"><h2><span class="num">{num}</span>{esc(title)}</h2>{sub}{body}</section>'
 
 
 def divider(label: str) -> str:
@@ -675,60 +510,98 @@ parts.append(
     section(
         "",
         "Overview",
-        """
-<p>This page runs the <strong>complete bayescycle workflow</strong> end-to-end on a
-Bayesian linear regression (<span class="mono">n = 1000</span>): first the
-<strong>simulation gate</strong> &mdash; prior predictive, fake-data simulation,
-recovery, single-scenario recover, and SBC &mdash; then the <strong>real fit</strong>
-&mdash; sample, diagnose, posterior predictive, and posterior check &mdash;
-finishing with ArviZ visualization.</p>
+        f"""
+<p>This page runs a <strong>complete, non-linear bayescycle workflow</strong>
+end-to-end on a single backend (Bayesite) for a Bayesian linear regression
+(<span class="mono">n = {len(x_all)}</span>). The loop is deliberately <em>not</em>
+a straight line: a first model with wide priors is <strong>rejected at the
+prior-predictive gate</strong>, the model is respecified, and only then does the
+<strong>simulation gate</strong> (prior predictive, simulate, recover,
+single-scenario recover, SBC) and the <strong>real fit</strong> (sample, diagnose,
+posterior predictive, posterior check) proceed, finishing with ArviZ visualization.</p>
 <p>The architectural invariant: every command is a typed state transition that
-writes the same <strong>bayescycle run-directory v0 contract</strong>. The model is
-authored in <span class="mono">jaxstanv5</span>; <span class="mono">bayescycle</span>
-owns run-directory paths and artifact serialization and dispatches to a backend;
-Bayesite and bayesite-viz consume the artifacts. Backends implement narrow
-operation capabilities &mdash; the in-process <span class="mono">jaxstanv5</span>
-backend serves <span class="mono">sample</span> and
-<span class="mono">prior-predictive</span>; the remaining workflow verbs are
-served by Bayesite.</p>
+writes the same <strong>bayescycle run-directory v0 contract</strong>, plus an
+append-only <strong><span class="mono">run.json</span> (bayescycle.run.v1)</strong>
+provenance record. The model is authored in <span class="mono">jaxstanv5</span>;
+<span class="mono">bayescycle</span> owns run-directory paths, artifact
+serialization, and backend dispatch through narrow per-operation integration
+modes; Bayesite and bayesite-viz consume the artifacts.</p>
 <div class="pipeline">
-  <span>model.py</span><span class="arr">&rarr;</span>
+  <span>model v1<br><small>wide priors</small></span><span class="arr stop">&#10007;</span>
+  <span class="redo">respecify<br><small>square one</small></span><span class="arr">&rarr;</span>
   <span>prior&nbsp;predictive<br><small>simulate &middot; recover &middot; sbc</small></span><span class="arr">&rarr;</span>
-  <span>sample<br><small>--backend jaxstanv5</small></span><span class="arr">&rarr;</span>
+  <span>sample<br><small>real fit</small></span><span class="arr">&rarr;</span>
   <span>diagnose<br>posterior&nbsp;check</span><span class="arr">&rarr;</span>
-  <span>bayesite-idata</span><span class="arr">&rarr;</span>
-  <span>bayesite-viz<br><small>ArviZ plots</small></span>
+  <span>bayesite-viz<br><small>ArviZ</small></span>
 </div>
-
 <h3 class="io-title">Filesystem effects &mdash; what each command reads and writes</h3>
 <p class="lead">Each model-level command owns a fresh run directory; follow-up
-commands operate on an existing one. The engine <span class="mono">--out</span>
-flag is reserved so artifacts always land at standard paths.</p>
+commands operate on an existing one. Run directories are append-only: a new
+attempt uses a new run id.</p>
 """
-        + io_table_html()
-        + tree_html(),
+        + io_table_html(),
     )
 )
+
+parts.append(divider("Iteration 1 — rejected at the gate"))
 
 parts.append(
     section(
         "1",
-        "Model declaration",
-        file_chip("input", "model.py", "hand-authored jaxstanv5 model")
+        "A wide-prior model fails prior predictive",
+        file_chip("input", "model_v1.py", "deliberately wide priors")
+        + code_block(model_v1_src, "python")
+        + code_block(cmd_prior_rej, "bash")
+        + file_chip(
+            "write", "run-prior-rejected/prior_predictive.ndjson", "header + 400 draws + trailer"
+        )
+        + '<p class="lead">The wide priors put enormous mass on implausible parameter values:</p>'
+        + json_block(
+            {
+                "prior_parameter_summary": rej_param_summary,
+                "prior_predictive_y_range": [round(rej_lo, 1), round(rej_hi, 1)],
+                "observed_y_range": [round(min(y_all), 1), round(max(y_all), 1)],
+            }
+        )
+        + (
+            plot_figure(
+                prior_rejected_plot,
+                "Prior predictive — wide priors (rejected)",
+                f"Prior-implied y spans [{rej_lo:.0f}, {rej_hi:.0f}] — orders of magnitude beyond the observed scale.",
+            )
+            if prior_rejected_plot.is_file()
+            else ""
+        )
+        + '<div class="redo-box"><strong>Decision: reject and respecify.</strong> Prior predictive '
+        f'draws of <span class="mono">y</span> reach <span class="mono">&plusmn;{max(abs(rej_lo), abs(rej_hi)):.0f}</span>, '
+        "while the data lives within single digits. The priors encode beliefs the measurement "
+        "scale cannot justify, so the workflow loops <strong>back to square one</strong> &mdash; the "
+        "prior-predictive check is a gate, not a formality. No simulation or fit is run on this model.</div>",
+        "Before touching the data, check what the model believes a priori. This one believes nonsense.",
+    )
+)
+
+parts.append(divider("Iteration 2 — respecified"))
+
+parts.append(
+    section(
+        "2",
+        "Respecified model",
+        file_chip("input", "model.py", "tightened priors")
         + code_block(model_src, "python")
         + '<p class="lead">Compiled to canonical IR on every run (truncated):</p>'
         + file_chip("write", "run/model.ir.json", "compiled from model.py")
         + code_block(ir_pretty, "json")
         + file_chip("write", "run/dims.json", "jaxstanv5 dimension metadata")
         + json_block(dims_obj),
-        "A flat linear regression with scalar intercept, slope, and a positive scale.",
+        "A flat linear regression with scalar intercept, slope, and a positive scale &mdash; now with priors on a credible scale.",
     )
 )
 
 parts.append(
     section(
-        "2",
-        "Synthetic data (n = 1000)",
+        "3",
+        f"Synthetic data (n = {len(x_all)})",
         file_chip("input", "data.json", "summary shown; full vectors on disk")
         + json_block(data_summary),
         "Generated from known parameters with Gaussian noise so recovery is checkable.",
@@ -739,35 +612,31 @@ parts.append(divider("Simulation gate"))
 
 parts.append(
     section(
-        "3",
-        "Prior predictive",
+        "4",
+        "Prior predictive (respecified)",
         code_block(cmd_prior, "bash")
         + file_chip("input", "inputs.json", "declared inputs only (observed y omitted)")
         + file_chip("write", "run-prior/prior_predictive.ndjson", "header + 400 draws + trailer")
         + '<p class="lead">Artifact summary (parameter + observed sites, with prior-implied ranges):</p>'
-        + file_chip("derived", "run-prior/prior_predictive.ndjson", "computed from draws")
         + json_block(pp_summary)
         + '<p class="lead">First draw record (truncated):</p>'
         + json_block(pp_first_display)
         + (
-            '<p class="lead">Prior predictive draws of <span class="mono">y</span> imply this data range before seeing observations:</p>'
-            + plot_figure(
+            plot_figure(
                 prior_plot,
-                "Prior predictive",
-                "Left: 40 prior predictive draws of y vs x. Right: the prior predictive marginal of y.",
+                "Prior predictive — respecified",
+                "Left: prior predictive draws of y vs x. Right: the prior predictive marginal of y, now on the data scale.",
             )
             if prior_plot.is_file()
             else ""
-        )
-        + '<p class="lead">The same command runs on the Bayesite backend; the in-process path serves it via <span class="mono">jaxstanv5.simulation.simulate_prior_predictive</span>:</p>'
-        + code_block(cmd_prior_bayesite, "bash"),
-        "Draw parameters and observed values from the prior to check prior-implied data.",
+        ),
+        "Re-run the gate on the respecified model: prior-implied data is now plausible.",
     )
 )
 
 parts.append(
     section(
-        "4",
+        "5",
         "Simulate fake data from truth",
         code_block(cmd_sim, "bash")
         + file_chip("input", "truth.json", "constrained free-value truth")
@@ -781,7 +650,7 @@ parts.append(
 
 parts.append(
     section(
-        "5",
+        "6",
         "Recovery fit + recover-check",
         code_block(cmd_recfit, "bash")
         + file_chip(
@@ -799,14 +668,14 @@ parts.append(
             "write", "run-recover-fit/recovery_check.json", "fit-vs-truth rank/interval facts"
         )
         + recovery_check_table()
-        + '<p class="lead small">Factual report: equal-tailed interval containment and ranks, no pass/fail verdict. Here the tight n = 1000 posterior places two of three truths just outside the 80% interval &mdash; exactly the kind of fact the human gate inspects.</p>',
+        + '<p class="lead small">Factual report: equal-tailed interval containment and ranks, no pass/fail verdict. The human gate inspects whether truths land inside the posterior interval and where they rank.</p>',
         "Fit the simulated data, then compare the posterior back to the known truth.",
     )
 )
 
 parts.append(
     section(
-        "6",
+        "7",
         "Single-scenario recover",
         code_block(cmd_recover, "bash")
         + file_chip("input", "recover_scenario.json", "declared data + sampler settings + seed")
@@ -816,16 +685,14 @@ parts.append(
             "prior &rarr; simulate &rarr; fit &rarr; rank, in one report",
         )
         + recover_table()
-        + f'<p class="lead small">One self-contained simulation: the engine draws a truth from the prior, simulates data, fits it, and ranks the truth. '
-        f"Divergences across {recover['sampler_summary']['chain_count']} chains: "
-        f"<strong>{recover['sampler_summary']['total_divergences']}</strong>.</p>",
+        + f'<p class="lead small">One self-contained simulation: the engine draws a truth from the prior, simulates data, fits it, and ranks the truth. Divergences across {recover["sampler_summary"]["chain_count"]} chains: <strong>{recover["sampler_summary"]["total_divergences"]}</strong>.</p>',
         "A self-contained recovery scenario the engine runs in one shot.",
     )
 )
 
 parts.append(
     section(
-        "7",
+        "8",
         "Simulation-based calibration (SBC)",
         code_block(cmd_sbc, "bash")
         + file_chip(
@@ -844,35 +711,36 @@ parts.append(divider("Real fit"))
 
 parts.append(
     section(
-        "8",
-        "Sample in-process (jaxstanv5 / BlackJAX)",
+        "9",
+        "Sample on the real data (Bayesite NUTS)",
         code_block(cmd_sample, "bash")
-        + file_chip("write", "run/posterior.ndjson", "header + 2000 draws + trailer")
-        + '<p class="lead">Posterior stream header (per_draw_v2, neutral model/data fingerprint):</p>'
+        + file_chip(
+            "write", "run/posterior.ndjson", f"header + {post_header['draw_count']} draws + trailer"
+        )
+        + '<p class="lead">Posterior stream header (neutral model/data fingerprint):</p>'
         + json_block(post_header)
         + '<p class="lead">First draw record (parameter values + per-draw sampler stats):</p>'
         + json_block(post_first)
         + '<p class="lead">Trailer (per-chain step sizes, tree-depth histograms, R-hat, ESS):</p>'
         + json_block(post_trailer),
-        "4 chains &times; 500 draws &rarr; 2000 posterior draws on the real data.",
-    )
-)
-
-parts.append(
-    section(
-        "9",
-        "Posterior summary & recovery",
-        file_chip("derived", "run/posterior.ndjson", "summary computed from draws")
-        + param_table()
-        + f'<p class="lead">Divergences across all chains: <strong>{divergences}</strong>. '
-        f"Energy range: <strong>{min(energies):.1f}</strong> &ndash; <strong>{max(energies):.1f}</strong>.</p>",
-        "All three parameters are recovered tightly around their true values.",
+        f"4 chains &times; {post_header['draw_count'] // post_header['chain_count']} draws &rarr; {post_header['draw_count']} posterior draws on the real data.",
     )
 )
 
 parts.append(
     section(
         "10",
+        "Posterior summary & recovery",
+        file_chip("derived", "run/posterior.ndjson", "summary computed from draws")
+        + param_table()
+        + f'<p class="lead">Divergences across all chains: <strong>{divergences}</strong>. Energy range: <strong>{min(energies):.1f}</strong> &ndash; <strong>{max(energies):.1f}</strong>.</p>',
+        "All three parameters are recovered around their true values.",
+    )
+)
+
+parts.append(
+    section(
+        "11",
         "Diagnose",
         code_block(cmd_diagnose, "bash")
         + file_chip("read", "run/posterior.ndjson", "fit input")
@@ -884,19 +752,23 @@ parts.append(
 
 parts.append(
     section(
-        "11",
+        "12",
         "Posterior predictive",
         code_block(cmd_ppc, "bash")
         + file_chip("read", "run/model.ir.json, run/data.json, run/posterior.ndjson", "inputs")
-        + file_chip("write", "run/posterior_predictive.ndjson", "header + 2000 draws + trailer")
+        + file_chip(
+            "write",
+            "run/posterior_predictive.ndjson",
+            f"header + {ppc_header['draw_count']} draws + trailer",
+        )
         + json_block(ppc_summary),
-        "2000 replicated datasets of 1000 y-values each, conditioned on the fit.",
+        f"{ppc_header['draw_count']} replicated datasets conditioned on the fit.",
     )
 )
 
 parts.append(
     section(
-        "12",
+        "13",
         "Posterior check",
         code_block(cmd_pcheck, "bash")
         + file_chip("write", "run/posterior_check.json", "observed-vs-replicated discrepancy facts")
@@ -908,21 +780,50 @@ parts.append(
 
 parts.append(
     section(
-        "13",
+        "14",
         "ArviZ visualizations",
         code_block(cmd_export, "bash")
-        + (
-            '<p class="lead small">Until <span class="mono">bayesite-viz</span> is '
-            "published as an installable package, the walkthrough uses a pinned "
-            'direct Git dependency through <span class="mono">uv run --no-project --with</span>. '
-            'This covers both <span class="mono">bayesite-idata</span> export and '
-            '<span class="mono">bayesite-viz</span> plotting without assuming a local '
-            "checkout.</p>"
-        )
+        + '<p class="lead small">The walkthrough uses a local <span class="mono">bayesite-viz</span> '
+        "checkout because the pinned Git source is unavailable in restricted environments "
+        '(difficulties #5), and stages an unwrapped <span class="mono">data.json</span> '
+        'because <span class="mono">bayesite-idata</span> does not read the canonical '
+        '<span class="mono">bayescycle.data.json.v1</span> wrapper (difficulties #6).</p>'
         + file_chip("write", "run/fit.nc", "ArviZ InferenceData (NetCDF)")
         + file_chip("write", "viz/*.png", "one PNG per bayesite-viz verb")
         + f'<div class="plots">{arviz_section}</div>',
         "Export the run directory to NetCDF and render ArviZ plots via bayesite-viz.",
+    )
+)
+
+parts.append(divider("Provenance"))
+
+parts.append(
+    section(
+        "15",
+        "Append-only run provenance, serialized to SQLite",
+        '<p class="lead">Every fresh model-level run writes <span class="mono">run.json</span> '
+        '(<span class="mono">bayescycle.run.v1</span>): the model source + sha256, every '
+        "materialized input + sha256, and the declared outputs. Example for the real fit:</p>"
+        + file_chip("write", "run/run.json", "append-only bayescycle.run.v1 provenance")
+        + json_block(run_metadata_example)
+        + '<p class="lead">Across the whole non-linear workflow (including the rejected iteration):</p>'
+        + provenance_table()
+        + '<p class="lead">Because these records are flat and self-describing, the filesystem '
+        "workflow serializes directly into a relational index "
+        '(<span class="mono">docs/run-provenance-db.py</span> &rarr; '
+        '<span class="mono">docs/walkthrough-runs.sqlite</span>). The cross-run artifact '
+        'lineage &mdash; e.g. <span class="mono">run-sim</span>\'s '
+        '<span class="mono">simulated_data</span> feeding <span class="mono">run-recover-fit</span> '
+        '&mdash; is recovered as rows in <span class="mono">workflow_edges</span>:</p>'
+        + code_block(
+            "SELECT r.workflow, r.run_dir, r.kind, r.backend FROM runs r ORDER BY r.id;\n\n"
+            "SELECT p.run_dir AS produces, e.producer_role, c.run_dir AS consumes\n"
+            "FROM workflow_edges e\n"
+            "JOIN runs p ON p.id = e.producer_run_id\n"
+            "JOIN runs c ON c.id = e.consumer_run_id;",
+            "sql",
+        ),
+        "The filesystem workflow is the database: run.json records map one-to-one onto rows.",
     )
 )
 
@@ -933,22 +834,25 @@ parts.append(
         """
 <p>Backends implement narrow per-operation capabilities rather than one fat
 interface. Unsupported combinations fail explicitly during preparation instead
-of falling back silently.</p>
-<table class="data caps"><thead><tr>
-<th>command</th><th>Bayesite</th><th>jaxstanv5 in-process</th></tr></thead><tbody>
+of falling back silently. This walkthrough runs every stage on Bayesite; the
+mixed-backend walkthrough exercises the cross-backend handoff.</p>
+<table class="data caps"><thead><tr><th>command</th><th>Bayesite</th><th>jaxstanv5 in-process</th></tr></thead><tbody>
 <tr><td class="mono">sample</td><td class="ok">yes</td><td class="ok">yes</td></tr>
 <tr><td class="mono">prior-predictive</td><td class="ok">yes</td><td class="ok">yes</td></tr>
 <tr><td class="mono">simulate</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
 <tr><td class="mono">recover</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
 <tr><td class="mono">sbc</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
 <tr><td class="mono">diagnose</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
-<tr><td class="mono">posterior-predictive</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
-<tr><td class="mono">posterior-check</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
+<tr><td class="mono">posterior-predictive</td><td class="ok">yes*</td><td class="bad">unsupported</td></tr>
+<tr><td class="mono">posterior-check</td><td class="ok">yes*</td><td class="bad">unsupported</td></tr>
 <tr><td class="mono">recover-check</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
 </tbody></table>
-<p class="small">All workflow reports are v0-provisional: machine-readable and
-tested, but consumers must check the format marker before depending on field
-stability.</p>
+<p class="small">*Bayesite <span class="mono">posterior-predictive</span> and
+<span class="mono">posterior-check</span> verify the fit's model/data fingerprint,
+so they require a fit produced by Bayesite on the same model+data &mdash; a
+jaxstanv5-produced fit is rejected (difficulties #2). All workflow reports are
+v0-provisional: machine-readable and tested, but consumers must check the format
+marker before depending on field stability.</p>
 """,
     )
 )
@@ -965,47 +869,24 @@ doc = f"""<!doctype html>
   :root {{
     --bg: #0f1117; --panel: #171a21; --panel2: #1e222b; --ink: #e6e8ee;
     --muted: #9aa3b2; --accent: #6ea8fe; --accent2: #7ee787; --bad: #ff7b72;
-    --border: #2a2f3a; --code: #11141a;
+    --border: #2a2f3a; --code: #11141a; --warn: #f0b562;
   }}
   * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }}
-  header.hero {{
-    padding: 56px 24px 28px; border-bottom: 1px solid var(--border);
-    background: radial-gradient(1200px 400px at 50% -120px, #20304d 0%, transparent 70%);
-    text-align: center;
-  }}
+  body {{ margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }}
+  header.hero {{ padding: 56px 24px 28px; border-bottom: 1px solid var(--border); background: radial-gradient(1200px 400px at 50% -120px, #20304d 0%, transparent 70%); text-align: center; }}
   header.hero h1 {{ margin: 0 0 8px; font-size: 30px; letter-spacing: .2px; }}
   header.hero p {{ margin: 0; color: var(--muted); }}
   .badges {{ margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }}
-  .badge {{
-    font-size: 12px; padding: 4px 10px; border-radius: 999px;
-    border: 1px solid var(--border); background: var(--panel2); color: var(--ink);
-  }}
+  .badge {{ font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--ink); }}
   main {{ max-width: 980px; margin: 0 auto; padding: 24px; }}
-  section.step {{
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-    padding: 22px 24px; margin: 20px 0;
-  }}
+  section.step {{ background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin: 20px 0; }}
   section.step h2 {{ margin: 0 0 4px; font-size: 21px; display: flex; align-items: center; gap: 12px; }}
-  .num {{
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px;
-    background: var(--accent); color: #0b1020; font-weight: 700; font-size: 15px;
-  }}
+  .num {{ display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px; background: var(--accent); color: #0b1020; font-weight: 700; font-size: 15px; }}
   .lead {{ color: var(--muted); margin: 8px 0 12px; }}
   .small {{ font-size: 12.5px; color: var(--muted); }}
-  pre.code {{
-    background: var(--code); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 10px 0;
-  }}
+  pre.code {{ background: var(--code); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 10px 0; }}
   pre.code code {{ font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; color: #d7dce6; white-space: pre; }}
-  pre.code[data-lang]::before {{
-    content: attr(data-lang); display: block; color: var(--muted);
-    font-size: 11px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 8px;
-  }}
+  pre.code[data-lang]::before {{ content: attr(data-lang); display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 8px; }}
   .mono {{ font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }}
   table.data {{ border-collapse: collapse; width: 100%; margin: 8px 0 4px; font-size: 14px; }}
   table.data th, table.data td {{ border: 1px solid var(--border); padding: 7px 10px; text-align: right; }}
@@ -1015,14 +896,14 @@ doc = f"""<!doctype html>
   table.caps td {{ text-align: left; }}
   .ok {{ color: var(--accent2); font-weight: 600; }}
   .bad {{ color: var(--bad); font-weight: 600; }}
-  .divider {{
-    display: flex; align-items: center; gap: 14px; margin: 30px 4px 6px; color: var(--accent);
-    font-size: 13px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700;
-  }}
+  .divider {{ display: flex; align-items: center; gap: 14px; margin: 30px 4px 6px; color: var(--accent); font-size: 13px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; }}
   .divider::before, .divider::after {{ content: ""; height: 1px; background: var(--border); flex: 1; }}
+  .redo-box {{ background: rgba(240,181,98,.10); border: 1px solid var(--warn); border-radius: 10px; padding: 12px 16px; margin-top: 12px; color: #f3d9b0; }}
   .pipeline {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; margin: 18px 0 4px; }}
   .pipeline span {{ background: var(--panel2); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; font-size: 13px; text-align: center; }}
   .pipeline .arr {{ background: none; border: none; color: var(--accent); font-size: 18px; padding: 0 2px; }}
+  .pipeline .arr.stop {{ color: var(--bad); font-weight: 700; }}
+  .pipeline .redo {{ background: rgba(240,181,98,.14); border-color: var(--warn); }}
   .pipeline small {{ color: var(--muted); }}
   .plots {{ display: grid; grid-template-columns: 1fr; gap: 18px; margin-top: 12px; }}
   figure.plot {{ margin: 0; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 14px; overflow: hidden; }}
@@ -1037,7 +918,7 @@ doc = f"""<!doctype html>
   .chip-note {{ color: var(--muted); font-size: 11.5px; }}
   .chip-write .chip-dir {{ background: var(--accent2); }}
   .chip-read .chip-dir {{ background: var(--accent); }}
-  .chip-input .chip-dir {{ background: #f0b562; }}
+  .chip-input .chip-dir {{ background: var(--warn); }}
   .chip-stdout .chip-dir {{ background: #c9a0ff; }}
   .chip-derived .chip-dir {{ background: #6fd6c9; }}
   .chip-write {{ border-color: #2f5d3f; }} .chip-read {{ border-color: #2f4a6d; }}
@@ -1050,11 +931,6 @@ doc = f"""<!doctype html>
   table.io-table .io-note {{ color: var(--muted); font-size: 11px; margin-top: 3px; }}
   .f {{ display: inline-block; margin: 2px 4px 2px 0; padding: 3px 7px; border-radius: 6px; font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; border: 1px solid var(--border); }}
   .f-read {{ background: #16233a; color: #bcd3f5; }} .f-write {{ background: #16321f; color: #b8e8c6; }}
-  .tree {{ background: var(--code); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; font-size: 13px; }}
-  .tree-dir {{ color: var(--accent); font-weight: 700; margin: 8px 0 2px; }}
-  .tree-row {{ display: flex; gap: 10px; flex-wrap: wrap; padding: 2px 0 2px 18px; }}
-  .tree-file {{ color: #b8e8c6; min-width: 220px; }}
-  .tree-origin {{ color: var(--muted); font-size: 12px; }}
   .sbc {{ display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }}
   .sbc-row {{ display: flex; align-items: flex-end; gap: 12px; }}
   .sbc-name {{ min-width: 56px; color: var(--ink); }}
@@ -1067,14 +943,14 @@ doc = f"""<!doctype html>
 <body>
 <header class="hero">
   <h1>bayescycle &mdash; complete workflow walkthrough</h1>
-  <p>Simulation gate &rarr; real fit &rarr; ArviZ diagnostics, through the run-directory v0 contract</p>
+  <p>Non-linear loop: reject &rarr; respecify &rarr; simulation gate &rarr; real fit &rarr; ArviZ &rarr; provenance</p>
   <div class="badges">
-    <span class="badge">prior-predictive &middot; simulate &middot; recover &middot; sbc</span>
-    <span class="badge">sample --backend jaxstanv5</span>
-    <span class="badge">diagnose &middot; posterior-check</span>
-    <span class="badge">n = 1000</span>
-    <span class="badge">BlackJAX NUTS</span>
-    <span class="badge">ArviZ via bayesite-viz</span>
+    <span class="badge">prior gate rejects &amp; respecifies</span>
+    <span class="badge">single backend &middot; Bayesite</span>
+    <span class="badge">simulate &middot; recover &middot; sbc</span>
+    <span class="badge">n = {len(x_all)}</span>
+    <span class="badge">NUTS</span>
+    <span class="badge">run.json &rarr; SQLite</span>
   </div>
 </header>
 <main>
