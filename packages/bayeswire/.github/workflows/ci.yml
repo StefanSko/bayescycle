@@ -24,4 +24,4 @@ jobs:
       - name: Spec-doc generation check
         run: |
           uv run scripts/regenerate_corpus.py
-          git diff --exit-code -- corpus spec/ir-v1-tags.md
+          git diff --exit-code -- src/bayeswire/corpus spec/ir-v1-tags.md
