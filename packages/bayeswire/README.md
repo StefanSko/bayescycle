@@ -28,8 +28,9 @@ class LinearRegression:
     mu = alpha + beta * x
     y = Observed(Normal(mu, sigma))
 
-document = meta_to_dict(model_meta(LinearRegression))   # {"bayeswire_ir": 1, "model": ...}
-model_hash = canonical_bytes(model_meta(LinearRegression))
+meta = model_meta(LinearRegression)
+document = meta_to_dict(meta)          # {"bayeswire_ir": 1, "model": ...}
+wire_bytes = canonical_bytes(meta)     # sha256(wire_bytes) is the model hash
 ```
 
 Decoding is code-free: `meta_from_dict(document)` reconstructs resolved
