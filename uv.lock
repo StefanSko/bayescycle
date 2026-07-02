@@ -37,8 +37,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bayeswire", git = "https://github.com/StefanSko/bayeswire.git?rev=827a74b09fd19e1bfcc58e5418b74088958145aa" },
-    { name = "jaxstanv5", marker = "extra == 'inproc'", git = "https://github.com/StefanSko/jaxstanv5.git?rev=9cf499489a42d1d0045492293e5f751023e4cf24" },
+    { name = "bayeswire", git = "https://github.com/StefanSko/bayeswire.git?rev=15cdc51e3e09bed56838248f9b3becd2bbaf8423" },
+    { name = "jaxstanv5", marker = "extra == 'inproc'", git = "https://github.com/StefanSko/jaxstanv5.git?rev=597d7758f22f7f2f3fbb791c4deb6c56c47b9eda" },
 ]
 provides-extras = ["inproc"]
 
@@ -52,7 +52,7 @@ dev = [
 [[package]]
 name = "bayeswire"
 version = "0.1.0"
-source = { git = "https://github.com/StefanSko/bayeswire.git?rev=827a74b09fd19e1bfcc58e5418b74088958145aa#827a74b09fd19e1bfcc58e5418b74088958145aa" }
+source = { git = "https://github.com/StefanSko/bayeswire.git?rev=15cdc51e3e09bed56838248f9b3becd2bbaf8423#15cdc51e3e09bed56838248f9b3becd2bbaf8423" }
 
 [[package]]
 name = "blackjax"
@@ -138,7 +138,7 @@ wheels = [
 [[package]]
 name = "jaxstanv5"
 version = "0.1.0"
-source = { git = "https://github.com/StefanSko/jaxstanv5.git?rev=9cf499489a42d1d0045492293e5f751023e4cf24#9cf499489a42d1d0045492293e5f751023e4cf24" }
+source = { git = "https://github.com/StefanSko/jaxstanv5.git?rev=597d7758f22f7f2f3fbb791c4deb6c56c47b9eda#597d7758f22f7f2f3fbb791c4deb6c56c47b9eda" }
 dependencies = [
     { name = "bayeswire" },
     { name = "blackjax" },
