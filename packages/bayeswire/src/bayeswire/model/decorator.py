@@ -62,6 +62,7 @@ from bayeswire.model.expr import (
     ScalarIndex,
     UnaryOp,
     VectorScatterOp,
+    is_final_expr_node,
 )
 
 type ModelClass = type[object]
@@ -478,7 +479,7 @@ def _concrete_scalar_bound(value: object) -> float | None:
     """Return a concrete scalar distribution bound after declaration resolution."""
     if isinstance(value, ConstNode):
         return float(value.value)
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         return None
     shape = getattr(value, "shape", None)
     if shape is not None:
@@ -803,7 +804,7 @@ def _resolve_declaration_distribution(
 def _resolve_declaration_distribution_field(value: object, symbols: SymbolTable) -> object:
     if _is_declaration_expr(value):
         return _resolve_declaration_expr(value, symbols)
-    if _is_final_expr_node(value):
+    if is_final_expr_node(value):
         raise TypeError("Final expression nodes are not valid in model declarations")
     if is_dataclass(value) and not isinstance(value, type):
         return _resolve_declaration_distribution(cast(Distribution, value), symbols)
@@ -887,13 +888,6 @@ def _is_declaration_expr(value: object) -> bool:
         | DeferredUnaryOp
         | int
         | float,
-    )
-
-
-def _is_final_expr_node(value: object) -> bool:
-    """Return whether ``value`` is already resolved final expression IR."""
-    return isinstance(
-        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
     )
 
 

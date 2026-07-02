@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 from bayeswire.ir import canonical_bytes, meta_to_dict, render_ir_v1_tag_spec  # noqa: E402
 from conformance.reference_models import reference_model_cases  # noqa: E402
 
-CORPUS_DIR = REPO_ROOT / "corpus"
+CORPUS_DIR = REPO_ROOT / "src" / "bayeswire" / "corpus"
 TAG_SPEC_PATH = REPO_ROOT / "spec" / "ir-v1-tags.md"
 
 

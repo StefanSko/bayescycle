@@ -17,7 +17,7 @@ from reference_models import ReferenceModelCase, reference_model_cases
 
 from bayeswire.ir import canonical_bytes, meta_from_dict, meta_to_dict
 
-CORPUS_DIR = Path(__file__).parent.parent.parent / "corpus"
+CORPUS_DIR = Path(__file__).parent.parent.parent / "src" / "bayeswire" / "corpus"
 
 REGENERATE_HINT = (
     "Corpus files pin the v1 wire format. If this change is deliberate, run "

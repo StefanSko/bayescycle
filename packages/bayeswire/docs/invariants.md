@@ -91,6 +91,7 @@ Core invariants that should remain true as the codebase changes.
   from one produced by `@model` through the public hooks. Dimension labels
   travel in a separate sidecar document (`spec/dimension-sidecar-v1.md`);
   without the sidecar the reconstructed model carries no dimension metadata.
-- The corpus under `corpus/` is the single conformance baseline. Producers
+- The corpus under `src/bayeswire/corpus/` (shipped as package data) is
+  the single conformance baseline. Producers
   reproduce it byte-for-byte; consumers decode it and reproduce the recorded
   JAX-oracle evaluations within the spec's tolerance policy.

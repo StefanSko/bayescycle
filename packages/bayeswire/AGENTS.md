@@ -15,7 +15,8 @@ It exists to:
 - serialize/deserialize `ModelMeta` as the `bayeswire_ir` v1 wire format
 - carry dimension labels in a separate sidecar document
 - own the normative wire spec (`spec/`) and the golden fixture corpus
-  (`corpus/`) that every producer and consumer conformance-tests against
+  (`src/bayeswire/corpus/`, shipped as package data) that every producer
+  and consumer conformance-tests against
 
 It does **not** exist to bind data, evaluate log densities, run samplers,
 interpret diagnostics, or host any backend. Invalid states the identity makes
@@ -122,4 +123,4 @@ uv run pytest
 ```
 
 The pytest run includes the no-JAX module walk and produce-conformance
-against `corpus/`. Briefly report the result.
+against the corpus. Briefly report the result.

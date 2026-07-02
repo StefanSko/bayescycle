@@ -48,7 +48,7 @@ backends bind and sample.
 | [bayesite-viz](https://github.com/StefanSko/bayesite-viz) | Fit-artifact exporter and dashboards |
 
 Consumers pin bayeswire by exact version and vendor or conformance-test
-against `corpus/`; the copies of the spec in downstream repositories are
+against the corpus; the copies of the spec in downstream repositories are
 generated and hash-checked, never edited.
 
 ## Layout
@@ -57,8 +57,9 @@ generated and hash-checked, never edited.
   `math`, `ir`
 - `spec/` — the normative wire spec: `ir-format-v1.md`, generated
   `ir-v1-tags.md`, `dimension-sidecar-v1.md`
-- `corpus/` — golden IR documents, canonical hashes, and JAX-oracle
-  evaluation fixtures (see `corpus/README.md`)
+- `src/bayeswire/corpus/` — golden IR documents, canonical hashes, and
+  JAX-oracle evaluation fixtures, shipped as package data so Python
+  consumers conformance-test against the installed pin (see its README)
 - `scripts/regenerate_corpus.py` — regenerates corpus documents, hashes, and
   the generated tag spec after a deliberate format change
 

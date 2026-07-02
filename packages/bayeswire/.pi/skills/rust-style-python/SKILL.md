@@ -74,7 +74,7 @@ Before making a substantial architecture or API change, read:
 2. Check whether the current design exposes backend details or unnecessary surface area.
 3. Rewrite toward smaller explicit data types and narrower interfaces.
 4. Ensure naming matches responsibility.
-5. Run the Astral validation loop, including produce-conformance against `corpus/`.
+5. Run the Astral validation loop, including produce-conformance against the corpus.
 6. Re-check whether the resulting design is easier to explain in one paragraph.
 
 ## Red flags

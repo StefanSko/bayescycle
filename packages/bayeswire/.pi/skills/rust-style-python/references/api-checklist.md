@@ -61,7 +61,7 @@ Use this checklist before adding or revising public APIs, internal boundaries, o
 - How will this be unit tested?
 - Does this change canonical bytes, tags, or field lists? If so, it needs a
   spec changelog entry, a regenerated corpus, and a consumer-pin plan.
-- Does produce-conformance against `corpus/` still pass byte-for-byte?
+- Does produce-conformance against the corpus still pass byte-for-byte?
 
 ## Astral validation loop
 

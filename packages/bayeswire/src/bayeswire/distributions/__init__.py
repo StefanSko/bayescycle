@@ -1,5 +1,7 @@
 """Probability distributions used in model declarations."""
 
+from bayeswire.distributions._capabilities import has_scalar_inverse_cdf
+from bayeswire.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from bayeswire.distributions.continuous import (
     Beta,
     Exponential,
@@ -37,12 +39,14 @@ __all__ = [
     "DistributionValue",
     "Exponential",
     "HalfNormal",
+    "has_scalar_inverse_cdf",
     "LogProbability",
     "MultivariateNormal",
     "NegativeBinomial",
     "Normal",
     "OrderedLogistic",
     "Poisson",
+    "reject_opaque_symbolic_distribution",
     "StudentT",
     "Truncated",
     "Uniform",

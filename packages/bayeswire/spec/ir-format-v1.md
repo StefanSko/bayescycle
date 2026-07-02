@@ -139,14 +139,14 @@ divergence (Python `repr` and Rust `ryu` differ in corner cases such as
   extended tags with their equivalent of `UnknownNodeTag`, by design.
 - **Version policy.** Any change to the tag set, a field list, or an
   encoding rule requires a deliberate corpus diff
-  (`scripts/regenerate_corpus.py`, `corpus/`), a changelog entry below, and
+  (`scripts/regenerate_corpus.py`), a changelog entry below, and
   a version decision. `bayeswire_ir` stays at 1 until a real format change;
   package versions move freely underneath it as long as produce-conformance
   bytes are stable.
 
 ## Conformance corpus and tolerance policy
 
-`corpus/` holds the golden documents (`<model>.json`), their canonical-bytes
+The corpus (`src/bayeswire/corpus/`, shipped as package data) holds the golden documents (`<model>.json`), their canonical-bytes
 hashes (`hashes.json`), and cross-backend evaluation fixtures
 (`fixtures/<model>.json`) bundling each IR document with concrete bind data
 and log-density plus gradient values at deterministic unconstrained points.

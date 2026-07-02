@@ -323,3 +323,10 @@ def _to_slice_index_spec(value: slice) -> FullSlice:
     if value.start is None and value.stop is None and value.step is None:
         return FullSlice()
     raise TypeError("Only full slices ':' are supported in model declaration indexes")
+
+
+def is_final_expr_node(value: object) -> bool:
+    """Return whether ``value`` is resolved final expression IR."""
+    return isinstance(
+        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+    )
