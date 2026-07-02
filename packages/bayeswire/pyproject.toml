@@ -1,0 +1,31 @@
+[project]
+name = "bayeswire"
+version = "0.1.0"
+description = "Model declaration language and wire format for the bayes* toolchain. Stdlib only."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.13.0",
+    "ty==0.0.34",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.0,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.12"
+root = ["./src", "./tests"]

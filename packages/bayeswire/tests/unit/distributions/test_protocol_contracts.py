@@ -1,0 +1,54 @@
+"""Distribution package contract tests."""
+
+from bayeswire.distributions import (
+    Bernoulli,
+    Beta,
+    BetaBinomial,
+    Binomial,
+    Exponential,
+    HalfNormal,
+    MultivariateNormal,
+    NegativeBinomial,
+    Normal,
+    OrderedLogistic,
+    Poisson,
+    StudentT,
+    Truncated,
+    Uniform,
+)
+
+
+def test_distribution_classes_are_available_from_package_root() -> None:
+    exported: tuple[type[object], ...] = (
+        Bernoulli,
+        Beta,
+        BetaBinomial,
+        Binomial,
+        Exponential,
+        HalfNormal,
+        MultivariateNormal,
+        NegativeBinomial,
+        Normal,
+        OrderedLogistic,
+        Poisson,
+        StudentT,
+        Truncated,
+        Uniform,
+    )
+
+    assert [dist.__name__ for dist in exported] == [
+        "Bernoulli",
+        "Beta",
+        "BetaBinomial",
+        "Binomial",
+        "Exponential",
+        "HalfNormal",
+        "MultivariateNormal",
+        "NegativeBinomial",
+        "Normal",
+        "OrderedLogistic",
+        "Poisson",
+        "StudentT",
+        "Truncated",
+        "Uniform",
+    ]
