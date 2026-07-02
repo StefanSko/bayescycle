@@ -522,7 +522,7 @@ posterior predictive, posterior check) proceed, finishing with ArviZ visualizati
 <p>The architectural invariant: every command is a typed state transition that
 writes the same <strong>bayescycle run-directory v0 contract</strong>, plus an
 append-only <strong><span class="mono">run.json</span> (bayescycle.run.v1)</strong>
-provenance record. The model is authored in <span class="mono">jaxstanv5</span>;
+provenance record. The model is authored in <span class="mono">bayeswire</span>;
 <span class="mono">bayescycle</span> owns run-directory paths, artifact
 serialization, and backend dispatch through narrow per-operation integration
 modes; Bayesite and bayesite-viz consume the artifacts.</p>
@@ -592,7 +592,7 @@ parts.append(
         + '<p class="lead">Compiled to canonical IR on every run (truncated):</p>'
         + file_chip("write", "run/model.ir.json", "compiled from model.py")
         + code_block(ir_pretty, "json")
-        + file_chip("write", "run/dims.json", "jaxstanv5 dimension metadata")
+        + file_chip("write", "run/dims.json", "bayeswire dimension metadata")
         + json_block(dims_obj),
         "A flat linear regression with scalar intercept, slope, and a positive scale &mdash; now with priors on a credible scale.",
     )

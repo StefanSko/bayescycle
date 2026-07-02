@@ -3,7 +3,7 @@
 *2026-06-22T20:43:11Z by Showboat 0.6.1*
 <!-- showboat-id: 712751c3-1187-4734-bcaf-6f52099d2553 -->
 
-This executable smoke test exercises the full local stack: jaxstanv5 model authoring through bayescycle, Bayesite sampling and diagnostics, bayesite-idata export to ArviZ NetCDF, bayesite-viz plots, and Showboat documentation. It writes generated artifacts under examples/_showboat_work. A small sibling helper script (`examples/full-stack-smoke-lib.sh`) centralizes path setup and tool wrappers so each executable block can stay focused on one workflow phase.
+This executable smoke test exercises the full local stack: bayeswire model authoring through bayescycle, Bayesite sampling and diagnostics, bayesite-idata export to ArviZ NetCDF, bayesite-viz plots, and Showboat documentation. It writes generated artifacts under examples/_showboat_work. A small sibling helper script (`examples/full-stack-smoke-lib.sh`) centralizes path setup and tool wrappers so each executable block can stay focused on one workflow phase.
 
 ```bash
 . examples/full-stack-smoke-lib.sh
@@ -23,13 +23,13 @@ Usage: bayesite-idata [OPTIONS] RUN_DIR
 Usage: bayesite-viz [OPTIONS] COMMAND [ARGS]...
 ```
 
-Start with a real jaxstanv5 model.py. The observed variable is vector-valued so posterior-predictive and PPC plots have a non-scalar observed dimension. The Dim metadata lets bayescycle write dims.json for downstream ArviZ coordinates.
+Start with a real bayeswire model.py. The observed variable is vector-valued so posterior-predictive and PPC plots have a non-scalar observed dimension. The Dim metadata lets bayescycle write dims.json for downstream ArviZ coordinates.
 
 ```bash
 . examples/full-stack-smoke-lib.sh
 cat > "$WORK/model.py" <<'PY'
-from jaxstanv5 import Dim, Observed, Param, model
-from jaxstanv5.distributions import Normal
+from bayeswire import Dim, Observed, Param, model
+from bayeswire.distributions import Normal
 
 obs = Dim("obs", coords=["a", "b", "c", "d"])
 
@@ -51,7 +51,7 @@ data.json
 model.py
 ```
 
-Next bayescycle executes model.py, asks jaxstanv5 for canonical IR, prepares the run directory, and invokes the Bayesite engine for posterior sampling.
+Next bayescycle executes model.py, asks bayeswire for canonical IR, prepares the run directory, and invokes the Bayesite engine for posterior sampling.
 
 ```bash
 . examples/full-stack-smoke-lib.sh
@@ -73,7 +73,7 @@ run = Path("examples/_showboat_work/run")
 ir = json.loads((run / "model.ir.json").read_text())
 dims = json.loads((run / "dims.json").read_text())
 header = json.loads((run / "posterior.ndjson").read_text().splitlines()[0])
-print("ir:", ir["jaxstanv5_ir"])
+print("ir:", ir["bayeswire_ir"])
 print("dims:", dims["dims_format"], dims["dims"]["y"], dims["coords"]["obs"])
 print("draws:", header["draws_format"], "chains", header["chain_count"], "draws", header["draw_count"])
 print("parameters:", ", ".join(header["parameter_order"]))
