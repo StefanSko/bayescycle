@@ -1,0 +1,9 @@
+{
+  "chains": 2,
+  "draws": 300,
+  "generator": "scripts/generate_artifact_corpus.py",
+  "model": "eight_schools_non_centered",
+  "sample_stats_mode": "per_draw_v2",
+  "seed": 20260702,
+  "warmup": 300
+}

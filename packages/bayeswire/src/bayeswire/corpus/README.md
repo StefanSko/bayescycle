@@ -19,6 +19,14 @@ reproduce them within the tolerance policy stated in
 `spec/ir-format-v1.md` — the tolerances live in the spec, not in any
 consumer's tests.
 
+- `artifacts/<model>/` — golden **run artifacts**: real run directories
+  (`model.ir.json`, `data.json`, optional `dims.json`, `posterior.ndjson`
+  with `per_draw_v2` sample stats, `diagnostics.json`) produced by a real
+  bayesite binary from corpus models via
+  `scripts/generate_artifact_corpus.py`. Downstream exporters
+  (`bayesite_idata`) consume them as test fixtures instead of synthesizing
+  their own run directories.
+
 Regenerate the documents and hashes with `scripts/regenerate_corpus.py`.
 Any corpus diff is a wire-format change: it requires a spec changelog entry,
 a version decision, and a coordinated consumer-pin bump.

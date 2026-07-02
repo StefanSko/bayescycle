@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from bayeswire import Data, Observed, Param, PartiallyObserved, model
+from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, model
 from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
 from bayeswire.distributions import (
     Bernoulli,
@@ -31,6 +31,7 @@ class ReferenceModelCase:
     """One golden model with deterministic bind values."""
 
     name: str
+    model_cls: type
     meta: ModelMeta
     bind_values: dict[str, object]
 
@@ -51,6 +52,7 @@ def _linear_regression() -> ReferenceModelCase:
 
     return ReferenceModelCase(
         name="linear_regression",
+        model_cls=LinearRegression,
         meta=_meta(LinearRegression),
         bind_values={
             "x": [-1.0, -0.5, 0.0, 0.5, 1.0],
@@ -60,19 +62,24 @@ def _linear_regression() -> ReferenceModelCase:
 
 
 def _eight_schools_non_centered() -> ReferenceModelCase:
+    # Dim labels are sidecar-only semantic metadata: they change the
+    # dims.json artifact, never the IR document or its canonical bytes.
+    school = Dim("school", coords=("A", "B", "C", "D", "E", "F", "G", "H"))
+
     @model
     class EightSchoolsNonCentered:
         n_schools = Data.scalar()
-        sigma = Data.vector(n_schools)
+        sigma = Data.vector(n_schools, dims=(school,))
 
         mu = Param(Normal(0.0, 5.0))
         tau = Param(HalfNormal(5.0), constraint=Positive())
-        z = Param(Normal(0.0, 1.0), size=n_schools)
+        z = Param(Normal(0.0, 1.0), size=n_schools, dims=(school,))
         theta = mu + tau * z
-        y = Observed(Normal(theta, sigma))
+        y = Observed(Normal(theta, sigma), dims=(school,))
 
     return ReferenceModelCase(
         name="eight_schools_non_centered",
+        model_cls=EightSchoolsNonCentered,
         meta=_meta(EightSchoolsNonCentered),
         bind_values={
             "n_schools": 8,
@@ -99,6 +106,7 @@ def _varying_intercepts_poisson() -> ReferenceModelCase:
 
     return ReferenceModelCase(
         name="varying_intercepts_poisson",
+        model_cls=VaryingInterceptsPoisson,
         meta=_meta(VaryingInterceptsPoisson),
         bind_values={
             "n_groups": 3,
@@ -123,6 +131,7 @@ def _ordinal_regression() -> ReferenceModelCase:
 
     return ReferenceModelCase(
         name="ordinal_regression",
+        model_cls=OrdinalRegression,
         meta=_meta(OrdinalRegression),
         bind_values={
             "n_cutpoints": 2,
@@ -153,6 +162,7 @@ def _partially_observed_mvn() -> ReferenceModelCase:
 
     return ReferenceModelCase(
         name="partially_observed_mvn",
+        model_cls=PartiallyObservedMvn,
         meta=_meta(PartiallyObservedMvn),
         bind_values={
             "n": 3,
@@ -178,6 +188,7 @@ def _bounded_rates() -> ReferenceModelCase:
 
     return ReferenceModelCase(
         name="bounded_rates",
+        model_cls=BoundedRates,
         meta=_meta(BoundedRates),
         bind_values={"y": [0, 1, 1, 0, 1]},
     )
