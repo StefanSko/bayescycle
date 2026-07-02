@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync (bayeswire + jaxstanv5 inproc extra)
+        run: uv sync --extra inproc
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Types
+        run: uv run ty check
+      - name: Tests
+        run: uv run pytest -q
+
+  # The default agent path executes model.py with bayeswire only — no JAX,
+  # ever. This job proves it end-to-end with a real bayesite binary.
+  no-jax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Checkout bayesite
+        uses: actions/checkout@v4
+        with:
+          repository: StefanSko/bayesite
+          path: .bayesite-src
+      - name: Build bayesite release binary
+        run: cargo build --release --manifest-path .bayesite-src/Cargo.toml
+      - name: Sync without the inproc extra (no JAX installed)
+        run: uv sync
+      - name: Assert JAX is absent
+        run: |
+          uv run python -c "
+          import importlib.util
+          assert importlib.util.find_spec('jax') is None, 'JAX leaked onto the default path'
+          assert importlib.util.find_spec('jaxstanv5') is None, 'jaxstanv5 leaked onto the default path'
+          import bayeswire
+          "
+      - name: Bayesite-backend test subset
+        run: |
+          export BAYESCYCLE_TEST_BAYESITE_BIN="$PWD/.bayesite-src/target/release/bayesite"
+          uv run pytest -q

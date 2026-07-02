@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from jaxstanv5.ir import canonical_bytes
-from jaxstanv5.model import ModelMeta
+from bayeswire.ir import canonical_bytes
+from bayeswire.model import ModelMeta
 
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import load_model

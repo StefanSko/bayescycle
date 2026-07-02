@@ -1,23 +1,35 @@
 # bayescycle
 
-`bayescycle` is the Python workflow CLI that connects the `jaxstanv5` authoring
+`bayescycle` is the Python workflow CLI that connects the `bayeswire` authoring
 eDSL to backend engine runs and owns the neutral run-directory contract.
 
 It is intentionally glue:
 
 ```text
-model.py -> jaxstanv5 ModelMeta -> jaxstanv5 IR JSON -> bayesite engine -> run/
+model.py -> bayeswire ModelMeta -> bayeswire IR JSON -> bayesite engine -> run/
 ```
 
 ## Package split
 
+- **bayeswire**: Python model declaration eDSL, the `bayeswire_ir` wire format,
+  its normative spec, and the conformance corpus. Stdlib only.
 - **bayesite**: Rust engine and IR-level CLI. It accepts IR plus data and writes
   draws. It stays dependency-free and WASM-clean.
-- **jaxstanv5**: Python model declaration eDSL and IR serializer. It does not own
-  workflow orchestration.
+- **jaxstanv5**: JAX/BlackJAX sampling backend for bayeswire models. Optional
+  here; installed via the `[inproc]` extra.
 - **bayescycle**: Python workflow harness. It executes a Python model file,
   serializes IR, invokes a backend, and owns run-directory ergonomics and the
   run artifact contract.
+
+## Trust surface of the default path
+
+With the default `--backend bayesite`, running a workflow executes `model.py`
+in a Python environment containing exactly one stdlib-only package
+(`bayeswire`, plus `bayescycle` itself) and invokes one auditable
+zero-dependency Rust binary. No JAX on the default path, ever. That is the
+honest version of the original zero-dependency claim: not "no supply-chain
+danger", but every step of the default path is small enough to audit, pinned
+enough to reproduce, and deterministic enough to replay.
 
 ## Initial CLI
 
@@ -189,10 +201,11 @@ uv run pytest
 
 ## Boundary invariant
 
-`bayescycle` may execute Python authoring code and depend on `jaxstanv5`. It may
-serialize authoring-side metadata that `jaxstanv5` explicitly exposes into the
-run directory, such as optional dimension labels in `dims.json`, and sampler
-facts explicitly exposed by the selected backend. It must not invent model
-semantics, infer labels from shapes/names, contain inference algorithms,
-distribution math, IR evaluation, or sampler logic. Those belong in Bayesite or
-`jaxstanv5`.
+`bayescycle` may execute Python authoring code and depends on `bayeswire` for
+authoring semantics and IR serialization. It may serialize authoring-side
+metadata that `bayeswire` explicitly exposes into the run directory, such as
+optional dimension labels in `dims.json`, and sampler facts explicitly exposed
+by the selected backend. It must not invent model semantics, infer labels from
+shapes/names, contain inference algorithms, distribution math, IR evaluation,
+or sampler logic. Authoring semantics belong to `bayeswire`; sampler facts
+belong to `jaxstanv5` or Bayesite.

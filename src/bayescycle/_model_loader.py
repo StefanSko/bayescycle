@@ -1,4 +1,4 @@
-"""Load a jaxstanv5 model declaration from a Python file."""
+"""Load a bayeswire model declaration from a Python file."""
 
 from __future__ import annotations
 
@@ -9,19 +9,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol, cast
+from typing import cast
 
-from jaxstanv5.model import ModelMeta
+from bayeswire.model import ModelMeta, is_model_class, model_meta
 
 
 class ModelLoadError(RuntimeError):
     """Raised when a Python model file cannot produce one model metadata object."""
-
-
-class ModelObject(Protocol):
-    """Object carrying jaxstanv5 model metadata."""
-
-    _model_meta: ModelMeta
 
 
 @dataclass(frozen=True)
@@ -34,7 +28,7 @@ class LoadedModel:
 
 
 def load_model(path: Path, model_name: str | None) -> LoadedModel:
-    """Execute ``path`` and return the selected jaxstanv5 model metadata."""
+    """Execute ``path`` and return the selected bayeswire model metadata."""
     module = _execute_module(path)
     if model_name is not None:
         return _load_named_model(module, model_name)
@@ -78,12 +72,12 @@ def _load_named_model(module: ModuleType, name: str) -> LoadedModel:
     if name not in namespace:
         raise ModelLoadError(f"model {name!r} was not found in {module.__file__}")
     value = namespace[name]
-    if not _is_model_object(value):
-        raise ModelLoadError(f"object {name!r} is not a jaxstanv5 @model declaration")
+    if not is_model_class(value):
+        raise ModelLoadError(f"object {name!r} is not a bayeswire @model declaration")
     return LoadedModel(
         name=name,
         model_cls=cast(type[object], value),
-        meta=cast(ModelObject, value)._model_meta,
+        meta=model_meta(value),
     )
 
 
@@ -93,12 +87,12 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
     for name, value in namespace.items():
         if name.startswith("_"):
             continue
-        if _declared_in_module(value, module) and _is_model_object(value):
+        if _declared_in_module(value, module) and is_model_class(value):
             matches.append(
                 LoadedModel(
                     name=name,
                     model_cls=cast(type[object], value),
-                    meta=cast(ModelObject, value)._model_meta,
+                    meta=model_meta(value),
                 )
             )
 
@@ -106,18 +100,14 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
         return matches[0]
     if not matches:
         raise ModelLoadError(
-            f"no jaxstanv5 @model declaration was found in {module.__file__}; "
+            f"no bayeswire @model declaration was found in {module.__file__}; "
             "pass --model NAME if the model is imported"
         )
     names = ", ".join(match.name for match in matches)
     raise ModelLoadError(
-        f"multiple jaxstanv5 models were found in {module.__file__}: {names}; "
+        f"multiple bayeswire models were found in {module.__file__}: {names}; "
         "choose one with --model NAME"
     )
-
-
-def _is_model_object(value: object) -> bool:
-    return isinstance(value, type) and isinstance(getattr(value, "_model_meta", None), ModelMeta)
 
 
 def _declared_in_module(value: object, module: ModuleType) -> bool:

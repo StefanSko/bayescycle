@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, cast
-
-from jaxstanv5.model.bound import BoundModel
+from typing import TYPE_CHECKING, Protocol, cast
 
 from bayescycle._run_artifacts.canonical_data import (
     DataDocError,
@@ -17,13 +15,16 @@ from bayescycle.backends.jaxstanv5.commands import (
     Jaxstanv5SampleCommand,
 )
 
+if TYPE_CHECKING:
+    from jaxstanv5.model.bound import BoundModel
+
 
 class InProcessBackendError(RuntimeError):
     """Raised when the in-process backend cannot complete a run."""
 
 
-class _BindableModel(Protocol):
-    def bind(self, **values: object) -> BoundModel: ...
+class _BindModelFunction(Protocol):
+    def __call__(self, model_cls: object, values: dict[str, object]) -> BoundModel: ...
 
 
 class _PriorPredictiveFunction(Protocol):
@@ -67,10 +68,10 @@ def run_jaxstanv5_sample(command: Jaxstanv5SampleCommand) -> int:
             "jaxstanv5 in-process backend requires JAX and BlackJAX. "
             "Install with `bayescycle[inproc]` or use `--backend bayesite`."
         ) from exc
+    bind_model = _load_bind_function()
     data = _load_data(command.data_path.path)
     try:
-        model_cls = cast(_BindableModel, command.loaded_model.model_cls)
-        bound = model_cls.bind(**data)
+        bound = bind_model(command.loaded_model.model_cls, data)
         result = sample(
             bound,
             command.settings.seed,
@@ -147,6 +148,17 @@ def _load_prior_predictive_function() -> _PriorPredictiveFunction:
             "Install with `bayescycle[inproc]` or use `--backend bayesite`."
         ) from exc
     return cast(_PriorPredictiveFunction, simulate_prior_predictive)
+
+
+def _load_bind_function() -> _BindModelFunction:
+    try:
+        from jaxstanv5.model import bind_model
+    except ImportError as exc:
+        raise InProcessBackendError(
+            "jaxstanv5 in-process backend requires the jaxstanv5 package. "
+            "Install with `bayescycle[inproc]` or use `--backend bayesite`."
+        ) from exc
+    return cast(_BindModelFunction, bind_model)
 
 
 def _load_sample_function() -> _SampleFunction:

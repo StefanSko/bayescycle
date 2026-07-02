@@ -38,36 +38,9 @@ fi
 export PYTHONDONTWRITEBYTECODE=1  # keep demo trees free of __pycache__ (difficulties #9)
 mkdir -p "$WORK"
 
-# --- preflight shim -------------------------------------------------------
-# DIFFICULTY (see docs/walkthrough-difficulties.md #1): bayescycle's engine
-# preflight scans `bayesite --help` for `usage: bayesite <cmd>` lines, but the
-# current engine answers `--help` with a single-line JSON error on stderr, so
-# only `sample` is discovered and every other stage is rejected as "stale".
-# This shim answers the capability probe with parseable multi-line usage and
-# delegates real work to the engine. Remove it once the engine prints a plain
-# `--help`, or once preflight learns to read the JSON usage message.
-SHIM="$WORK/bayesite-preflight-shim"
-cat > "$SHIM" <<SH
-#!/usr/bin/env bash
-REAL="$BAYESITE_BIN"
-if [ "\$1" = "--help" ] || [ \$# -eq 0 ]; then
-  cat <<'USAGE'
-usage: bayesite sample --model <ir.json|-> --data <data.json|->
-usage: bayesite diagnose --fit <fit.jsonl|->
-usage: bayesite prior-predictive --model <ir.json|-> --data <data.json|->
-usage: bayesite posterior-predictive --model <ir.json|-> --data <data.json|-> --fit <fit.jsonl|->
-usage: bayesite posterior-check --model <ir.json|-> --data <data.json|-> --fit <fit.jsonl|->
-usage: bayesite simulate --model <ir.json|-> --data <data.json|-> --truth <truth.json|->
-usage: bayesite recover-check --fit <fit.jsonl|-> --truth <truth.json|->
-usage: bayesite recover --model <ir.json|-> --scenario <scenario.json|->
-usage: bayesite sbc --model <ir.json|-> --scenario <scenario.json|->
-USAGE
-  exit 0
-fi
-exec "\$REAL" "\$@"
-SH
-chmod +x "$SHIM"
-ENG="$SHIM"
+# The engine is used directly: bayescycle's preflight reads the engine's
+# JSON usage message (walkthrough difficulty #1 is fixed).
+ENG="$BAYESITE_BIN"
 
 bc() { ( cd "$PROJECT" && uv run --extra inproc bayescycle "$@" ); }
 viz() { ( cd "$PROJECT" && uv run --no-project --with "$BAYESITE_VIZ" --python "$VIZ_PY" -- "$@" ); }
@@ -78,9 +51,9 @@ write_models() {
   cat > "$dir/model_v1.py" <<'PY'
 """Iteration 1: priors are far too wide; the prior-predictive gate rejects it."""
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import HalfNormal, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
 
 
 @model
@@ -95,9 +68,9 @@ PY
   cat > "$dir/model.py" <<'PY'
 """Iteration 2: priors tightened to a plausible scale after the gate failed."""
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import HalfNormal, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
 
 
 @model

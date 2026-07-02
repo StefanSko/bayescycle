@@ -1,16 +1,18 @@
 [project]
 name = "bayescycle"
 version = "0.1.0"
-description = "Python workflow CLI for jaxstanv5 model authoring and Bayesite engine runs."
+description = "Python workflow CLI for bayeswire model authoring and Bayesite engine runs."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git",
+    # The harness and the language move in lockstep: exact-commit pin, bumped
+    # deliberately (the pin-bump diff is the compatibility review).
+    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@827a74b09fd19e1bfcc58e5418b74088958145aa",
 ]
 
 [project.optional-dependencies]
 inproc = [
-    "jaxstanv5[jax] @ git+https://github.com/StefanSko/jaxstanv5.git",
+    "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git@9cf499489a42d1d0045492293e5f751023e4cf24",
 ]
 
 [project.scripts]
@@ -20,7 +22,7 @@ bayescycle = "bayescycle._cli:main"
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.13.0",
-    "ty>=0.0.1a20",
+    "ty==0.0.49",
 ]
 
 [build-system]

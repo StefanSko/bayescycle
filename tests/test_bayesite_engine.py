@@ -162,3 +162,35 @@ def test_preflight_rejects_stale_engine_without_required_command(tmp_path: Path)
         preflight_bayesite_engine(
             str(engine), (BayesiteCommandRequirement("simulate", "simulate"),)
         )
+
+
+def test_preflight_parses_single_line_json_error_probe(tmp_path: Path) -> None:
+    """The real engine answers probes with one JSON object whose message embeds usage."""
+    engine = tmp_path / "bayesite.py"
+    usage = (
+        "unknown command; "
+        "usage: bayesite sample --model <ir.json|-> --data <data.json|->\n"
+        "usage: bayesite diagnose --fit <fit.jsonl|->\n"
+        "usage: bayesite posterior-predictive --model <ir.json|->"
+    )
+    body = (
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        f"message = {usage!r}\n"
+        'sys.stderr.write(json.dumps({"error_format": "v0-provisional", '
+        '"error": "InvalidSettings", "message": message}))\n'
+        "sys.exit(2)\n"
+    )
+    engine.write_text(body, encoding="utf-8")
+    engine.chmod(0o755)
+
+    info = preflight_bayesite_engine(
+        str(engine),
+        (
+            BayesiteCommandRequirement("sample", "sample"),
+            BayesiteCommandRequirement("diagnose", "diagnose"),
+            BayesiteCommandRequirement("posterior-predictive", "posterior-predictive"),
+        ),
+    )
+
+    assert set(info.commands) >= {"sample", "diagnose", "posterior-predictive"}

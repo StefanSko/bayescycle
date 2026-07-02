@@ -3,7 +3,8 @@
 ## Responsibility
 
 - `bayescycle` is a workflow harness, not a sampler and not a modeling library.
-- Python model execution and IR serialization are delegated to `jaxstanv5`.
+- Python model execution and IR serialization are delegated to `bayeswire`,
+  the owner of authoring semantics and the wire format.
 - Sampling is delegated to an engine backend such as the Bayesite CLI or an
   explicitly selected in-process backend.
 - Run-directory preparation, canonical data-artifact serialization, command
@@ -11,8 +12,9 @@
   responsibilities.
 - Run-directory metadata sidecars are allowed only when they serialize command
   provenance, artifact paths and hashes, or metadata explicitly exposed by
-  `jaxstanv5`; `bayescycle` must not invent model semantics such as dimension
-  labels.
+  `bayeswire`; `bayescycle` must not invent model semantics such as dimension
+  labels. Authoring semantics belong to bayeswire; sampler facts belong to the
+  selected backend (jaxstanv5 or Bayesite).
 
 ## Boundaries
 
@@ -103,6 +105,8 @@ layout keeps matching the architecture.
   `.bayesite/`, preflight the selected binary, and canonicalize generated data;
   it must not expose Bayesite-private files as workflow-stage artifacts.
 - `bayescycle.backends.jaxstanv5` is a first-party in-process Python adapter. It
-  may call public jaxstanv5 runtime APIs and serialize their explicitly exposed
-  results; it must not make BlackJAX or JAX implementation details part of the
-  workflow contract.
+  may call public jaxstanv5 runtime APIs (`bind_model`, `sample`,
+  `simulate_prior_predictive`) and serialize their explicitly exposed results;
+  it must not make BlackJAX or JAX implementation details part of the workflow
+  contract. It is the only module allowed to import the `jaxstanv5` package,
+  which is an optional dependency installed via the `[inproc]` extra.
