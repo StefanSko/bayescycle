@@ -79,9 +79,9 @@ fail before any writes &mdash; see the run-directory contract docs.</p>
 <h2>A wide-prior model fails prior predictive</h2>
 <pre data-lang="python"><code>"""Iteration 1: priors are far too wide; the prior-predictive gate rejects it."""
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import HalfNormal, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
 
 
 @model
@@ -110,9 +110,9 @@ is a gate, not a formality.</p>
 <h2>Tightened priors pass the gate</h2>
 <pre data-lang="python"><code>"""Iteration 2: priors tightened to a plausible scale after the gate failed."""
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import HalfNormal, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
 
 
 @model

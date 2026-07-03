@@ -120,7 +120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bayescycle",
-        description="Workflow CLI from jaxstanv5 Python models to Bayesite engine runs.",
+        description="Workflow CLI from bayeswire Python models to Bayesite engine runs.",
     )
     parser.add_argument("--version", action="version", version=f"bayescycle {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -129,7 +129,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "sample",
         description="Compile a Python model file to IR and invoke the selected backend.",
     )
-    sample.add_argument("model_path", type=Path, help="Python file containing a jaxstanv5 @model")
+    sample.add_argument("model_path", type=Path, help="Python file containing a bayeswire @model")
     sample.add_argument(
         "--model", dest="model_name", help="model class name when discovery is ambiguous"
     )
@@ -328,7 +328,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_model_selection_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("model_path", type=Path, help="Python file containing a jaxstanv5 @model")
+    parser.add_argument("model_path", type=Path, help="Python file containing a bayeswire @model")
     parser.add_argument(
         "--model", dest="model_name", help="model class name when discovery is ambiguous"
     )

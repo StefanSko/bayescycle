@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
-from jaxstanv5 import dimension_metadata_to_dict, model_dimensions
-from jaxstanv5.model import ModelMeta
+from bayeswire import dimension_metadata_to_dict, model_dimensions
+from bayeswire.model import ModelMeta
 
 DIMS_FORMAT = "bayescycle-dims-v1"
 
@@ -45,7 +45,7 @@ class DimsSidecar:
 
 
 def dims_sidecar_for_model(model_cls: type[object], meta: ModelMeta) -> DimsSidecar | None:
-    """Build the optional dims sidecar from jaxstanv5 authoring metadata."""
+    """Build the optional dims sidecar from bayeswire authoring metadata."""
     metadata = dimension_metadata_to_dict(model_dimensions(model_cls))
     sidecar = DimsSidecar(
         dims={name: tuple(dims) for name, dims in metadata["dims"].items()},
@@ -81,7 +81,7 @@ def _validate_sidecar(sidecar: DimsSidecar) -> None:
             if not _is_json_scalar(coord):
                 raise ValueError("coordinate values must be JSON scalar values")
 
-    # Keep this as a final guard even though jaxstanv5 normalizes coordinates.
+    # Keep this as a final guard even though bayeswire normalizes coordinates.
     json.dumps(sidecar.to_json_document(), allow_nan=False)
 
 

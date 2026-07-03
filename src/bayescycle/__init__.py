@@ -1,4 +1,4 @@
-"""Python workflow CLI for jaxstanv5 authoring and Bayesite engine runs."""
+"""Python workflow CLI for bayeswire authoring and Bayesite engine runs."""
 
 from __future__ import annotations
 

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from bayescycle._run_artifacts.posterior_ndjson import PosteriorArtifactError, _probability_float
+pytest.importorskip("jaxstanv5", reason="posterior artifact writer is inproc-backend code")
+
+from bayescycle._run_artifacts.posterior_ndjson import (  # noqa: E402
+    PosteriorArtifactError,
+    _probability_float,
+)
 
 
 def test_probability_float_clamps_float32_acceptance_roundoff() -> None:

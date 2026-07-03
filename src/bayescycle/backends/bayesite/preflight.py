@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from bayescycle._errors import WorkflowError
 
@@ -98,7 +100,34 @@ def _run_engine_for_text(executable: Path, *args: str) -> str:
         raise WorkflowError(f"cannot execute Bayesite engine {executable}: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
         raise WorkflowError(f"Bayesite engine preflight timed out: {executable}") from exc
-    return f"{completed.stdout}\n{completed.stderr}"
+    return "\n".join(
+        _expand_json_error_lines(f"{completed.stdout}\n{completed.stderr}".splitlines())
+    )
+
+
+def _expand_json_error_lines(lines: list[str]) -> list[str]:
+    """Expand single-line JSON engine errors into their embedded message text.
+
+    The engine answers probes with one JSON object whose ``message`` field
+    embeds multi-line usage text; expanding it lets the usage scan below see
+    one command per line.
+    """
+    expanded: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("{"):
+            try:
+                document = json.loads(stripped)
+            except json.JSONDecodeError:
+                expanded.append(line)
+                continue
+            if isinstance(document, dict):
+                message = cast("dict[str, object]", document).get("message")
+                if isinstance(message, str):
+                    expanded.extend(message.splitlines())
+                    continue
+        expanded.append(line)
+    return expanded
 
 
 def _usage_commands(text: str) -> tuple[str, ...]:

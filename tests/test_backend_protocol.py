@@ -238,8 +238,8 @@ def test_backend_plan_description_is_closed_adt_lowered_by_workflow(
 def test_sample_backend_protocol_is_plan_materialize_execute(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"
@@ -317,8 +317,8 @@ def test_run_directory_output_guard_treats_dangling_symlink_as_existing(
 def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     original_model = (
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"
@@ -361,8 +361,8 @@ def test_materialized_run_metadata_uses_hashes_captured_at_planning(tmp_path: Pa
 def test_simulate_metadata_hashes_materialized_truth(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"
@@ -398,8 +398,8 @@ def test_simulate_metadata_hashes_materialized_truth(tmp_path: Path) -> None:
 def test_recover_metadata_hashes_materialized_scenario(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"
@@ -431,8 +431,8 @@ def test_recover_metadata_hashes_materialized_scenario(tmp_path: Path) -> None:
 def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"

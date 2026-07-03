@@ -11,7 +11,7 @@ non-linear demo trees (`complete/` single-backend Bayesite, `mixed/`
 Bayesite→jaxstanv5 handoff), regenerates both HTML pages, and builds
 `docs/walkthrough-runs.sqlite`.
 
-## 1. Engine preflight can't read the current `bayesite --help`
+## 1. Engine preflight can't read the current `bayesite --help` — RESOLVED
 
 `bayescycle.backends.bayesite.preflight` discovers engine capabilities by running
 `bayesite --help` and scanning for `usage: bayesite <cmd>` lines with
@@ -38,9 +38,12 @@ The bayescycle test fixture (`tests/test_cli.py::FAKE_BAYESITE_USAGE`) expects a
 answers the capability probe with parseable multi-line usage and `exec`s the real
 binary for everything else.
 
-**Fix options (follow-up):** either have the engine print a real multi-line
-`--help` to stdout, or make preflight JSON-decode the error `message` field and
-split on `\n` before scanning for `usage:` lines.
+**Resolved (bayeswire migration):** preflight now JSON-decodes single-line
+engine errors and expands the embedded `message` text before scanning for
+`usage:` lines, so the real binary's capability probe parses without a shim.
+`build-walkthroughs.sh` drives the engine directly, and the real-engine
+end-to-end test (`tests/test_bayesite_end_to_end.py`, exercised by the no-JAX
+CI job) keeps it that way.
 
 ## 2. Cross-backend posterior-predictive / posterior-check is blocked by a fingerprint check
 

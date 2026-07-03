@@ -85,8 +85,8 @@ def _fake_bayesite_usage_prelude() -> str:
 def _write_simple_model(tmp_path: Path) -> Path:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"
@@ -99,8 +99,8 @@ def _write_simple_model(tmp_path: Path) -> Path:
 def _write_normal_mean_model(tmp_path: Path) -> Path:
     model_file = tmp_path / "normal_mean.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, Param, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class NormalMean:\n"
@@ -142,7 +142,7 @@ def _write_run_artifacts(
 ) -> None:
     run_dir.mkdir()
     if model:
-        (run_dir / "model.ir.json").write_text('{"jaxstanv5_ir": 1}\n', encoding="utf-8")
+        (run_dir / "model.ir.json").write_text('{"bayeswire_ir": 1}\n', encoding="utf-8")
     if data:
         (run_dir / "data.json").write_text('{"y": 0.25}\n', encoding="utf-8")
     if posterior:
@@ -174,8 +174,8 @@ def test_sample_dry_run_prints_command_without_materializing_run(
 ) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Simple:\n"
@@ -579,8 +579,8 @@ def test_sample_uses_preflight_resolved_engine_after_model_changes_cwd(
     model_file = tmp_path / "model.py"
     model_file.write_text(
         "import os\n"
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "os.chdir('other')\n"
         "@model\n"
         "class Simple:\n"
@@ -1630,8 +1630,8 @@ def test_sample_dry_run_reports_dims_sidecar_without_materializing_it(
 ) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Data, Dim, Observed, Param, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Data, Dim, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "obs = Dim('obs')\n"
         "predictor = Dim('predictor', coords=['x1', 'x2'])\n"
@@ -1676,8 +1676,8 @@ def test_sample_dry_run_refuses_existing_run_dir_without_removing_stale_dims_sid
 ) -> None:
     plain_model_file = tmp_path / "plain_model.py"
     plain_model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class Plain:\n"
@@ -1715,8 +1715,8 @@ def test_sample_rejects_dims_sidecar_rank_mismatch(
 ) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Dim, Observed, Param, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Dim, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "predictor = Dim('predictor')\n"
         "\n"
@@ -1756,8 +1756,8 @@ def test_sample_requires_explicit_model_when_file_declares_multiple_models(
 ) -> None:
     model_file = tmp_path / "model.py"
     model_file.write_text(
-        "from jaxstanv5 import Observed, model\n"
-        "from jaxstanv5.distributions import Normal\n"
+        "from bayeswire import Observed, model\n"
+        "from bayeswire.distributions import Normal\n"
         "\n"
         "@model\n"
         "class First:\n"
@@ -1784,4 +1784,4 @@ def test_sample_requires_explicit_model_when_file_declares_multiple_models(
     )
 
     assert code == 2
-    assert "multiple jaxstanv5 models" in capsys.readouterr().err
+    assert "multiple bayeswire models" in capsys.readouterr().err

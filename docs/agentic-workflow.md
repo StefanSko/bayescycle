@@ -2,7 +2,7 @@
 
 This repository contains an optional agent skill for running a gated Bayesian
 study workflow. It lives outside `src/bayescycle` because the Python package
-remains a narrow CLI harness from `jaxstanv5` model files to Bayesite engine run
+remains a narrow CLI harness from `bayeswire` model files to Bayesite engine run
 directories.
 
 ## Boundary
@@ -78,8 +78,8 @@ The current concrete adapters are `jaxstanv5-bayesite-v1` and
 `jaxstanv5-inproc-v1`:
 
 ```text
-jaxstanv5 model.py -> bayescycle CLI -> Bayesite engine -> run directory
-jaxstanv5 model.py -> bayescycle CLI -> jaxstanv5 in-process backend -> run directory
+bayeswire model.py -> bayescycle CLI -> Bayesite engine -> run directory
+bayeswire model.py -> bayescycle CLI -> jaxstanv5 in-process backend -> run directory
 ```
 
 The simulation gate should use first-class `bayescycle` commands rather than

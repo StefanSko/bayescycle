@@ -105,7 +105,7 @@ posterior predictive, posterior check) proceed, finishing with ArviZ visualizati
 <p>The architectural invariant: every command is a typed state transition that
 writes the same <strong>bayescycle run-directory v0 contract</strong>, plus an
 append-only <strong><span class="mono">run.json</span> (bayescycle.run.v1)</strong>
-provenance record. The model is authored in <span class="mono">jaxstanv5</span>;
+provenance record. The model is authored in <span class="mono">bayeswire</span>;
 <span class="mono">bayescycle</span> owns run-directory paths, artifact
 serialization, and backend dispatch through narrow per-operation integration
 modes; Bayesite and bayesite-viz consume the artifacts.</p>
@@ -125,9 +125,9 @@ attempt uses a new run id.</p>
 <div class="divider"><span>Iteration 1 — rejected at the gate</span></div>
 <section class="step"><h2><span class="num">1</span>A wide-prior model fails prior predictive</h2><p class="lead">Before touching the data, check what the model believes a priori. This one believes nonsense.</p><div class="filechip chip-input"><span class="chip-dir">INPUT</span><span class="chip-path mono">model_v1.py</span> <span class="chip-note">deliberately wide priors</span></div><pre class="code" data-lang="python"><code>"""Iteration 1: priors are far too wide; the prior-predictive gate rejects it."""
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import HalfNormal, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
 
 
 @model
@@ -166,9 +166,9 @@ class LinRegWide:
 <div class="divider"><span>Iteration 2 — respecified</span></div>
 <section class="step"><h2><span class="num">2</span>Respecified model</h2><p class="lead">A flat linear regression with scalar intercept, slope, and a positive scale &mdash; now with priors on a credible scale.</p><div class="filechip chip-input"><span class="chip-dir">INPUT</span><span class="chip-path mono">model.py</span> <span class="chip-note">tightened priors</span></div><pre class="code" data-lang="python"><code>"""Iteration 2: priors tightened to a plausible scale after the gate failed."""
 
-from jaxstanv5 import Data, Observed, Param, model
-from jaxstanv5.constraints import Positive
-from jaxstanv5.distributions import HalfNormal, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
 
 
 @model
@@ -180,7 +180,7 @@ class LinReg:
     mu = alpha + beta * x
     y = Observed(Normal(mu, sigma))
 </code></pre><p class="lead">Compiled to canonical IR on every run (truncated):</p><div class="filechip chip-write"><span class="chip-dir">WRITE</span><span class="chip-path mono">run/model.ir.json</span> <span class="chip-note">compiled from model.py</span></div><pre class="code" data-lang="json"><code>{
-  "jaxstanv5_ir": 1,
+  "bayeswire_ir": 1,
   "model": {
     "node": "ModelMeta",
     "params": [
@@ -223,7 +223,7 @@ class LinReg:
         }
       },
       {
-... (+207 more lines)</code></pre><div class="filechip chip-write"><span class="chip-dir">WRITE</span><span class="chip-path mono">run/dims.json</span> <span class="chip-note">jaxstanv5 dimension metadata</span></div><pre class="code" data-lang="json"><code>{
+... (+207 more lines)</code></pre><div class="filechip chip-write"><span class="chip-dir">WRITE</span><span class="chip-path mono">run/dims.json</span> <span class="chip-note">bayeswire dimension metadata</span></div><pre class="code" data-lang="json"><code>{
   "coords": {},
   "dims": {
     "alpha": [],
@@ -377,7 +377,7 @@ class LinReg:
     "emit_artifact"
   ],
   "posterior_identity_hash": "fnv1a64:159d7d6614fbc4d4",
-  "model_data_fingerprint": "sha256:ea58f6478f1b312c9038751e7ef334f6f690fe88dde34c6d250dacb2729ad2cb",
+  "model_data_fingerprint": "sha256:71b7a0595eee7df73c8fe29bab63becd251ceb821d558ad82c5b1283ef448ec3",
   "params": [
     {
       "name": "alpha",
@@ -477,7 +477,7 @@ class LinReg:
     "emit_artifact"
   ],
   "posterior_identity_hash": "fnv1a64:159d7d6614fbc4d4",
-  "model_data_fingerprint": "sha256:ea58f6478f1b312c9038751e7ef334f6f690fe88dde34c6d250dacb2729ad2cb",
+  "model_data_fingerprint": "sha256:71b7a0595eee7df73c8fe29bab63becd251ceb821d558ad82c5b1283ef448ec3",
   "seed": 123,
   "draws_per_chain": 500,
   "chain_count": 4,
@@ -663,14 +663,14 @@ uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \
   "backend": "bayesite",
   "model": {
     "name": "LinReg",
-    "source_path": "/tmp/bayescycle-walkthrough/complete/model.py",
-    "sha256": "sha256:7a4c29fc95f93bc1d0aca01d23b256467b75f8847e0c1247b9272728f8b7e24c",
+    "source_path": "/tmp/claude-0/-home-user/08047d3d-f443-5f2b-bdf8-83a78d8db599/scratchpad/walkthrough/complete/model.py",
+    "sha256": "sha256:9e60e89333bf957628cad4e60a0677f989deb28c54b210bb765fa685d47155b0",
     "ir_path": "model.ir.json"
   },
   "inputs": [
     {
       "role": "data",
-      "source_path": "/tmp/bayescycle-walkthrough/complete/data.json",
+      "source_path": "/tmp/claude-0/-home-user/08047d3d-f443-5f2b-bdf8-83a78d8db599/scratchpad/walkthrough/complete/data.json",
       "sha256": "sha256:9be03ccb74956d8abf3eb3d514e6b6a7bf374ea2481916bb590a41078e9dc142",
       "path": "data.json",
       "format": "bayescycle.data.json.v1"
@@ -682,7 +682,7 @@ uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \
       "path": "posterior.ndjson"
     }
   ]
-}</code></pre><p class="lead">Across the whole non-linear workflow (including the rejected iteration):</p><table class="data"><thead><tr><th>run dir</th><th>kind</th><th>backend</th><th>model sha256</th><th>inputs</th><th>outputs</th></tr></thead><tbody><tr><td class="mono">run/</td><td class="mono">sample</td><td class="mono">bayesite</td><td class="mono">7a4c29fc95&hellip;</td><td>data</td><td>posterior</td></tr><tr><td class="mono">run-prior/</td><td class="mono">prior-predictive</td><td class="mono">bayesite</td><td class="mono">7a4c29fc95&hellip;</td><td>data</td><td>prior_predictive</td></tr><tr><td class="mono">run-prior-rejected/</td><td class="mono">prior-predictive</td><td class="mono">bayesite</td><td class="mono">abf023dcd5&hellip;</td><td>data</td><td>prior_predictive</td></tr><tr><td class="mono">run-recover/</td><td class="mono">recover</td><td class="mono">bayesite</td><td class="mono">7a4c29fc95&hellip;</td><td>scenario</td><td>recovery</td></tr><tr><td class="mono">run-recover-fit/</td><td class="mono">sample</td><td class="mono">bayesite</td><td class="mono">7a4c29fc95&hellip;</td><td>data</td><td>posterior</td></tr><tr><td class="mono">run-sbc/</td><td class="mono">sbc</td><td class="mono">bayesite</td><td class="mono">7a4c29fc95&hellip;</td><td>scenario</td><td>sbc</td></tr><tr><td class="mono">run-sim/</td><td class="mono">simulate</td><td class="mono">bayesite</td><td class="mono">7a4c29fc95&hellip;</td><td>data, truth</td><td>simulated_data</td></tr></tbody></table><p class="lead">Because these records are flat and self-describing, the filesystem workflow serializes directly into a relational index (<span class="mono">docs/run-provenance-db.py</span> &rarr; <span class="mono">docs/walkthrough-runs.sqlite</span>). The cross-run artifact lineage &mdash; e.g. <span class="mono">run-sim</span>'s <span class="mono">simulated_data</span> feeding <span class="mono">run-recover-fit</span> &mdash; is recovered as rows in <span class="mono">workflow_edges</span>:</p><pre class="code" data-lang="sql"><code>SELECT r.workflow, r.run_dir, r.kind, r.backend FROM runs r ORDER BY r.id;
+}</code></pre><p class="lead">Across the whole non-linear workflow (including the rejected iteration):</p><table class="data"><thead><tr><th>run dir</th><th>kind</th><th>backend</th><th>model sha256</th><th>inputs</th><th>outputs</th></tr></thead><tbody><tr><td class="mono">run/</td><td class="mono">sample</td><td class="mono">bayesite</td><td class="mono">9e60e89333&hellip;</td><td>data</td><td>posterior</td></tr><tr><td class="mono">run-prior/</td><td class="mono">prior-predictive</td><td class="mono">bayesite</td><td class="mono">9e60e89333&hellip;</td><td>data</td><td>prior_predictive</td></tr><tr><td class="mono">run-prior-rejected/</td><td class="mono">prior-predictive</td><td class="mono">bayesite</td><td class="mono">0ad7693f24&hellip;</td><td>data</td><td>prior_predictive</td></tr><tr><td class="mono">run-recover/</td><td class="mono">recover</td><td class="mono">bayesite</td><td class="mono">9e60e89333&hellip;</td><td>scenario</td><td>recovery</td></tr><tr><td class="mono">run-recover-fit/</td><td class="mono">sample</td><td class="mono">bayesite</td><td class="mono">9e60e89333&hellip;</td><td>data</td><td>posterior</td></tr><tr><td class="mono">run-sbc/</td><td class="mono">sbc</td><td class="mono">bayesite</td><td class="mono">9e60e89333&hellip;</td><td>scenario</td><td>sbc</td></tr><tr><td class="mono">run-sim/</td><td class="mono">simulate</td><td class="mono">bayesite</td><td class="mono">9e60e89333&hellip;</td><td>data, truth</td><td>simulated_data</td></tr></tbody></table><p class="lead">Because these records are flat and self-describing, the filesystem workflow serializes directly into a relational index (<span class="mono">docs/run-provenance-db.py</span> &rarr; <span class="mono">docs/walkthrough-runs.sqlite</span>). The cross-run artifact lineage &mdash; e.g. <span class="mono">run-sim</span>'s <span class="mono">simulated_data</span> feeding <span class="mono">run-recover-fit</span> &mdash; is recovered as rows in <span class="mono">workflow_edges</span>:</p><pre class="code" data-lang="sql"><code>SELECT r.workflow, r.run_dir, r.kind, r.backend FROM runs r ORDER BY r.id;
 
 SELECT p.run_dir AS produces, e.producer_role, c.run_dir AS consumes
 FROM workflow_edges e

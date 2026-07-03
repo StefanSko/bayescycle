@@ -11,7 +11,7 @@ parsing artifact contents.
 
 ```text
 run/
-  model.ir.json       # serialized jaxstanv5 ModelMeta IR
+  model.ir.json       # serialized bayeswire ModelMeta IR
   data.json           # canonical bayescycle.data.json.v1 snapshot used for the run
   posterior.ndjson    # retained posterior draws; see posterior-draws-v0.md
 ```
@@ -22,7 +22,7 @@ run/
 run/
   manifest.json               # narrow artifact-format manifest
   run.json                    # append-only run provenance metadata
-  dims.json                   # explicit jaxstanv5 dimension metadata sidecar
+  dims.json                   # explicit bayeswire dimension metadata sidecar
   diagnostics.json            # diagnostics report for posterior.ndjson
   prior_predictive.ndjson     # prior-predictive draws when produced
   posterior_predictive.ndjson # posterior-predictive draws when produced
@@ -46,7 +46,7 @@ expected output artifact paths. It is intended as a narrow provenance index for
 future study ledgers; the run directory remains the durable artifact contract.
 
 `dims.json` may only contain dimension labels and coordinates explicitly exposed
-by `jaxstanv5`; bayescycle must not infer labels from names, shapes, or data.
+by `bayeswire`; bayescycle must not infer labels from names, shapes, or data.
 
 ## Ownership
 
