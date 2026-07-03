@@ -7,12 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     # The harness and the language move in lockstep: exact-commit pin, bumped
     # deliberately (the pin-bump diff is the compatibility review).
-    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@15cdc51e3e09bed56838248f9b3becd2bbaf8423",
+    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@v0.1.0",
 ]
 
 [project.optional-dependencies]
 inproc = [
-    "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git@597d7758f22f7f2f3fbb791c4deb6c56c47b9eda",
+    "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git@70f8bd3f9cc7d7e06652af645103250a28c803e0",
 ]
 
 [project.scripts]
