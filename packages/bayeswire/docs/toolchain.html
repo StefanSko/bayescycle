@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The bayes* toolchain — philosophy and procedure</title>
+<style>
+  :root {
+    --paper: #f4f6f5;
+    --ink: #182226;
+    --ink-soft: #45544f;
+    --line: #ccd6d1;
+    --panel: #ffffff;
+    --panel-line: #dbe3df;
+    --wire: #177e6d;          /* verdigris: the language / contract thread */
+    --wire-soft: #e2efeb;
+    --oracle: #a4572b;        /* copper: the JAX oracle / backend thread */
+    --oracle-soft: #f4e8de;
+    --rust: #5a6b78;          /* slate: the Rust engine thread */
+    --rust-soft: #e8edf0;
+    --fail: #b3423a;
+    --code-bg: #eaefec;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, Cambria, serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #131a18;
+      --ink: #e7ece9;
+      --ink-soft: #9fb0a9;
+      --line: #2c3a35;
+      --panel: #1a2320;
+      --panel-line: #2c3a35;
+      --wire: #3fae99;
+      --wire-soft: #17332d;
+      --oracle: #d08a55;
+      --oracle-soft: #33241a;
+      --rust: #8fa3b0;
+      --rust-soft: #222c33;
+      --fail: #d76d64;
+      --code-bg: #10201c;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #f4f6f5; --ink: #182226; --ink-soft: #45544f; --line: #ccd6d1;
+    --panel: #ffffff; --panel-line: #dbe3df;
+    --wire: #177e6d; --wire-soft: #e2efeb;
+    --oracle: #a4572b; --oracle-soft: #f4e8de;
+    --rust: #5a6b78; --rust-soft: #e8edf0;
+    --fail: #b3423a; --code-bg: #eaefec;
+  }
+  :root[data-theme="dark"] {
+    --paper: #131a18; --ink: #e7ece9; --ink-soft: #9fb0a9; --line: #2c3a35;
+    --panel: #1a2320; --panel-line: #2c3a35;
+    --wire: #3fae99; --wire-soft: #17332d;
+    --oracle: #d08a55; --oracle-soft: #33241a;
+    --rust: #8fa3b0; --rust-soft: #222c33;
+    --fail: #d76d64; --code-bg: #10201c;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.6;
+  }
+  .col { max-width: 76ch; margin: 0 auto; padding: 0 24px; }
+  .wide { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--wire);
+  }
+  h1, h2, h3 { font-family: var(--mono); font-weight: 600; text-wrap: balance; }
+  h1 { font-size: clamp(26px, 4.5vw, 38px); line-height: 1.2; margin: 10px 0 18px; letter-spacing: -0.01em; }
+  h2 { font-size: 21px; margin: 0 0 6px; }
+  h3 { font-size: 15px; margin: 0 0 4px; }
+  p  { margin: 0 0 1em; }
+  a  { color: var(--wire); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--wire); outline-offset: 2px; }
+  code, .m {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    background: var(--code-bg);
+    border: 1px solid var(--panel-line);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  header.masthead { padding: 64px 0 8px; }
+  .standfirst { font-size: 19px; color: var(--ink-soft); max-width: 64ch; }
+  .rule { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
+  section { margin: 0 0 56px; }
+  .section-head { margin-bottom: 22px; }
+  .section-head .eyebrow { display: block; margin-bottom: 6px; }
+  .section-head p.lede { color: var(--ink-soft); margin: 8px 0 0; max-width: 66ch; }
+
+  /* -- commitments ------------------------------------------------------ */
+  .commitments { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .commit {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-top: 3px solid var(--wire);
+    border-radius: 4px;
+    padding: 18px 18px 12px;
+  }
+  .commit h3 { color: var(--wire); }
+  .commit p { font-size: 15px; color: var(--ink-soft); margin-bottom: 6px; }
+
+  /* -- diagrams ---------------------------------------------------------- */
+  .diagram { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 18px; overflow-x: auto; }
+  .diagram svg { display: block; min-width: 640px; width: 100%; height: auto; }
+  svg text { font-family: var(--mono); fill: var(--ink); }
+  .caption { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); margin-top: 10px; }
+
+  /* -- journey ----------------------------------------------------------- */
+  .phase { display: grid; grid-template-columns: 168px 1fr; gap: 18px; position: relative; padding: 0 0 30px 0; }
+  .phase::before {
+    content: ""; position: absolute; left: 74px; top: 34px; bottom: -4px;
+    width: 2px; background: var(--line);
+  }
+  .phase:last-child::before { display: none; }
+  .phase-key { text-align: right; padding-right: 0; }
+  .phase-key .who {
+    display: inline-block; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 3px 8px; border-radius: 3px;
+    background: var(--wire-soft); color: var(--wire); position: relative; z-index: 1;
+  }
+  .phase-key .who.oracle { background: var(--oracle-soft); color: var(--oracle); }
+  .phase-key .who.rust { background: var(--rust-soft); color: var(--rust); }
+  .phase-body { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 14px 18px; }
+  .phase-body p { font-size: 15px; color: var(--ink-soft); margin: 6px 0 0; }
+  .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .file {
+    font-family: var(--mono); font-size: 12px;
+    border: 1px solid var(--panel-line); border-left: 3px solid var(--wire);
+    background: var(--code-bg); border-radius: 3px; padding: 2px 8px;
+  }
+  .file.oracle { border-left-color: var(--oracle); }
+  .file.rust { border-left-color: var(--rust); }
+  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+  .lane { border: 1px solid var(--panel-line); border-radius: 6px; padding: 12px 14px; }
+  .lane.default { border-color: var(--rust); }
+  .lane h3 { display: flex; align-items: baseline; gap: 8px; }
+  .lane .tag { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; }
+  .lane.default .tag { background: var(--rust-soft); color: var(--rust); }
+  .lane.inproc .tag { background: var(--oracle-soft); color: var(--oracle); }
+  .lane p { font-size: 14px; color: var(--ink-soft); margin: 6px 0 0; }
+  @media (max-width: 700px) {
+    .phase { grid-template-columns: 1fr; }
+    .phase::before { display: none; }
+    .phase-key { text-align: left; }
+    .lanes { grid-template-columns: 1fr; }
+  }
+
+  /* -- trust strip -------------------------------------------------------- */
+  .trust {
+    border: 1px solid var(--wire);
+    background: var(--wire-soft);
+    border-radius: 6px;
+    padding: 18px 22px;
+  }
+  .trust p { margin: 6px 0 0; font-size: 15px; }
+  .trust .m { background: var(--panel); }
+
+  /* -- CI board ------------------------------------------------------------ */
+  .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .gate { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 16px 18px; }
+  .gate h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .gate h3 .repo { color: var(--wire); }
+  .gate h3 .kind { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); font-weight: 400; }
+  .gate ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--ink-soft); }
+  .gate li { margin-bottom: 4px; }
+  .gate li strong { color: var(--ink); font-weight: 600; }
+
+  ol.procedure { counter-reset: step; list-style: none; margin: 0; padding: 0; }
+  ol.procedure li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 18px 52px;
+    font-size: 15px;
+  }
+  ol.procedure li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 0;
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    background: var(--wire-soft); color: var(--wire);
+    border: 1px solid var(--wire);
+  }
+  ol.procedure li::after {
+    content: ""; position: absolute; left: 15px; top: 36px; bottom: 2px;
+    width: 2px; background: var(--line);
+  }
+  ol.procedure li:last-child::after { display: none; }
+  ol.procedure strong { font-family: var(--mono); font-size: 13.5px; }
+
+  .asym {
+    border: 1px solid var(--panel-line);
+    border-left: 4px solid var(--fail);
+    background: var(--panel);
+    border-radius: 4px;
+    padding: 14px 18px;
+    font-size: 15px;
+  }
+  .asym .m { color: var(--fail); }
+
+  footer { padding: 12px 0 60px; color: var(--ink-soft); font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header class="masthead col">
+  <span class="eyebrow">bayeswire / docs / toolchain</span>
+  <h1>A Bayesian workflow an agent can run end-to-end through files</h1>
+  <p class="standfirst">
+    Deterministic, replayable, and auditable. The customer is an agent — and the
+    human auditing it — so the product is trustworthy <em>process</em>, not a
+    sampler. This page explains the philosophy, walks a model from Python class
+    to plots through <span class="m">jaxstanv5</span> and
+    <span class="m">bayesite</span>, and shows how CI holds the contract together.
+  </p>
+</header>
+
+<div class="col"><hr class="rule"></div>
+
+<!-- ==================== philosophy ==================== -->
+<section class="col" id="philosophy">
+  <div class="section-head">
+    <span class="eyebrow">philosophy</span>
+    <h2>Three commitments</h2>
+  </div>
+  <div class="commitments">
+    <div class="commit">
+      <h3>The contract is the product</h3>
+      <p>The system's real interface is not any one tool — it is the model
+      language and the artifact formats the tools exchange. bayeswire
+      <em>is</em> that language: spec, corpus, and conformance tests versioned
+      together in one place.</p>
+      <p>One normative copy of the truth. Every other repository is a producer
+      or consumer that provably conforms; drift is a red CI job, not an
+      archaeology finding.</p>
+    </div>
+    <div class="commit">
+      <h3>The model is data, not code</h3>
+      <p>A run directory that bottoms out at “a hash of arbitrary Python” needs
+      untrusted code re-executed to be interpreted. Instead, models serialize
+      to an IR document, and <span class="m">meta_from_dict</span> decodes it
+      while executing <em>no user code</em>.</p>
+      <p>Every downstream phase — diagnose, posterior-predictive, a re-fit
+      months later — proceeds from the artifact alone. The IR is an audit-trail
+      primitive first, an interchange format second.</p>
+    </div>
+    <div class="commit">
+      <h3>Minimal trust surface, honestly stated</h3>
+      <p>The default path executes your model in an environment containing
+      exactly one stdlib-only package plus one auditable Rust binary. Not
+      “no supply-chain danger” — rather: every step is small enough to audit,
+      pinned enough to reproduce, deterministic enough to replay.</p>
+      <p>Where backends differ in capability, the difference is recorded and
+      tested, never hidden.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== repo map ==================== -->
+<section class="wide" id="map">
+  <div class="section-head col" style="padding:0;">
+    <span class="eyebrow">the repositories</span>
+    <h2>One language, two engines, one harness</h2>
+    <p class="lede">Dependency direction is one-way and explicit. Solid arrows
+    are pinned package dependencies (exact commit — the pin-bump diff is the
+    compatibility review). The dashed arrow is file vendoring: bayesite takes
+    bytes, never packages.</p>
+  </div>
+  <div class="diagram">
+    <svg viewBox="0 0 960 420" role="img" aria-label="Repository map: bayescycle depends on bayeswire and optionally jaxstanv5; jaxstanv5 depends on bayeswire; bayesite vendors files from bayeswire; bayesite-viz consumes the artifact corpus.">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"></path>
+        </marker>
+        <marker id="arrw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--wire)"></path>
+        </marker>
+      </defs>
+
+      <!-- bayeswire (center) -->
+      <rect x="360" y="150" width="240" height="120" rx="6" fill="var(--wire-soft)" stroke="var(--wire)" stroke-width="2"></rect>
+      <text x="480" y="182" text-anchor="middle" font-size="18" font-weight="700" fill="var(--wire)">bayeswire</text>
+      <text x="480" y="205" text-anchor="middle" font-size="12">the language · stdlib only</text>
+      <text x="480" y="224" text-anchor="middle" font-size="11" fill="var(--ink-soft)">eDSL · IR codec · wire spec</text>
+      <text x="480" y="241" text-anchor="middle" font-size="11" fill="var(--ink-soft)">conformance corpus + artifacts</text>
+
+      <!-- bayescycle (top) -->
+      <rect x="370" y="20" width="220" height="70" rx="6" fill="var(--panel)" stroke="var(--panel-line)" stroke-width="1.5"></rect>
+      <text x="480" y="48" text-anchor="middle" font-size="15" font-weight="700">bayescycle</text>
+      <text x="480" y="68" text-anchor="middle" font-size="11" fill="var(--ink-soft)">workflow harness · run directories</text>
+
+      <!-- jaxstanv5 (left) -->
+      <rect x="40" y="160" width="220" height="100" rx="6" fill="var(--oracle-soft)" stroke="var(--oracle)" stroke-width="1.5"></rect>
+      <text x="150" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="var(--oracle)">jaxstanv5</text>
+      <text x="150" y="210" text-anchor="middle" font-size="11" fill="var(--ink-soft)">JAX / BlackJAX backend</text>
+      <text x="150" y="227" text-anchor="middle" font-size="11" fill="var(--ink-soft)">bind · NUTS · diagnostics</text>
+      <text x="150" y="244" text-anchor="middle" font-size="11" fill="var(--ink-soft)">float64 oracle for the corpus</text>
+
+      <!-- bayesite (right) -->
+      <rect x="700" y="160" width="220" height="100" rx="6" fill="var(--rust-soft)" stroke="var(--rust)" stroke-width="1.5"></rect>
+      <text x="810" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="var(--rust)">bayesite</text>
+      <text x="810" y="210" text-anchor="middle" font-size="11" fill="var(--ink-soft)">zero-dependency Rust engine</text>
+      <text x="810" y="227" text-anchor="middle" font-size="11" fill="var(--ink-soft)">one static binary · wasm-clean</text>
+      <text x="810" y="244" text-anchor="middle" font-size="11" fill="var(--ink-soft)">default execution path</text>
+
+      <!-- bayesite-viz (bottom) -->
+      <rect x="370" y="330" width="220" height="70" rx="6" fill="var(--panel)" stroke="var(--panel-line)" stroke-width="1.5"></rect>
+      <text x="480" y="358" text-anchor="middle" font-size="15" font-weight="700">bayesite-viz</text>
+      <text x="480" y="378" text-anchor="middle" font-size="11" fill="var(--ink-soft)">bayesite_idata exporter · ArviZ plots</text>
+
+      <!-- edges -->
+      <!-- bayescycle -> bayeswire -->
+      <line x1="455" y1="90" x2="455" y2="146" stroke="var(--wire)" stroke-width="2" marker-end="url(#arrw)"></line>
+      <text x="447" y="122" text-anchor="end" font-size="10.5" fill="var(--ink-soft)">pinned dep</text>
+      <!-- bayescycle -> jaxstanv5 (optional) -->
+      <path d="M 368 68 C 210 80 150 100 150 156" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arr)"></path>
+      <text x="215" y="98" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">[inproc] extra, pinned</text>
+      <!-- bayescycle -> bayesite (invokes) -->
+      <path d="M 592 68 C 750 80 810 100 810 156" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arr)"></path>
+      <text x="748" y="98" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">invokes binary (default)</text>
+      <!-- jaxstanv5 -> bayeswire -->
+      <line x1="264" y1="210" x2="356" y2="210" stroke="var(--wire)" stroke-width="2" marker-end="url(#arrw)"></line>
+      <text x="310" y="200" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">pinned dep</text>
+      <!-- bayeswire -> bayesite (vendored, dashed; drawn from bayesite pulling bytes) -->
+      <line x1="696" y1="210" x2="604" y2="210" stroke="var(--rust)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr)"></line>
+      <text x="650" y="200" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">vendors bytes</text>
+      <text x="650" y="228" text-anchor="middle" font-size="10" fill="var(--ink-soft)">BAYESWIRE_TAG + sha256</text>
+      <!-- bayesite-viz -> bayeswire (artifact corpus) -->
+      <line x1="480" y1="326" x2="480" y2="274" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arr)"></line>
+      <text x="490" y="304" font-size="10.5" fill="var(--ink-soft)">test fixtures: corpus/artifacts</text>
+    </svg>
+    <p class="caption">Nothing depends on a backend to define a model. bayeswire imports nothing outside the standard library — a JAX import anywhere in it is a bug by definition, enforced by a test that walks every module.</p>
+  </div>
+</section>
+
+<!-- ==================== wire format ==================== -->
+<section class="col" id="wire">
+  <div class="section-head">
+    <span class="eyebrow">the contract</span>
+    <h2>The wire format at a glance</h2>
+  </div>
+  <p>A model declaration resolves to <span class="m">ModelMeta</span> — the
+  serialization boundary — and serializes as one versioned JSON document:</p>
+  <pre><code>{"bayeswire_ir": 1, "model": { "node": "ModelMeta", … }}</code></pre>
+  <p style="margin-top:1em;">The rules that make it trustworthy, in one breath:
+  node <strong>tags and field lists</strong> are the contract, never Python
+  class names; <strong>entry-array order is semantic</strong> and must never be
+  reordered (<span class="m">free_values</span> <em>is</em> the flat NUTS state
+  layout); decoding executes <strong>no user code</strong>; unknown non-core
+  tags <strong>fail explicitly</strong>. The canonical serialization is
+  byte-exact, and the model hash is
+  <span class="m">sha256(canonical_bytes(meta))</span> — computed by the
+  <em>producer</em> at write time. Consumers hash the file <em>as received</em>
+  and never reserialize to hash, which sidesteps cross-language float-formatting
+  divergence between Python and Rust.</p>
+  <p>Dimension labels (<span class="m">Dim</span>, coordinates) never enter the
+  IR: they travel in a separate sidecar document, so two models differing only
+  in labels share one model hash. The normative prose lives in
+  <span class="m">spec/ir-format-v1.md</span>; downstream copies are generated,
+  hash-checked bytes.</p>
+</section>
+
+<!-- ==================== journey ==================== -->
+<section class="wide" id="journey">
+  <div class="section-head col" style="padding:0;">
+    <span class="eyebrow">the procedure</span>
+    <h2>A model's journey</h2>
+    <p class="lede">Every workflow step is a command that reads files and writes
+    files; every run is seeded and replayable; run directories are append-only.
+    Color marks who owns each phase.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-key"><span class="who">bayeswire</span></div>
+    <div class="phase-body">
+      <h3>1 · Declare</h3>
+      <p>A model is one plain Python class body — <span class="m">@model</span>,
+      <span class="m">Param</span>, <span class="m">Data</span>,
+      <span class="m">Observed</span>, <span class="m">PartiallyObserved</span>,
+      arithmetic, and <span class="m">bayeswire.math</span> helpers. No
+      inheritance, no backend imports, statically parseable.</p>
+      <div class="files"><span class="file">model.py</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-key"><span class="who">bayeswire</span></div>
+    <div class="phase-body">
+      <h3>2 · Resolve &amp; serialize</h3>
+      <p><span class="m">@model</span> resolves class-body syntax into
+      <span class="m">ModelMeta</span> (an explicit phase transition — deferred
+      syntax never leaks into final IR). <span class="m">canonical_bytes</span>
+      writes the wire document; dimension labels go to the sidecar.</p>
+      <div class="files"><span class="file">model.ir.json</span><span class="file">dims.json</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-key"><span class="who">bayescycle</span></div>
+    <div class="phase-body">
+      <h3>3 · Prepare the run directory</h3>
+      <p><span class="m">bayescycle sample model.py --data data.json -o run/</span>
+      executes the model file with bayeswire's public hooks
+      (<span class="m">is_model_class</span>, <span class="m">model_meta</span>),
+      writes canonical inputs and provenance, then hands off to a backend. It
+      never invents model semantics.</p>
+      <div class="files"><span class="file">run/model.ir.json</span><span class="file">run/data.json</span><span class="file">run/dims.json</span><span class="file">run/manifest.json</span><span class="file">run/run.json</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-key"><span class="who rust">two backends</span></div>
+    <div class="phase-body">
+      <h3>4 · Sample with NUTS</h3>
+      <div class="lanes">
+        <div class="lane default">
+          <h3>bayesite <span class="tag">default path</span></h3>
+          <p>One static Rust binary decodes the IR (no producer code runs),
+          evaluates log density and gradients with in-tree reverse-mode AD, and
+          samples. <span class="m">--backend bayesite</span> means <strong>no JAX
+          is ever installed</strong>.</p>
+        </div>
+        <div class="lane inproc">
+          <h3>jaxstanv5 <span class="tag">[inproc] extra</span></h3>
+          <p><span class="m">bind_model(model_cls, values)</span> is the one
+          explicit transition from metadata to bound arrays; BlackJAX NUTS runs
+          in-process. Also the float64 oracle that produced the corpus's
+          reference values.</p>
+        </div>
+      </div>
+      <div class="files"><span class="file rust">run/posterior.ndjson (per_draw_v2)</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-key"><span class="who rust">bayesite</span></div>
+    <div class="phase-body">
+      <h3>5 · Interrogate the fit</h3>
+      <p>Everything downstream proceeds from the artifacts alone:
+      <span class="m">diagnose</span> (R-hat, ESS, divergences),
+      <span class="m">posterior-predictive</span>,
+      <span class="m">posterior-check</span>, <span class="m">recover</span>,
+      <span class="m">sbc</span> — factual reports, no verdict invention.</p>
+      <div class="files"><span class="file rust">run/diagnostics.json</span><span class="file rust">run/posterior_predictive.ndjson</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-key"><span class="who">bayesite-viz</span></div>
+    <div class="phase-body">
+      <h3>6 · Export &amp; look</h3>
+      <p><span class="m">bayesite-idata run/</span> assembles the run directory
+      into an ArviZ DataTree — the dims sidecar becomes named dimensions and
+      coordinates — and writes NetCDF; <span class="m">bayesite-viz</span>
+      renders trace, rank, energy, forest, and PPC plots from the fit file.</p>
+      <div class="files"><span class="file">run/fit.nc</span><span class="file">viz/*.png</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== trust ==================== -->
+<section class="col" id="trust">
+  <div class="trust">
+    <span class="eyebrow">trust surface of the default path</span>
+    <p><strong>Author a model, serialize IR, sample with bayesite:</strong> the
+    entire Python environment is <span class="m">bayescycle</span> +
+    <span class="m">bayeswire</span> (stdlib-only), plus one auditable,
+    zero-dependency Rust binary (<span class="m">cargo tree</span> shows a
+    single crate, by CI gate). Every input and output is a file you can hash,
+    diff, and replay.</p>
+  </div>
+</section>
+
+<!-- ==================== CI ==================== -->
+<section class="wide" id="ci">
+  <div class="section-head col" style="padding:0;">
+    <span class="eyebrow">what CI holds together</span>
+    <h2>Conformance is tested, not promised</h2>
+    <p class="lede">The corpus in this repository is the shared baseline: six
+    reference models, their canonical-bytes hashes, JAX-oracle evaluation
+    fixtures, and real run artifacts. Producers must reproduce it
+    byte-for-byte; consumers must evaluate it within the tolerance policy
+    stated in the spec — never in any consumer's tests.</p>
+  </div>
+
+  <div class="gates">
+    <div class="gate">
+      <h3><span class="repo">bayeswire</span> <span class="kind">every push</span></h3>
+      <ul>
+        <li><strong>no-JAX walk</strong> — every module imports with
+        <code>jax</code>/<code>blackjax</code> blocked; stdlib-only is enforced,
+        not assumed</li>
+        <li><strong>produce-conformance</strong> — reference declarations must
+        reproduce the corpus documents and pinned canonical hashes exactly</li>
+        <li><strong>spec-doc generation</strong> — <code>ir-v1-tags.md</code>
+        regenerated from the registry must match the committed file</li>
+        <li>ruff · ty · pytest</li>
+      </ul>
+    </div>
+    <div class="gate">
+      <h3><span class="repo">jaxstanv5</span> <span class="kind">every push</span></h3>
+      <ul>
+        <li><strong>consume-conformance</strong> — decode every corpus fixture
+        from the <em>installed pin</em>, bind from the fixture's own data,
+        reproduce logp/grad within the spec's float32 tier (1e-3)</li>
+        <li><strong>statistical oracles</strong> (backend-boundary changes) —
+        Stan posterior references and SBC rank-uniformity on real hierarchical
+        models</li>
+        <li>validation loop against the pinned bayeswire</li>
+      </ul>
+    </div>
+    <div class="gate">
+      <h3><span class="repo">bayesite</span> <span class="kind">validation ladder</span></h3>
+      <ul>
+        <li><strong>vendored-bytes rung</strong> — spec docs and corpus under
+        <code>tests/golden_ir/</code> must sha256-match
+        <code>bayeswire-vendor.json</code> at the <code>BAYESWIRE_TAG</code> pin;
+        vendored files are generated, never edited</li>
+        <li><strong>fixture evaluation</strong> — logp rtol 1e-12, gradient
+        rtol 1e-10 against the float64 JAX-oracle values, plus a bitwise
+        compiled-tape replay check</li>
+        <li><strong>independent NUTS oracle</strong> — cross-checked against a
+        pinned nuts-rs; zero-dependency core and wasm build are gates, not goals</li>
+      </ul>
+    </div>
+    <div class="gate">
+      <h3><span class="repo">bayescycle</span> <span class="kind">every push</span></h3>
+      <ul>
+        <li><strong>no-JAX job</strong> — installs only bayescycle + bayeswire,
+        asserts JAX is absent, builds a release bayesite, and runs the
+        end-to-end test: bayeswire model → run directory → sample → diagnose</li>
+        <li>full loop with the <code>[inproc]</code> extra (real jaxstanv5 runs)</li>
+      </ul>
+    </div>
+    <div class="gate">
+      <h3><span class="repo">bayeswire</span> <span class="kind">nightly · on tag</span></h3>
+      <ul>
+        <li><strong>cross-repo alignment</strong> — checks out each consumer,
+        installs bayeswire <em>HEAD</em>, and runs that consumer's conformance
+        subset: early warning that a pending spec change breaks someone,
+        <em>before</em> a tag is cut. A red nightly blocks tagging, not merging</li>
+        <li><strong>prose audit</strong> — greps consumers so normative
+        wire-format prose (and the retired envelope key) can live only here</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="col" style="padding:0; margin-top:40px;">
+    <h3 style="font-size:17px; margin-bottom:14px;">When the wire format changes — the procedure</h3>
+    <ol class="procedure">
+      <li><strong>Change lands here first.</strong> A new distribution or field
+      starts as a corpus reference model and produce-conformance coverage in
+      bayeswire; only then does declaration or backend work begin.</li>
+      <li><strong>Regenerate the corpus deliberately.</strong>
+      <code>scripts/regenerate_corpus.py</code> rewrites documents, hashes, and
+      the generated tag spec. Review every byte of the diff.</li>
+      <li><strong>Record it.</strong> A spec changelog entry plus an explicit IR
+      version decision — <code>bayeswire_ir</code> stays at 1 until a real
+      format change; package versions move freely underneath as long as
+      produce-conformance bytes are stable.</li>
+      <li><strong>Bump the pins, one PR per consumer.</strong> jaxstanv5 and
+      bayescycle move their exact-commit dependency; bayesite re-runs
+      <code>scripts/vendor_bayeswire.py</code>. <em>The pin-bump diff is the
+      compatibility review</em> — a consumer upgrades by reading exactly what
+      changed, with its own conformance gates deciding.</li>
+      <li><strong>The nightly stands watch.</strong> Between pins, cross-repo
+      alignment keeps testing consumers against bayeswire HEAD, so surprises
+      surface as red runs instead of at release time.</li>
+    </ol>
+  </div>
+
+  <div class="col" style="padding:0; margin-top:28px;">
+    <div class="asym">
+      <strong>Honest asymmetry, worked example.</strong> Unifying the corpus
+      revealed that the core profile includes <span class="m">Truncated</span>,
+      which bayesite does not evaluate yet. The gap is not hidden: bayesite pins
+      it as an explicit decode-failure test that names the tag and <em>goes red
+      the moment support lands</em>, evaluation conformance runs on the four
+      supported fixtures, and the work is tracked in
+      <a href="https://github.com/StefanSko/bayesite/issues/12">bayesite#12</a>.
+      Backends are interchangeable exactly where the conformance suite proves
+      they are — and honestly asymmetric everywhere else.
+    </div>
+  </div>
+</section>
+
+<footer class="col">
+  bayeswire · normative spec: <span class="m">spec/ir-format-v1.md</span> ·
+  corpus: <span class="m">src/bayeswire/corpus/</span> ·
+  this page is self-contained and renders offline
+</footer>
+
+</body>
+</html>
