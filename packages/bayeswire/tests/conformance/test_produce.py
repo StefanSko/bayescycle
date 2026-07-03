@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from reference_models import ReferenceModelCase, reference_model_cases
 
-from bayeswire.ir import canonical_bytes, meta_from_dict, meta_to_dict
+from bayeswire.ir import canonical_bytes, meta_from_dict, meta_to_dict, model_data_fingerprint
 
 CORPUS_DIR = Path(__file__).parent.parent.parent / "src" / "bayeswire" / "corpus"
 
@@ -53,6 +53,35 @@ def test_corpus_canonical_hashes_are_pinned() -> None:
 
     current = {
         case.name: hashlib.sha256(canonical_bytes(case.meta)).hexdigest()
+        for case in reference_model_cases()
+    }
+
+    assert current == recorded, REGENERATE_HINT
+
+
+@pytest.mark.parametrize("case", reference_model_cases(), ids=_case_ids())
+def test_corpus_data_document_wraps_the_fixture_data(case: ReferenceModelCase) -> None:
+    data_path = CORPUS_DIR / "data" / f"{case.name}.json"
+    fixture = json.loads(
+        (CORPUS_DIR / "fixtures" / f"{case.name}.json").read_text(encoding="utf-8")
+    )
+
+    document = json.loads(data_path.read_text(encoding="utf-8"))
+
+    assert document == {
+        "format": "bayescycle.data.json.v1",
+        "variables": fixture["data"],
+    }, REGENERATE_HINT
+
+
+def test_corpus_model_data_fingerprints_are_pinned() -> None:
+    recorded = json.loads((CORPUS_DIR / "fingerprints.json").read_text(encoding="utf-8"))
+
+    current = {
+        case.name: model_data_fingerprint(
+            (CORPUS_DIR / f"{case.name}.json").read_bytes(),
+            (CORPUS_DIR / "data" / f"{case.name}.json").read_bytes(),
+        )
         for case in reference_model_cases()
     }
 

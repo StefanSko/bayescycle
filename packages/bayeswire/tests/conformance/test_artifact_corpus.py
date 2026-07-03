@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from bayeswire.ir import meta_from_dict
+from bayeswire.ir import meta_from_dict, model_data_fingerprint
 
 ARTIFACT_DIR = Path(__file__).parent.parent.parent / "src" / "bayeswire" / "corpus" / "artifacts"
 ARTIFACT_MODELS = ("eight_schools_non_centered", "varying_intercepts_poisson")
@@ -58,6 +58,33 @@ def test_artifact_posterior_stream_is_per_draw_v2(name: str) -> None:
     draw_lines = [json.loads(line) for line in lines[1:] if line.strip()]
     values_lines = [line for line in draw_lines if "values" in line]
     assert len(values_lines) == expected_draws
+
+
+@pytest.mark.parametrize("name", ARTIFACT_MODELS, ids=_case_ids())
+def test_artifact_data_document_is_canonical_wrapped(name: str) -> None:
+    run_dir = ARTIFACT_DIR / name
+
+    document = json.loads((run_dir / "data.json").read_text(encoding="utf-8"))
+
+    assert document["format"] == "bayescycle.data.json.v1"
+    assert isinstance(document["variables"], dict)
+    assert document["variables"], f"{name} data.json carries no variables"
+
+
+@pytest.mark.parametrize("name", ARTIFACT_MODELS, ids=_case_ids())
+def test_artifact_fit_fingerprint_matches_the_run_files(name: str) -> None:
+    run_dir = ARTIFACT_DIR / name
+    expected = model_data_fingerprint(
+        (run_dir / "model.ir.json").read_bytes(),
+        (run_dir / "data.json").read_bytes(),
+    )
+
+    lines = (run_dir / "posterior.ndjson").read_text(encoding="utf-8").splitlines()
+    header = json.loads(lines[0])
+    trailer = json.loads(lines[-1])["trailer"]
+
+    assert header["model_data_fingerprint"] == expected
+    assert trailer["model_data_fingerprint"] == expected
 
 
 @pytest.mark.parametrize("name", ARTIFACT_MODELS, ids=_case_ids())

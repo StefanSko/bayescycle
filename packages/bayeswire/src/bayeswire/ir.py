@@ -10,6 +10,7 @@ vocabulary, not Python class names, is the cross-language contract; see
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import is_dataclass
@@ -42,6 +43,7 @@ __all__ = [
     "canonical_bytes",
     "meta_from_dict",
     "meta_to_dict",
+    "model_data_fingerprint",
     "register_distribution",
     "render_ir_v1_tag_spec",
 ]
@@ -164,6 +166,25 @@ def canonical_bytes(meta: ModelMeta) -> bytes:
         ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
+
+
+_MODEL_DATA_FINGERPRINT_PREFIX = b"bayescycle-model-data-v1\n"
+
+
+def model_data_fingerprint(model_document: bytes, data_document: bytes) -> str:
+    """Return the shared model/data fingerprint over exact document bytes.
+
+    The fingerprint is ``sha256:`` plus the SHA-256 hex digest of the framed
+    concatenation ``b"bayescycle-model-data-v1\\n" + model_document + b"\\n" +
+    data_document``. Producers compute it at write time over the exact bytes
+    they write; verifiers hash the files as received and never re-serialize
+    (the same rule as the model hash). See
+    ``spec/model-data-fingerprint-v1.md``.
+    """
+    digest = hashlib.sha256(
+        _MODEL_DATA_FINGERPRINT_PREFIX + model_document + b"\n" + data_document
+    ).hexdigest()
+    return f"sha256:{digest}"
 
 
 def bindable_from_meta(

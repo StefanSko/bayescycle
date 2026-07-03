@@ -8,7 +8,7 @@ For each selected corpus reference model this writes a real run directory
 under ``src/bayeswire/corpus/artifacts/<name>/``:
 
 - ``model.ir.json``   canonical bayeswire_ir bytes of the reference model
-- ``data.json``       concrete bind data (fixture encoding: dtype/shape/values)
+- ``data.json``       canonical wrapped data document (bayescycle.data.json.v1)
 - ``dims.json``       run-directory dims sidecar, when the model declares dims
 - ``posterior.ndjson``  bayesite sample output (deterministic seed)
 - ``diagnostics.json``  bayesite diagnose output for that fit
@@ -35,8 +35,7 @@ from conformance.reference_models import ReferenceModelCase, reference_model_cas
 
 ARTIFACT_DIR = REPO_ROOT / "src" / "bayeswire" / "corpus" / "artifacts"
 
-# Models bayesite evaluates today (its Truncated gap excludes the others) —
-# one with a dims sidecar, one without.
+# Two exporter fixture models: one with a dims sidecar, one without.
 ARTIFACT_MODELS = ("eight_schools_non_centered", "varying_intercepts_poisson")
 
 SEED = 20260702
@@ -66,7 +65,12 @@ def _write_artifacts(case: ReferenceModelCase, model_cls: type[object], bayesite
 
     data_path = run_dir / "data.json"
     data_path.write_text(
-        json.dumps(_fixture_data(case.name), indent=2, ensure_ascii=False) + "\n",
+        json.dumps(
+            {"format": "bayescycle.data.json.v1", "variables": _fixture_data(case.name)},
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
         encoding="utf-8",
     )
 

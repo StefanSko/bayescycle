@@ -1,6 +1,6 @@
 [project]
 name = "bayeswire"
-version = "0.1.0"
+version = "0.2.0"
 description = "Model declaration language and wire format for the bayes* toolchain. Stdlib only."
 readme = "README.md"
 requires-python = ">=3.12"
