@@ -1,0 +1,37 @@
+name: Cut release tag
+
+# Creates an annotated release tag on a reviewed commit. Tags name trusted
+# history: consumers pin them, so cutting one is a deliberate, manual act.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name (e.g. v0.1.0)"
+        required: true
+      sha:
+        description: "Commit to tag (must be reachable from main)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "${{ inputs.sha }}" origin/main || {
+            echo "::error::${{ inputs.sha }} is not reachable from main; tags name reviewed history only."
+            exit 1
+          }
+      - name: Create and push the annotated tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.tag }}" "${{ inputs.sha }}" -m "bayeswire ${{ inputs.tag }}"
+          git push origin "refs/tags/${{ inputs.tag }}"
