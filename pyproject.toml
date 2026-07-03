@@ -12,7 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 inproc = [
-    "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git@70f8bd3f9cc7d7e06652af645103250a28c803e0",
+    "jaxstanv5 @ git+https://github.com/StefanSko/jaxstanv5.git@e89bdd5e60e87acf6da9dc2c64c4ea451319f8f5",
 ]
 
 [project.scripts]
