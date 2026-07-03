@@ -1,0 +1,28 @@
+{
+  "coords": {
+    "school": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H"
+    ]
+  },
+  "dims": {
+    "mu": [],
+    "sigma": [
+      "school"
+    ],
+    "tau": [],
+    "y": [
+      "school"
+    ],
+    "z": [
+      "school"
+    ]
+  },
+  "dims_format": "bayescycle-dims-v1"
+}

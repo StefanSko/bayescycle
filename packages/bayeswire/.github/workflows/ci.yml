@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync
+        run: uv sync
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Types
+        run: uv run ty check
+      - name: Tests (includes no-JAX walk and produce-conformance)
+        run: uv run pytest -q
+      - name: Spec-doc generation check
+        run: |
+          uv run scripts/regenerate_corpus.py
+          git diff --exit-code -- src/bayeswire/corpus spec/ir-v1-tags.md
