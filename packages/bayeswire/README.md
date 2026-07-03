@@ -63,6 +63,8 @@ generated and hash-checked, never edited.
   consumers conformance-test against the installed pin (see its README)
 - `scripts/regenerate_corpus.py` — regenerates corpus documents, hashes, and
   the generated tag spec after a deliberate format change
+- `docs/releasing.md` — the release procedure: when to tag, how to cut the
+  tag, and the consumer pin-bump order
 
 ## Development
 
