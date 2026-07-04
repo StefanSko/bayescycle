@@ -57,12 +57,15 @@ generated and hash-checked, never edited.
 - `src/bayeswire/` — the package: `model`, `distributions`, `constraints`,
   `math`, `ir`
 - `spec/` — the normative wire spec: `ir-format-v1.md`, generated
-  `ir-v1-tags.md`, `dimension-sidecar-v1.md`
-- `src/bayeswire/corpus/` — golden IR documents, canonical hashes, and
-  JAX-oracle evaluation fixtures, shipped as package data so Python
-  consumers conformance-test against the installed pin (see its README)
-- `scripts/regenerate_corpus.py` — regenerates corpus documents, hashes, and
-  the generated tag spec after a deliberate format change
+  `ir-v1-tags.md`, `dimension-sidecar-v1.md`, `data-document-v1.md`,
+  `model-data-fingerprint-v1.md`
+- `src/bayeswire/corpus/` — golden IR documents, canonical hashes, canonical
+  data documents, fingerprint test vectors, and JAX-oracle evaluation
+  fixtures, shipped as package data so Python consumers conformance-test
+  against the installed pin (see its README)
+- `scripts/regenerate_corpus.py` — regenerates corpus documents, hashes,
+  data documents, fingerprints, and the generated tag spec after a
+  deliberate format change
 - `docs/releasing.md` — the release procedure: when to tag, how to cut the
   tag, and the consumer pin-bump order
 

@@ -11,6 +11,12 @@ files; none may substitute private fixtures.
 - `fixtures/<model>.json` — cross-backend evaluation fixtures bundling each
   IR document with concrete bind data and log-density plus gradient values
   at deterministic unconstrained points.
+- `data/<model>.json` — the canonical data document
+  (`spec/data-document-v1.md`) for each reference model, wrapping the same
+  values as the fixture's `data` block.
+- `fingerprints.json` — pinned `model_data_fingerprint` test vectors
+  (`spec/model-data-fingerprint-v1.md`) over the exact committed bytes of
+  `<model>.json` and `data/<model>.json`.
 
 The evaluation values in `fixtures/` are **JAX-oracle outputs**: computed by
 the jaxstanv5 backend in float64 (`jax_enable_x64`), regenerated with
