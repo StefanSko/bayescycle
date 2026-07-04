@@ -225,6 +225,33 @@
   }
   .asym .m { color: var(--fail); }
 
+  /* -- fingerprint --------------------------------------------------------- */
+  .fp-rule {
+    border: 1px solid var(--wire);
+    background: var(--wire-soft);
+    border-radius: 6px;
+    padding: 16px 20px;
+  }
+  .fp-rule p { margin: 6px 0 0; font-size: 15px; }
+  .fp-rule .m { background: var(--panel); }
+  .fp-outcomes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 16px; }
+  .fp-outcome {
+    border: 1px solid var(--panel-line);
+    border-left: 4px solid var(--wire);
+    background: var(--panel);
+    border-radius: 4px;
+    padding: 12px 16px;
+    font-size: 14.5px;
+    color: var(--ink-soft);
+  }
+  .fp-outcome strong { color: var(--ink); }
+  .fp-outcome.fp-fail { border-left-color: var(--fail); }
+  .fp-outcome.fp-fail .m { color: var(--fail); }
+  .fp-pins { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+  .fp-pin { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 14px 16px; }
+  .fp-pin h3 { font-size: 13px; color: var(--wire); margin: 0 0 4px; }
+  .fp-pin p { font-size: 13.5px; color: var(--ink-soft); margin: 0; }
+
   footer { padding: 12px 0 60px; color: var(--ink-soft); font-family: var(--mono); font-size: 12px; }
 </style>
 </head>
@@ -481,6 +508,150 @@
       coordinates — and writes NetCDF; <span class="m">bayesite-viz</span>
       renders trace, rank, energy, forest, and PPC plots from the fit file.</p>
       <div class="files"><span class="file">run/fit.nc</span><span class="file">viz/*.png</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== fingerprint ==================== -->
+<section class="wide" id="fingerprint">
+  <div class="section-head col" style="padding:0;">
+    <span class="eyebrow">the integrity seal</span>
+    <h2>model_data_fingerprint: one hash, every tool</h2>
+    <p class="lede">A run directory is only as trustworthy as the claim that
+    its fit came from these exact files. One hash binds a fit to the exact
+    bytes of the model and data documents it was sampled from — and every
+    tool in the toolchain, Python or Rust, computes it the same way.</p>
+  </div>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 160" role="img" aria-label="The fingerprint pre-image: framing prefix concatenated with the model document bytes, a newline, and the data document bytes, hashed with SHA-256 into a sha256: digest string.">
+      <defs>
+        <marker id="fp-arr-byte" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"></path>
+        </marker>
+      </defs>
+      <rect x="10" y="30" width="230" height="90" rx="4" fill="var(--wire-soft)" stroke="var(--wire)" stroke-width="1.5"></rect>
+      <text x="125" y="55" text-anchor="middle" font-size="12" font-weight="700" fill="var(--wire)">framing prefix</text>
+      <text x="125" y="76" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">"bayescycle-model-data-v1</text>
+      <text x="125" y="90" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">\n"</text>
+      <rect x="244" y="30" width="230" height="90" rx="4" fill="var(--wire-soft)" stroke="var(--wire)" stroke-width="1.5"></rect>
+      <text x="359" y="55" text-anchor="middle" font-size="12" font-weight="700" fill="var(--wire)">model document</text>
+      <text x="359" y="76" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">model.ir.json bytes</text>
+      <text x="359" y="90" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">(canonical IR)</text>
+      <text x="490" y="80" text-anchor="middle" font-size="11" fill="var(--ink-soft)">\n</text>
+      <rect x="506" y="30" width="230" height="90" rx="4" fill="var(--oracle-soft)" stroke="var(--oracle)" stroke-width="1.5"></rect>
+      <text x="621" y="55" text-anchor="middle" font-size="12" font-weight="700" fill="var(--oracle)">data document</text>
+      <text x="621" y="76" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">data.json bytes</text>
+      <text x="621" y="90" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">(bayescycle.data.json.v1)</text>
+      <line x1="742" y1="75" x2="796" y2="75" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#fp-arr-byte)"></line>
+      <text x="769" y="65" text-anchor="middle" font-size="10" fill="var(--ink-soft)">SHA-256</text>
+      <rect x="800" y="30" width="170" height="90" rx="4" fill="var(--panel)" stroke="var(--panel-line)" stroke-width="1.5"></rect>
+      <text x="885" y="60" text-anchor="middle" font-size="12" font-weight="700">sha256:</text>
+      <text x="885" y="78" text-anchor="middle" font-size="10" fill="var(--ink-soft)">7b46a2f4…05e8f</text>
+      <text x="885" y="94" text-anchor="middle" font-size="9" fill="var(--ink-soft)">64 hex chars</text>
+    </svg>
+    <p class="caption">The model document is the canonical IR bytes; the data
+    document is the canonical <span class="m">bayescycle.data.json.v1</span>
+    wrapper (<span class="m">spec/data-document-v1.md</span>). The definition
+    lives in <span class="m">spec/model-data-fingerprint-v1.md</span>, with
+    <span class="m">bayeswire.ir.model_data_fingerprint</span> as the reference
+    implementation.</p>
+  </div>
+
+  <div class="col" style="padding:0; margin-top:28px;">
+    <div class="fp-rule">
+      <span class="eyebrow">the one rule</span>
+      <p><strong>Producers hash the bytes they write. Verifiers hash the bytes
+      they receive. Nobody ever re-serializes to hash.</strong> Re-serializing
+      would drag cross-language float formatting — Python
+      <span class="m">repr</span> versus Rust <span class="m">ryu</span> — into
+      the contract; hashing received bytes turns the question into “same
+      file?”, never “same rendering?”. This is the same rule the model hash
+      already follows.</p>
+    </div>
+  </div>
+
+  <div class="diagram" style="margin-top:28px;">
+    <svg viewBox="0 0 900 260" role="img" aria-label="Round trip: a producer backend samples and writes posterior.ndjson carrying model_data_fingerprint in its header and trailer; a verifier reads the model and data documents, recomputes the fingerprint, and compares it against the recorded value.">
+      <defs>
+        <marker id="fp-arr-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"></path>
+        </marker>
+      </defs>
+      <rect x="20" y="20" width="240" height="70" rx="6" fill="var(--panel)" stroke="var(--panel-line)" stroke-width="1.5"></rect>
+      <text x="140" y="48" text-anchor="middle" font-size="13" font-weight="700">producer</text>
+      <text x="140" y="66" text-anchor="middle" font-size="11" fill="var(--ink-soft)">bayescycle + backend</text>
+      <text x="140" y="80" text-anchor="middle" font-size="10" fill="var(--ink-soft)">bayesite or jaxstanv5 [inproc]</text>
+
+      <rect x="340" y="20" width="300" height="70" rx="6" fill="var(--rust-soft)" stroke="var(--rust)" stroke-width="1.5"></rect>
+      <text x="490" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rust)">run/posterior.ndjson</text>
+      <text x="490" y="66" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">header + trailer carry</text>
+      <text x="490" y="80" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">model_data_fingerprint</text>
+
+      <line x1="260" y1="55" x2="334" y2="55" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#fp-arr-flow)"></line>
+      <text x="297" y="45" text-anchor="middle" font-size="10" fill="var(--ink-soft)">writes</text>
+
+      <rect x="20" y="170" width="240" height="70" rx="6" fill="var(--wire-soft)" stroke="var(--wire)" stroke-width="1.5"></rect>
+      <text x="140" y="198" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--wire)">run/model.ir.json</text>
+      <text x="140" y="214" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--wire)">run/data.json</text>
+      <text x="140" y="230" text-anchor="middle" font-size="10" fill="var(--ink-soft)">handed to the verifier</text>
+
+      <rect x="340" y="170" width="300" height="70" rx="6" fill="var(--rust-soft)" stroke="var(--rust)" stroke-width="1.5"></rect>
+      <text x="490" y="198" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rust)">bayesite verifier</text>
+      <text x="490" y="216" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">posterior-predictive ·</text>
+      <text x="490" y="230" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">posterior-check</text>
+
+      <line x1="260" y1="205" x2="334" y2="205" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#fp-arr-flow)"></line>
+      <text x="297" y="195" text-anchor="middle" font-size="10" fill="var(--ink-soft)">reads</text>
+
+      <line x1="490" y1="92" x2="490" y2="166" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#fp-arr-flow)"></line>
+      <text x="500" y="125" font-size="10.5" fill="var(--ink-soft)">recompute over those bytes,</text>
+      <text x="500" y="139" font-size="10.5" fill="var(--ink-soft)">compare to the recorded value</text>
+    </svg>
+    <p class="caption">Both backends write the same artifact shape into the
+    same canonical <span class="m">run/data.json</span> — so a fit sampled on
+    jaxstanv5 recomputes to the fingerprint the Rust engine expects.</p>
+  </div>
+
+  <div class="fp-outcomes">
+    <div class="fp-outcome">
+      <strong>Match.</strong> The fit is accepted;
+      <span class="m">posterior-predictive</span> and
+      <span class="m">posterior-check</span> proceed.
+    </div>
+    <div class="fp-outcome fp-fail">
+      <strong>Any byte differs — even whitespace.</strong> Refusal is
+      explicit: <span class="m">fit model_data_fingerprint must match the
+      supplied model and data</span>. Repair is to re-run
+      <span class="m">sample</span>, not to patch the artifact.
+    </div>
+  </div>
+
+  <div class="col" style="padding:0; margin-top:32px;">
+    <h3 style="font-size:17px; margin-bottom:14px;">Where it's pinned</h3>
+  </div>
+  <div class="fp-pins">
+    <div class="fp-pin">
+      <h3>corpus/fingerprints.json</h3>
+      <p>Test vectors: the fingerprint of each reference model's committed
+      document bytes with its canonical data bytes, written by the Python
+      reference implementation.</p>
+    </div>
+    <div class="fp-pin">
+      <h3>bayesite fingerprint_vectors</h3>
+      <p>Recomputes every corpus vector in Rust, byte-for-byte, against the
+      same committed files.</p>
+    </div>
+    <div class="fp-pin">
+      <h3>artifact corpus</h3>
+      <p>Asserts each committed run directory's
+      <span class="m">posterior.ndjson</span> header and trailer fingerprint
+      equals a recomputation over that directory's own files.</p>
+    </div>
+    <div class="fp-pin">
+      <h3>bayescycle end-to-end</h3>
+      <p>Samples on jaxstanv5, then passes bayesite's posterior checks against
+      the real engine — cross-backend, not just cross-language.</p>
     </div>
   </div>
 </section>
