@@ -218,7 +218,7 @@ def test_sample_dry_run_prints_command_without_materializing_run(
             "--model",
             str(ir_path),
             "--data",
-            str(output_dir / ".bayesite" / "data.json"),
+            str(output_dir / "data.json"),
             "--out",
             str(output_dir / "posterior.ndjson"),
             "--seed",
@@ -299,7 +299,7 @@ def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
         "--model",
         str(ir_path),
         "--data",
-        str(output_dir / ".bayesite" / "data.json"),
+        str(output_dir / "data.json"),
         "--seed",
         "7",
         "--chains",
@@ -790,7 +790,7 @@ def test_prior_predictive_dry_run_prints_plan_without_materializing_run(
             "--model",
             str(ir_path),
             "--data",
-            str(output_dir / ".bayesite" / "data.json"),
+            str(output_dir / "data.json"),
             "--seed",
             "7",
             "--draws",
@@ -1413,7 +1413,7 @@ def test_posterior_predictive_dry_run_uses_run_directory_artifacts_and_seed(
             "--model",
             str(run_dir / "model.ir.json"),
             "--data",
-            str(run_dir / ".bayesite" / "data.json"),
+            str(run_dir / "data.json"),
             "--fit",
             str(run_dir / "posterior.ndjson"),
             "--seed",
@@ -1424,7 +1424,7 @@ def test_posterior_predictive_dry_run_uses_run_directory_artifacts_and_seed(
         "output": str(run_dir / "posterior_predictive.ndjson"),
         "run": str(run_dir),
     }
-    assert not (run_dir / ".bayesite" / "data.json").exists()
+    assert not (run_dir / ".bayesite").exists()
 
 
 def test_posterior_predictive_invokes_engine_with_run_directory_paths(tmp_path: Path) -> None:
@@ -1437,7 +1437,7 @@ def test_posterior_predictive_invokes_engine_with_run_directory_paths(tmp_path: 
     assert code == 0
     assert (run_dir / "posterior_predictive.ndjson").read_text(encoding="utf-8") == (
         f"posterior-predictive --model {run_dir / 'model.ir.json'} "
-        f"--data {run_dir / '.bayesite' / 'data.json'} --fit {run_dir / 'posterior.ndjson'} "
+        f"--data {run_dir / 'data.json'} --fit {run_dir / 'posterior.ndjson'} "
         f"--seed 8 --out {run_dir / 'posterior_predictive.ndjson'}\n"
     )
 
@@ -1478,7 +1478,7 @@ def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
             "--model",
             str(run_dir / "model.ir.json"),
             "--data",
-            str(run_dir / ".bayesite" / "data.json"),
+            str(run_dir / "data.json"),
             "--fit",
             str(run_dir / "posterior.ndjson"),
             "--seed",
@@ -1489,7 +1489,7 @@ def test_posterior_check_dry_run_uses_run_directory_artifacts_and_seed(
         "output": str(run_dir / "posterior_check.json"),
         "run": str(run_dir),
     }
-    assert not (run_dir / ".bayesite" / "data.json").exists()
+    assert not (run_dir / ".bayesite").exists()
 
 
 def test_posterior_check_reports_missing_required_artifacts(

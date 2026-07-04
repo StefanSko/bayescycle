@@ -41,11 +41,11 @@ The header records:
 - `sample_stats_mode` when per-draw sampler statistics are present
 
 `model_data_fingerprint`, when present, is `sha256:` plus the SHA-256 digest of
-`b"bayescycle-model-data-v1\n" + model_ir_bytes + b"\n" + data_json_bytes`.
-For in-process Bayescycle streams, `data_json_bytes` is the canonical
-`run/data.json` artifact. Bayesite-engine streams currently compute this over the
-adapter materialization passed to the Bayesite binary; consumers should treat the
-fingerprint as an opaque identity string, not as a path contract.
+`b"bayescycle-model-data-v1\n" + model_ir_bytes + b"\n" + data_json_bytes`, per
+the normative bayeswire spec `model-data-fingerprint-v1.md`. `data_json_bytes`
+is the canonical `run/data.json` artifact for both the in-process jaxstanv5
+backend and the Bayesite engine: bayescycle passes that file directly to every
+data-consuming engine command, so both backends fingerprint identical bytes.
 
 ## Draw facts
 

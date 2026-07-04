@@ -45,7 +45,7 @@ engine errors and expands the embedded `message` text before scanning for
 end-to-end test (`tests/test_bayesite_end_to_end.py`, exercised by the no-JAX
 CI job) keeps it that way.
 
-## 2. Cross-backend posterior-predictive / posterior-check is blocked by a fingerprint check
+## 2. Cross-backend posterior-predictive / posterior-check is blocked by a fingerprint check — RESOLVED
 
 `bayesite posterior-predictive` and `bayesite posterior-check` recompute a
 `model_data_fingerprint` from the supplied model + data and require the fit's
@@ -67,6 +67,14 @@ fingerprint recomputation) and so work cross-backend.
 **Fix options:** a shared canonical fingerprint algorithm across backends, or a
 neutral/`null` fingerprint that the predictive checks accept by falling back to
 parameter-shape compatibility only.
+
+**Resolved (shared fingerprint contract):** the canonical wrapped `run/data.json`
+is now the single data document — spec'd in bayeswire
+(`model-data-fingerprint-v1.md`, `data-document-v1.md`), parsed natively by the
+engine, passed directly by bayescycle for every command, so both backends
+fingerprint identical bytes; pinned by the cross-backend e2e test. Fits
+produced before this change fingerprint the old `.bayesite/data.json` bytes and
+must be re-sampled.
 
 ## 3. `recover-check --targets` schema is unobvious
 
@@ -105,7 +113,7 @@ it can't share the project virtualenv.
 `uv run --no-project --with /path/to/bayesite-viz --python 3.13 -- bayesite-viz …`.
 The driver takes the checkout path from `$BAYESITE_VIZ`.
 
-## 6. `bayesite-idata` can't read the canonical `data.json`
+## 6. `bayesite-idata` can't read the canonical `data.json` — RESOLVED
 
 `bayesite-idata` reads `run/data.json` expecting a **top-level** map
 `{var: {shape, values}}`. bayescycle now writes the canonical wrapper there:
@@ -125,6 +133,11 @@ that.
 
 **Fix options:** teach bayesite-idata the `bayescycle.data.json.v1` wrapper, or
 have it prefer `run/.bayesite/data.json` when present.
+
+**Resolved (shared fingerprint contract):** bayesite-idata reads the canonical
+wrapper natively (its issue #20, merged) and the golden corpus ships wrapped
+`data.json`, so the `_idata_stage` staging block is deleted; the exporter now
+runs directly against the raw engine and run directories.
 
 ## 7. `uv run` must execute from the project directory
 

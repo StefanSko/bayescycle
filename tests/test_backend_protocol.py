@@ -485,33 +485,19 @@ def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> 
     assert not hasattr(Jaxstanv5PriorPredictiveCommand, "dry_run_fields")
 
 
-def test_bayesite_action_owns_data_materialization_and_postprocess(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_bayesite_action_owns_postprocess(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from bayescycle.backends.bayesite import adapter as bayesite
 
     assert not hasattr(bayesite, "BayesiteExecutableCommand")
     assert not hasattr(bayesite, "materialize_run_data_for_bayesite")
+    assert not hasattr(bayesite, "MaterializeBayesiteData")
+    assert not hasattr(bayesite, "materialize_bayesite_data")
 
-    canonical_input = tmp_path / "run" / "data.json"
-    canonical_input.parent.mkdir()
-    canonical_input.write_text(
-        '{"format":"bayescycle.data.json.v1",'
-        '"variables":{"ok":{"dtype":"bool","shape":[],"values":[true]}}}\n',
-        encoding="utf-8",
-    )
-    native_input = BackendPrivateArtifact(tmp_path / "run" / ".bayesite" / "data.json")
     native_output = BackendPrivateArtifact(tmp_path / "run" / ".bayesite" / "simulated_data.json")
     canonical_output = CanonicalDataArtifact(tmp_path / "run" / "simulated_data.json")
     external_command = ExternalCommand(argv=("fake-bayesite", "simulate"))
     action = bayesite.BayesiteAction(
         command=external_command,
-        input_materializations=(
-            bayesite.MaterializeBayesiteData(
-                canonical_path=CanonicalDataArtifact(canonical_input),
-                native_path=native_input,
-            ),
-        ),
         postprocess=(
             bayesite.CanonicalizeGeneratedData(
                 native_path=native_output,
@@ -526,11 +512,10 @@ def test_bayesite_action_owns_data_materialization_and_postprocess(
         command=external_command,
         postprocess=action.postprocess,
     )
-    assert '"ok": {' in native_input.path.read_text(encoding="utf-8")
-    assert '"dtype": "int64"' in native_input.path.read_text(encoding="utf-8")
 
     def fake_run(command: ExternalCommand) -> int:
         assert command == external_command
+        native_output.path.parent.mkdir(parents=True, exist_ok=True)
         native_output.path.write_text(
             '{"y":{"dtype":"float64","shape":[],"values":[1.5]}}\n',
             encoding="utf-8",

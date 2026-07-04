@@ -36,9 +36,11 @@ run/
 
 `data.json` and `simulated_data.json` use the canonical
 `bayescycle.data.json.v1` format documented in
-[`canonical-data-artifacts.md`](canonical-data-artifacts.md). Backend adapters may
-create backend-private materializations such as `run/.bayesite/data.json`, but
-those files are not workflow-stage artifacts.
+[`canonical-data-artifacts.md`](canonical-data-artifacts.md). The Bayesite
+adapter passes `data.json` to the engine unchanged; it may still create
+backend-private materializations for generated outputs, such as
+`run/.bayesite/simulated_data.json` before canonicalization, but those files
+are not workflow-stage artifacts.
 
 `run.json` uses `bayescycle.run.v1` and records the prepared run kind, selected
 backend, model source hash, input source hashes, materialized input paths, and

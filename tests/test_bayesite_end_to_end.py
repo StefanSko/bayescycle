@@ -91,3 +91,63 @@ def test_sample_and_diagnose_with_real_engine(tmp_path: Path) -> None:
     assert code == 0
     diagnostics = json.loads((run_dir / "diagnostics.json").read_text(encoding="utf-8"))
     assert diagnostics, "diagnostics.json must be a non-empty document"
+
+
+def test_jaxstanv5_fit_passes_bayesite_posterior_predictive_and_check(tmp_path: Path) -> None:
+    """A jaxstanv5-produced fit must pass the real engine's fingerprint check.
+
+    ``sample`` runs on the in-process jaxstanv5 backend (fingerprinting the
+    canonical ``run/data.json`` it was handed); ``posterior-predictive`` and
+    ``posterior-check`` then run against the real Bayesite engine, which must
+    fingerprint the same bytes for the same run directory.
+    """
+    pytest.importorskip("jaxstanv5")
+    model_path, data_path = _write_inputs(tmp_path)
+    run_dir = tmp_path / "run"
+
+    assert BAYESITE_BIN is not None
+    code = main(
+        [
+            "sample",
+            str(model_path),
+            "--data",
+            str(data_path),
+            "-o",
+            str(run_dir),
+            "--backend",
+            "jaxstanv5",
+            "--seed",
+            "20260702",
+            "--chains",
+            "2",
+            "--warmup",
+            "200",
+            "--draws",
+            "200",
+        ]
+    )
+    assert code == 0
+
+    code = main(
+        [
+            "posterior-predictive",
+            str(run_dir),
+            "--seed",
+            "20260703",
+            "--engine",
+            BAYESITE_BIN,
+        ]
+    )
+    assert code == 0
+    assert (run_dir / "posterior_predictive.ndjson").is_file()
+
+    code = main(
+        [
+            "posterior-check",
+            str(run_dir),
+            "--engine",
+            BAYESITE_BIN,
+        ]
+    )
+    assert code == 0
+    assert (run_dir / "posterior_check.json").is_file()

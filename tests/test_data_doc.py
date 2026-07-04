@@ -8,7 +8,6 @@ import pytest
 from bayescycle.data import (
     DATA_DOC_FORMAT,
     DataDocError,
-    data_doc_to_bayesite_json,
     data_doc_to_plain_json,
     normalize_data_doc,
     read_data_doc,
@@ -29,11 +28,6 @@ def test_canonical_data_doc_round_trips_and_materializes() -> None:
 
     assert doc.to_json()["format"] == DATA_DOC_FORMAT
     assert data_doc_to_plain_json(doc) == {"x": [[0.1, 0.2], [0.3, 0.4]], "y": [0, 1]}
-    assert data_doc_to_bayesite_json(doc)["y"] == {
-        "dtype": "int64",
-        "shape": [2],
-        "values": [0, 1],
-    }
 
 
 def test_legacy_plain_json_data_normalizes_to_canonical(tmp_path: Path) -> None:

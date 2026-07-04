@@ -9,12 +9,10 @@ from bayescycle._run_artifacts.canonical_data import (
     DataVariable,
     JsonValue,
     NamedDataVariable,
-    data_doc_to_bayesite_json,
     data_doc_to_plain_json,
     normalize_data_doc,
     parse_data_doc,
     read_data_doc,
-    write_bayesite_data_doc,
     write_data_doc,
 )
 
@@ -27,11 +25,9 @@ __all__ = [
     "DataVariable",
     "JsonValue",
     "NamedDataVariable",
-    "data_doc_to_bayesite_json",
     "data_doc_to_plain_json",
     "normalize_data_doc",
     "parse_data_doc",
     "read_data_doc",
-    "write_bayesite_data_doc",
     "write_data_doc",
 ]
