@@ -159,26 +159,18 @@ print(f"prior plot -> {out}  y in [{min(ally):.1f}, {max(ally):.1f}]")
 PY
 }
 
-# Stage an unwrapped data.json so bayesite-idata can read the run.
-# DIFFICULTY #6: bayesite-idata expects a top-level {var: {...}} data.json, but
-# bayescycle now writes the canonical {format, variables} wrapper at run/data.json.
-# The unwrapped form only exists under run/.bayesite/data.json.
+# bayesite-idata reads the canonical run/data.json directly (walkthrough
+# difficulty #6 is fixed): the engine and the exporter both parse the wrapped
+# {format, variables} document natively, so the run directory needs no staging.
 viz_run() {
   local run="$1" vizdir="$2"
-  local stage="$run/_idata_stage"
-  rm -rf "$stage"
-  mkdir -p "$stage" "$vizdir"
-  cp "$run/model.ir.json" "$run/posterior.ndjson" "$stage/"
-  [ -f "$run/dims.json" ] && cp "$run/dims.json" "$stage/"
-  [ -f "$run/posterior_predictive.ndjson" ] && cp "$run/posterior_predictive.ndjson" "$stage/"
-  cp "$run/.bayesite/data.json" "$stage/data.json"
-  viz bayesite-idata "$stage" -o "$run/fit.nc" --validate require --bayesite "$ENG"
+  mkdir -p "$vizdir"
+  viz bayesite-idata "$run" -o "$run/fit.nc" --validate require --bayesite "$ENG"
   for verb in trace rank energies forest ess-rhat; do
     viz bayesite-viz "$verb" "$run/fit.nc" -o "$vizdir/$verb.png" >/dev/null
   done
   viz bayesite-viz posterior "$run/fit.nc" --kind hist -o "$vizdir/posterior.png" >/dev/null
   viz bayesite-viz ppc "$run/fit.nc" --kind dist -o "$vizdir/ppc.png" >/dev/null
-  rm -rf "$stage"
 }
 
 # =========================================================================

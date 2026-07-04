@@ -46,11 +46,13 @@ run/manifest.json   # artifact format manifest
 run/dims.json       # optional; written only when the model declares dimension metadata
 ```
 
-and invokes the Bayesite adapter, which materializes backend-private engine input
-under `run/.bayesite/`:
+and invokes the Bayesite adapter, which passes the canonical `run/data.json`
+straight to the engine (the engine parses the `bayescycle.data.json.v1` wrapper
+natively, so both backends fingerprint the same bytes; see
+`docs/posterior-draws-v0.md`):
 
 ```bash
-bayesite sample --model run/model.ir.json --data run/.bayesite/data.json --out run/posterior.ndjson
+bayesite sample --model run/model.ir.json --data run/data.json --out run/posterior.ndjson
 ```
 
 The engine is asked to write draws to:

@@ -154,36 +154,6 @@ def data_doc_to_plain_json(doc: DataDoc) -> dict[str, JsonValue]:
     }
 
 
-def data_doc_to_bayesite_json(doc: DataDoc) -> dict[str, JsonValue]:
-    """Materialize a canonical data document as Bayesite's typed data object."""
-    out: dict[str, JsonValue] = {}
-    for entry in doc.variables:
-        variable = entry.variable
-        if variable.dtype == "bool":
-            dtype = "int64"
-            values: list[JsonValue] = [1 if value else 0 for value in variable.values]
-        else:
-            dtype = variable.dtype
-            values = list(variable.values)
-        shape_values: list[JsonValue] = [dim for dim in variable.shape]
-        value_values: list[JsonValue] = [value for value in values]
-        typed_value: dict[str, JsonValue] = {
-            "dtype": dtype,
-            "shape": shape_values,
-            "values": value_values,
-        }
-        out[entry.name] = typed_value
-    return out
-
-
-def write_bayesite_data_doc(path: Path, doc: DataDoc) -> None:
-    """Write a backend-private Bayesite data document from canonical data."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data_doc_to_bayesite_json(doc), f, indent=2, allow_nan=False)
-        f.write("\n")
-
-
 def _parse_canonical_variable(value: JsonValue, label: str) -> DataVariable:
     if not isinstance(value, dict):
         raise DataDocError(f"{label}: variable must be an object")

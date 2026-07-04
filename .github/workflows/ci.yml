@@ -19,6 +19,14 @@ jobs:
           BAYES_REPOS_TOKEN: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
         run: |
           git config --global url."https://x-access-token:${BAYES_REPOS_TOKEN}@github.com/StefanSko/".insteadOf "https://github.com/StefanSko/"
+      - name: Checkout bayesite
+        uses: actions/checkout@v4
+        with:
+          repository: StefanSko/bayesite
+          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
+          path: .bayesite-src
+      - name: Build bayesite release binary
+        run: cargo build --release --manifest-path .bayesite-src/Cargo.toml
       - name: Preflight the pinned dependencies
         run: |
           for repo in bayeswire jaxstanv5; do
@@ -36,7 +44,9 @@ jobs:
       - name: Types
         run: uv run ty check
       - name: Tests
-        run: uv run pytest -q
+        run: |
+          export BAYESCYCLE_TEST_BAYESITE_BIN="$PWD/.bayesite-src/target/release/bayesite"
+          uv run pytest -q
 
   # The default agent path executes model.py with bayeswire only — no JAX,
   # ever. This job proves it end-to-end with a real bayesite binary.

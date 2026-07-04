@@ -326,8 +326,7 @@ BAYESITE_VIZ_SOURCE = (
 cmd_export = (
     f'BAYESITE_VIZ_SOURCE="{BAYESITE_VIZ_SOURCE}"\n'
     "# In restricted environments without that pinned Git source, substitute a\n"
-    '# local checkout: BAYESITE_VIZ_SOURCE="$(pwd)/../bayesite-viz" (difficulties #5).\n'
-    "# bayesite-idata reads an *unwrapped* data.json; stage run/.bayesite/data.json (difficulties #6).\n\n"
+    '# local checkout: BAYESITE_VIZ_SOURCE="$(pwd)/../bayesite-viz" (difficulties #5).\n\n'
     'uv run --no-project --with "$BAYESITE_VIZ_SOURCE" --python 3.13 -- \\\n'
     "  bayesite-idata run/ -o run/fit.nc --validate require --bayesite $BAYESITE\n"
     "for verb in trace rank energies forest ess-rhat; do\n"
@@ -404,7 +403,7 @@ def io_table_html() -> str:
             ["run/posterior_check.json"],
             "",
         ),
-        ("bayesite-idata / bayesite-viz", ["run/* (staged)"], ["run/fit.nc", "viz/*.png"], "ArviZ"),
+        ("bayesite-idata / bayesite-viz", ["run/*"], ["run/fit.nc", "viz/*.png"], "ArviZ"),
     ]
 
     def files(items: list[str], cls: str) -> str:
@@ -785,9 +784,10 @@ parts.append(
         code_block(cmd_export, "bash")
         + '<p class="lead small">The walkthrough uses a local <span class="mono">bayesite-viz</span> '
         "checkout because the pinned Git source is unavailable in restricted environments "
-        '(difficulties #5), and stages an unwrapped <span class="mono">data.json</span> '
-        'because <span class="mono">bayesite-idata</span> does not read the canonical '
-        '<span class="mono">bayescycle.data.json.v1</span> wrapper (difficulties #6).</p>'
+        '(difficulties #5). <span class="mono">bayesite-idata</span> reads the canonical '
+        '<span class="mono">bayescycle.data.json.v1</span> wrapper at '
+        '<span class="mono">run/data.json</span> natively, so the run directory needs no '
+        "staging (difficulties #6, resolved).</p>"
         + file_chip("write", "run/fit.nc", "ArviZ InferenceData (NetCDF)")
         + file_chip("write", "viz/*.png", "one PNG per bayesite-viz verb")
         + f'<div class="plots">{arviz_section}</div>',
@@ -848,11 +848,12 @@ mixed-backend walkthrough exercises the cross-backend handoff.</p>
 <tr><td class="mono">recover-check</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
 </tbody></table>
 <p class="small">*Bayesite <span class="mono">posterior-predictive</span> and
-<span class="mono">posterior-check</span> verify the fit's model/data fingerprint,
-so they require a fit produced by Bayesite on the same model+data &mdash; a
-jaxstanv5-produced fit is rejected (difficulties #2). All workflow reports are
-v0-provisional: machine-readable and tested, but consumers must check the format
-marker before depending on field stability.</p>
+<span class="mono">posterior-check</span> verify the fit's model/data fingerprint
+against the canonical <span class="mono">run/data.json</span>; since both backends
+fingerprint the same bytes, a jaxstanv5-produced fit passes too (difficulties #2,
+resolved). All workflow reports are v0-provisional: machine-readable and tested,
+but consumers must check the format marker before depending on field
+stability.</p>
 """,
     )
 )

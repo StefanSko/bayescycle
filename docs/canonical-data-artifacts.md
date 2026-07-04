@@ -26,9 +26,12 @@ backend-specific metadata are rejected before a run directory is created.
 
 Legacy plain JSON inputs such as `{"x": [0.1, 0.2], "y": 1}` are still accepted
 at CLI boundaries and normalized into the canonical document in `run/data.json`.
-Backend adapters materialize that canonical file into backend-native runtime
-inputs. For Bayesite, these transient files live under `run/.bayesite/` and are
-not the cross-stage artifact.
+Both backends consume that canonical file directly: the Bayesite adapter passes
+`run/data.json` to the engine unchanged (the engine parses the
+`bayescycle.data.json.v1` wrapper natively), and the jaxstanv5 adapter converts
+it to a plain in-memory mapping for `bind_model(...)` without writing a
+transient file. This is also why both backends fingerprint identical bytes; see
+`docs/posterior-draws-v0.md`.
 
 ## Walkthrough: same-backend simulation and recovery fit
 
@@ -49,8 +52,8 @@ The durable output is canonical:
 run-sim/simulated_data.json  # bayescycle.data.json.v1
 ```
 
-A Bayesite recovery fit can consume that same canonical artifact. The Bayesite
-adapter converts it to `run-recover-fit/.bayesite/data.json` for the engine:
+A Bayesite recovery fit can consume that same canonical artifact directly; the
+Bayesite adapter passes `run-recover-fit/data.json` to the engine unchanged:
 
 ```bash
 uv run bayescycle sample model.py \

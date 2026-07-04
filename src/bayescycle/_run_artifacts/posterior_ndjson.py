@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from collections.abc import Mapping
@@ -10,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, SupportsFloat, cast
 
+from bayeswire.ir import model_data_fingerprint as model_data_fingerprint
 from jax import Array
 from jaxstanv5.diagnostics import ess, rhat
 from jaxstanv5.model.bound import BoundModel
@@ -87,12 +87,6 @@ class PosteriorArtifactSettings:
     draws: int
     max_tree_depth: int
     target_accept: float
-
-
-def model_data_fingerprint(model_ir: bytes, data: bytes) -> str:
-    """Return the neutral model/data fingerprint shared with Bayesite."""
-    digest = hashlib.sha256(b"bayescycle-model-data-v1\n" + model_ir + b"\n" + data).hexdigest()
-    return f"sha256:{digest}"
 
 
 def write_posterior_ndjson(
