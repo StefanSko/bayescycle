@@ -1,5 +1,30 @@
 # bayeswire
 
+**The reproducible, agent-verifiable Bayesian workflow — one spec, a reference
+engine, a fast engine that must agree with it, and a harness that refuses to
+let either you or the agent skip a step.**
+
+## The toolchain
+
+| Repository | Role |
+|---|---|
+| **bayeswire** (here) | One spec: eDSL, resolved IR, wire codec, dimension sidecars, normative docs, and fixture corpus |
+| [jaxstanv5](https://github.com/StefanSko/jaxstanv5) | Reference engine: JAX/BlackJAX backend for binding models, compiling log densities, running NUTS, and emitting diagnostics |
+| [bayesite](https://github.com/StefanSko/bayesite) | Fast engine that must agree with the reference: zero-dependency Rust engine that vendors specs and fixtures by file |
+| [bayescycle](https://github.com/StefanSko/bayescycle) | Harness that refuses skipped steps: file-based workflow runner for agents and humans |
+| [bayesite-viz](https://github.com/StefanSko/bayesite-viz) | Downstream visualization: fit-artifact exporter and dashboards |
+
+Every workflow step is a command that reads files and writes files; every run
+is seeded and replayable; run directories are append-only; provenance records
+what was actually done. The customer is an agent and the human auditing it;
+the product is trustworthy process, not a sampler.
+
+Consumers pin bayeswire by exact version and vendor or conformance-test
+against the corpus; the copies of the spec in downstream repositories are
+generated and hash-checked, never edited.
+
+## This repository
+
 **The model declaration language and wire format for the bayes\* toolchain.**
 
 bayeswire owns the language: a declarative Python eDSL for Bayesian models,
@@ -37,20 +62,6 @@ Decoding is code-free: `meta_from_dict(document)` reconstructs resolved
 metadata without executing any user code, and
 `bindable_from_meta(meta, dimensions=...)` returns a pure metadata class that
 backends bind and sample.
-
-## The toolchain
-
-| Repository | Role |
-|---|---|
-| **bayeswire** (here) | The language: eDSL, IR codec, wire spec, fixture corpus |
-| [jaxstanv5](https://github.com/StefanSko/jaxstanv5) | JAX/BlackJAX backend: bind, compile log densities, NUTS, diagnostics |
-| [bayesite](https://github.com/StefanSko/bayesite) | Zero-dependency Rust engine; vendors spec and fixtures by file |
-| [bayescycle](https://github.com/StefanSko/bayescycle) | File-based workflow harness for agents |
-| [bayesite-viz](https://github.com/StefanSko/bayesite-viz) | Fit-artifact exporter and dashboards |
-
-Consumers pin bayeswire by exact version and vendor or conformance-test
-against the corpus; the copies of the spec in downstream repositories are
-generated and hash-checked, never edited.
 
 ## Layout
 
