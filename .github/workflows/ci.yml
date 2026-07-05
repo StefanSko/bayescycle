@@ -42,7 +42,7 @@ jobs:
       - name: Lint
         run: uv run ruff check --exclude .bayesite-src .
       - name: Types
-        run: uv run ty check
+        run: uv run ty check src tests
       - name: Tests
         run: |
           export BAYESCYCLE_TEST_BAYESITE_BIN="$PWD/.bayesite-src/target/release/bayesite"
