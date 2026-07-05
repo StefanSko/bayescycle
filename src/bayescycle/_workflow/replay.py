@@ -24,6 +24,8 @@ from bayescycle._workflow.requests import (
     SimulateRequest,
 )
 
+HASH_CHUNK_SIZE = 1024 * 1024
+
 
 @dataclass(frozen=True)
 class ReplaySourceCheck:
@@ -271,6 +273,15 @@ def _artifact_references(record: RecordedRunMetadata) -> tuple[ReplayArtifactRef
     )
 
 
+@dataclass(frozen=True)
+class _StreamComparison:
+    """Streaming byte comparison and hashes for two files."""
+
+    byte_identical: bool
+    original_sha256: str
+    replay_sha256: str
+
+
 def _compare_artifact(
     reference: ReplayArtifactReference,
     *,
@@ -298,16 +309,14 @@ def _compare_artifact(
             replay_sha256=None,
         )
 
-    original_bytes = original_path.read_bytes()
-    replay_bytes = replay_path.read_bytes()
-    byte_identical = original_bytes == replay_bytes
+    stream_comparison = _compare_files_streaming(original_path, replay_path)
     return ReplayArtifactComparison(
         role=reference.role,
         path=reference.path,
-        status="identical" if byte_identical else "different",
-        byte_identical=byte_identical,
-        original_sha256=_sha256_uri_bytes(original_bytes),
-        replay_sha256=_sha256_uri_bytes(replay_bytes),
+        status="identical" if stream_comparison.byte_identical else "different",
+        byte_identical=stream_comparison.byte_identical,
+        original_sha256=stream_comparison.original_sha256,
+        replay_sha256=stream_comparison.replay_sha256,
     )
 
 
@@ -317,11 +326,38 @@ def _run_artifact_path(run_dir: Path, path: Path) -> Path:
     return run_dir / path
 
 
+def _compare_files_streaming(original_path: Path, replay_path: Path) -> _StreamComparison:
+    original_hash = hashlib.sha256()
+    replay_hash = hashlib.sha256()
+    byte_identical = True
+    with original_path.open("rb") as original_file, replay_path.open("rb") as replay_file:
+        while True:
+            original_chunk = original_file.read(HASH_CHUNK_SIZE)
+            replay_chunk = replay_file.read(HASH_CHUNK_SIZE)
+            if original_chunk:
+                original_hash.update(original_chunk)
+            if replay_chunk:
+                replay_hash.update(replay_chunk)
+            if original_chunk != replay_chunk:
+                byte_identical = False
+            if not original_chunk and not replay_chunk:
+                break
+    return _StreamComparison(
+        byte_identical=byte_identical,
+        original_sha256=f"sha256:{original_hash.hexdigest()}",
+        replay_sha256=f"sha256:{replay_hash.hexdigest()}",
+    )
+
+
 def _sha256_uri_if_file(path: Path) -> str | None:
     if not path.is_file():
         return None
-    return sha256_uri(path)
+    return _sha256_uri_file(path)
 
 
-def _sha256_uri_bytes(content: bytes) -> str:
-    return f"sha256:{hashlib.sha256(content).hexdigest()}"
+def _sha256_uri_file(path: Path) -> str:
+    content_hash = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(HASH_CHUNK_SIZE):
+            content_hash.update(chunk)
+    return f"sha256:{content_hash.hexdigest()}"
