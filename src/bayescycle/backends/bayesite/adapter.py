@@ -297,6 +297,7 @@ class BayesiteBackend:
             backend="bayesite",
             command=action.command.argv,
             backend_simulated_data=backend_simulated_data,
+            extra_args=self.extra_args,
         )
 
     def materialize(self, action: BayesiteAction) -> BayesitePreparedCommand:

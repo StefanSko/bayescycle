@@ -81,31 +81,34 @@ def _create_sample_run(
     *,
     fake_engine: Path,
     capsys: pytest.CaptureFixture[str],
+    engine_args: tuple[str, ...] = (),
 ) -> tuple[Path, Path, Path]:
     model_file = _write_simple_model(tmp_path)
     data_file = _write_input_data(tmp_path)
     run_dir = tmp_path / "run"
 
-    code = main(
-        [
-            "sample",
-            str(model_file),
-            "--data",
-            str(data_file),
-            "-o",
-            str(run_dir),
-            "--engine",
-            str(fake_engine),
-            "--seed",
-            "7",
-            "--chains",
-            "2",
-            "--warmup",
-            "5",
-            "--draws",
-            "6",
-        ]
-    )
+    argv = [
+        "sample",
+        str(model_file),
+        "--data",
+        str(data_file),
+        "-o",
+        str(run_dir),
+        "--engine",
+        str(fake_engine),
+        "--seed",
+        "7",
+        "--chains",
+        "2",
+        "--warmup",
+        "5",
+        "--draws",
+        "6",
+    ]
+    if engine_args:
+        argv.extend(("--", *engine_args))
+
+    code = main(argv)
 
     assert code == 0
     capsys.readouterr()
@@ -124,7 +127,10 @@ def test_replay_check_only_verifies_hashes_and_reconstructs_sample_plan(
 ) -> None:
     fake_engine = _write_constant_sample_engine(tmp_path)
     model_file, data_file, run_dir = _create_sample_run(
-        tmp_path, fake_engine=fake_engine, capsys=capsys
+        tmp_path,
+        fake_engine=fake_engine,
+        capsys=capsys,
+        engine_args=("--engine-flag", "value"),
     )
     replay_dir = tmp_path / "replay"
 
@@ -135,6 +141,7 @@ def test_replay_check_only_verifies_hashes_and_reconstructs_sample_plan(
         "seed": "7",
         "warmup": "5",
     }
+    assert run_metadata["backend_options"] == {"extra_args": ["--engine-flag", "value"]}
 
     code = main(
         [
@@ -185,7 +192,40 @@ def test_replay_check_only_verifies_hashes_and_reconstructs_sample_plan(
         "6",
         "--out",
         str(replay_dir.resolve() / "posterior.ndjson"),
+        "--engine-flag",
+        "value",
     ]
+
+
+def test_replay_rejects_legacy_metadata_without_replay_settings(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "format": "bayescycle.run.v1",
+                "kind": "sample",
+                "backend": "bayesite",
+                "model": {
+                    "name": "Simple",
+                    "source_path": str(tmp_path / "model.py"),
+                    "sha256": "sha256:legacy",
+                    "ir_path": "model.ir.json",
+                },
+                "inputs": [],
+                "outputs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code = main(["replay", str(run_dir), "-o", str(tmp_path / "replay"), "--check-only"])
+
+    assert code == 2
+    assert "not replay-capable: missing settings" in capsys.readouterr().err
 
 
 def test_replay_refuses_drifted_input_before_creating_output(

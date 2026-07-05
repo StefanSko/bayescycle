@@ -675,7 +675,7 @@ def _replay(namespace: argparse.Namespace) -> int:
         runtime_options = BackendRuntimeOptions(
             backend=record.backend,
             engine=cast(str | None, namespace.engine),
-            extra_args=(),
+            extra_args=record.backend_extra_args,
             preflight=not check_only,
         )
         if record.kind == "sample":

@@ -91,18 +91,20 @@ class RunMetadata:
     inputs: tuple[RunMetadataInput, ...]
     outputs: tuple[RunMetadataOutput, ...]
     settings: tuple[RunMetadataSetting, ...] = ()
+    backend_extra_args: tuple[str, ...] = ()
 
     def as_json(self, run_dir: Path) -> dict[str, object]:
         document: dict[str, object] = {
             "format": RUN_METADATA_FORMAT,
             "kind": self.kind,
             "backend": self.backend,
+            "settings": {entry.name: entry.value for entry in self.settings},
             "model": self.model.as_json(run_dir),
             "inputs": [entry.as_json(run_dir) for entry in self.inputs],
             "outputs": [entry.as_json(run_dir) for entry in self.outputs],
         }
-        if self.settings:
-            document["settings"] = {entry.name: entry.value for entry in self.settings}
+        if self.backend_extra_args:
+            document["backend_options"] = {"extra_args": list(self.backend_extra_args)}
         return document
 
 
@@ -146,6 +148,7 @@ class RecordedRunMetadata:
     inputs: tuple[RecordedRunMetadataInput, ...]
     outputs: tuple[RecordedRunMetadataOutput, ...]
     settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
 
     def setting(self, name: str) -> str | None:
         """Return a recorded setting value by name."""
@@ -181,6 +184,11 @@ def _parse_recorded_run_metadata(raw_document: object) -> RecordedRunMetadata:
         raise RunMetadataError(
             f"unsupported run metadata format: {metadata_format}; expected {RUN_METADATA_FORMAT}"
         )
+    if "settings" not in document:
+        raise RunMetadataError(
+            "run metadata is not replay-capable: missing settings; "
+            "re-run with a newer bayescycle before using replay"
+        )
     return RecordedRunMetadata(
         kind=_json_string(document.get("kind"), "kind"),
         backend=_json_string(document.get("backend"), "backend"),
@@ -193,7 +201,8 @@ def _parse_recorded_run_metadata(raw_document: object) -> RecordedRunMetadata:
             _parse_recorded_output(entry, index)
             for index, entry in enumerate(_json_array(document.get("outputs"), "outputs"))
         ),
-        settings=_parse_recorded_settings(document.get("settings", {})),
+        settings=_parse_recorded_settings(document.get("settings")),
+        backend_extra_args=_parse_recorded_backend_extra_args(document.get("backend_options", {})),
     )
 
 
@@ -237,6 +246,13 @@ def _parse_recorded_settings(value: object) -> tuple[RunMetadataSetting, ...]:
     )
 
 
+def _parse_recorded_backend_extra_args(value: object) -> tuple[str, ...]:
+    document = _json_object(value, "backend_options")
+    if "extra_args" not in document:
+        return ()
+    return _json_string_array(document.get("extra_args"), "backend_options.extra_args")
+
+
 def _json_object(value: object, label: str) -> dict[str, object]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise RunMetadataError(f"{label} must be a JSON object")
@@ -253,6 +269,13 @@ def _json_string(value: object, label: str) -> str:
     if not isinstance(value, str):
         raise RunMetadataError(f"{label} must be a JSON string")
     return value
+
+
+def _json_string_array(value: object, label: str) -> tuple[str, ...]:
+    return tuple(
+        _json_string(entry, f"{label}[{index}]")
+        for index, entry in enumerate(_json_array(value, label))
+    )
 
 
 def _optional_json_string(value: object, label: str) -> str | None:

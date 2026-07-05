@@ -18,6 +18,7 @@ class SampleRunPlan[ActionT]:
     draws_path: Path
     backend: str
     settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -29,6 +30,7 @@ class PriorPredictiveRunPlan[ActionT]:
     prior_predictive_path: Path
     backend: str
     settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -42,6 +44,7 @@ class SimulateRunPlan[ActionT]:
     simulated_data_path: CanonicalDataArtifact
     backend: str
     settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -52,6 +55,7 @@ class RecoverRunPlan[ActionT]:
     context: PlannedModelScenarioContext
     recovery_path: Path
     backend: str
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -63,6 +67,7 @@ class SbcRunPlan[ActionT]:
     sbc_path: Path
     backend: str
     settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
