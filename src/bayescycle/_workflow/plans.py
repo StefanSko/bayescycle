@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bayescycle._run_artifacts.references import CanonicalDataArtifact
+from bayescycle._run_artifacts.run_metadata import RunMetadataSetting
 from bayescycle._workflow.contexts import PlannedModelRunContext, PlannedModelScenarioContext
 
 
@@ -16,6 +17,8 @@ class SampleRunPlan[ActionT]:
     context: PlannedModelRunContext
     draws_path: Path
     backend: str
+    settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -26,6 +29,8 @@ class PriorPredictiveRunPlan[ActionT]:
     context: PlannedModelRunContext
     prior_predictive_path: Path
     backend: str
+    settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -38,6 +43,8 @@ class SimulateRunPlan[ActionT]:
     truth_path: Path
     simulated_data_path: CanonicalDataArtifact
     backend: str
+    settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -48,6 +55,7 @@ class RecoverRunPlan[ActionT]:
     context: PlannedModelScenarioContext
     recovery_path: Path
     backend: str
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 
@@ -58,6 +66,8 @@ class SbcRunPlan[ActionT]:
     context: PlannedModelScenarioContext
     sbc_path: Path
     backend: str
+    settings: tuple[RunMetadataSetting, ...]
+    backend_extra_args: tuple[str, ...]
     action: ActionT
 
 

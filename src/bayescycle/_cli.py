@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -25,6 +25,7 @@ from bayescycle._backend_runtime import (
 )
 from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import ModelLoadError
+from bayescycle._run_artifacts.run_metadata import RecordedRunMetadata
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow.backend_plan import (
     BackendPlanRequest,
@@ -58,7 +59,27 @@ from bayescycle._workflow.operations import (
     plan_simulate_run,
 )
 from bayescycle._workflow.plans import RunDirectoryCommandPlan
-from bayescycle._workflow.protocols import ActionBackend, PriorPredictiveBackend, SampleBackend
+from bayescycle._workflow.protocols import (
+    ActionBackend,
+    PriorPredictiveBackend,
+    RecoverBackend,
+    SampleBackend,
+    SbcBackend,
+    SimulateBackend,
+)
+from bayescycle._workflow.replay import (
+    ReplaySourceCheck,
+    compare_replay_artifacts,
+    load_replay_metadata,
+    prior_predictive_request_from_replay,
+    recover_request_from_replay,
+    replay_plan_document,
+    replay_result_document,
+    sample_request_from_replay,
+    sbc_request_from_replay,
+    simulate_request_from_replay,
+    verify_replay_sources,
+)
 from bayescycle._workflow.requests import (
     DiagnoseRequest,
     PosteriorCheckRequest,
@@ -111,6 +132,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _posterior_check(namespace)
     if command == "recover-check":
         return _recover_check(namespace)
+    if command == "replay":
+        return _replay(namespace)
     if command == "workflow-plan":
         return _workflow_plan(namespace)
     parser.print_help(sys.stderr)
@@ -301,6 +324,22 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_show_plan_argument(
         recover_check,
         help_text="validate run files and show the planned backend command",
+    )
+
+    replay = subparsers.add_parser(
+        "replay",
+        description="Re-execute a run from run.json and compare replayed artifacts.",
+    )
+    replay.add_argument("run_dir", type=Path, help="bayescycle run directory containing run.json")
+    replay.add_argument("-o", "--output", required=True, type=Path, help="fresh replay directory")
+    replay.add_argument(
+        "--engine",
+        help="Bayesite executable to invoke when replaying a bayesite run (default: bayesite)",
+    )
+    replay.add_argument(
+        "--check-only",
+        action="store_true",
+        help="verify recorded source hashes and print the reconstructed plan without executing",
     )
 
     workflow_plan = subparsers.add_parser(
@@ -624,6 +663,284 @@ def _recover_check(namespace: argparse.Namespace) -> int:
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _replay(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        source_run, record = load_replay_metadata(cast(Path, namespace.run_dir))
+        source_checks = verify_replay_sources(record)
+        output_dir = cast(Path, namespace.output).expanduser().resolve()
+        check_only = bool(cast(bool, namespace.check_only))
+        runtime_options = BackendRuntimeOptions(
+            backend=record.backend,
+            engine=cast(str | None, namespace.engine),
+            extra_args=record.backend_extra_args,
+            preflight=not check_only,
+        )
+        if record.kind == "sample":
+            backend = resolve_sample_backend(runtime_options)
+            request = sample_request_from_replay(record, output_dir)
+            return _replay_sample_with_backend(
+                backend,
+                request,
+                source_run=source_run,
+                record=record,
+                source_checks=source_checks,
+                check_only=check_only,
+            )
+        if record.kind == "prior-predictive":
+            backend = resolve_prior_predictive_backend(runtime_options)
+            request = prior_predictive_request_from_replay(record, output_dir)
+            return _replay_prior_predictive_with_backend(
+                backend,
+                request,
+                source_run=source_run,
+                record=record,
+                source_checks=source_checks,
+                check_only=check_only,
+            )
+        if record.kind == "simulate":
+            backend = resolve_simulate_backend(runtime_options)
+            request = simulate_request_from_replay(record, output_dir)
+            return _replay_simulate_with_backend(
+                backend,
+                request,
+                source_run=source_run,
+                record=record,
+                source_checks=source_checks,
+                check_only=check_only,
+            )
+        if record.kind == "recover":
+            backend = resolve_recover_backend(runtime_options)
+            request = recover_request_from_replay(record, output_dir)
+            return _replay_recover_with_backend(
+                backend,
+                request,
+                source_run=source_run,
+                record=record,
+                source_checks=source_checks,
+                check_only=check_only,
+            )
+        if record.kind == "sbc":
+            backend = resolve_sbc_backend(runtime_options)
+            request = sbc_request_from_replay(record, output_dir)
+            return _replay_sbc_with_backend(
+                backend,
+                request,
+                source_run=source_run,
+                record=record,
+                source_checks=source_checks,
+                check_only=check_only,
+            )
+        raise WorkflowError(f"replay does not support run kind: {record.kind}")
+    except (InProcessBackendError, ModelLoadError, WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _replay_sample_with_backend[ActionT, CommandT](
+    backend: SampleBackend[ActionT, CommandT],
+    request: SampleRequest,
+    *,
+    source_run: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+    check_only: bool,
+) -> int:
+    plan = plan_sample_run(request, backend)
+    if check_only:
+        return _print_replay_plan(
+            source_run=source_run,
+            output_dir=request.output_dir.expanduser().resolve(),
+            record=record,
+            source_checks=source_checks,
+            plan=sample_plan_document(plan, backend),
+        )
+    command = materialize_sample_run(plan, backend)
+    code = backend.execute(command)
+    if code != 0:
+        return code
+    return _print_replay_result(
+        source_run=source_run,
+        output_dir=request.output_dir.expanduser().resolve(),
+        record=record,
+        source_checks=source_checks,
+    )
+
+
+def _replay_prior_predictive_with_backend[ActionT, CommandT](
+    backend: PriorPredictiveBackend[ActionT, CommandT],
+    request: PriorPredictiveRequest,
+    *,
+    source_run: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+    check_only: bool,
+) -> int:
+    plan = plan_prior_predictive_run(request, backend)
+    if check_only:
+        return _print_replay_plan(
+            source_run=source_run,
+            output_dir=request.output_dir.expanduser().resolve(),
+            record=record,
+            source_checks=source_checks,
+            plan=prior_predictive_plan_document(plan, backend),
+        )
+    command = materialize_prior_predictive_run(plan, backend)
+    code = backend.execute(command)
+    if code != 0:
+        return code
+    return _print_replay_result(
+        source_run=source_run,
+        output_dir=request.output_dir.expanduser().resolve(),
+        record=record,
+        source_checks=source_checks,
+    )
+
+
+def _replay_simulate_with_backend[ActionT, CommandT](
+    backend: SimulateBackend[ActionT, CommandT],
+    request: SimulateRequest,
+    *,
+    source_run: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+    check_only: bool,
+) -> int:
+    plan = plan_simulate_run(request, backend)
+    if check_only:
+        return _print_replay_plan(
+            source_run=source_run,
+            output_dir=request.output_dir.expanduser().resolve(),
+            record=record,
+            source_checks=source_checks,
+            plan=simulate_plan_document(plan, backend),
+        )
+    command = materialize_simulate_run(plan, backend)
+    code = backend.execute(command)
+    if code != 0:
+        return code
+    return _print_replay_result(
+        source_run=source_run,
+        output_dir=request.output_dir.expanduser().resolve(),
+        record=record,
+        source_checks=source_checks,
+    )
+
+
+def _replay_recover_with_backend[ActionT, CommandT](
+    backend: RecoverBackend[ActionT, CommandT],
+    request: RecoverRequest,
+    *,
+    source_run: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+    check_only: bool,
+) -> int:
+    plan = plan_recover_run(request, backend)
+    if check_only:
+        return _print_replay_plan(
+            source_run=source_run,
+            output_dir=request.output_dir.expanduser().resolve(),
+            record=record,
+            source_checks=source_checks,
+            plan=recover_plan_document(plan, backend),
+        )
+    command = materialize_recover_run(plan, backend)
+    code = backend.execute(command)
+    if code != 0:
+        return code
+    return _print_replay_result(
+        source_run=source_run,
+        output_dir=request.output_dir.expanduser().resolve(),
+        record=record,
+        source_checks=source_checks,
+    )
+
+
+def _replay_sbc_with_backend[ActionT, CommandT](
+    backend: SbcBackend[ActionT, CommandT],
+    request: SbcRequest,
+    *,
+    source_run: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+    check_only: bool,
+) -> int:
+    plan = plan_sbc_run(request, backend)
+    if check_only:
+        return _print_replay_plan(
+            source_run=source_run,
+            output_dir=request.output_dir.expanduser().resolve(),
+            record=record,
+            source_checks=source_checks,
+            plan=sbc_plan_document(plan, backend),
+        )
+    command = materialize_sbc_run(plan, backend)
+    code = backend.execute(command)
+    if code != 0:
+        return code
+    return _print_replay_result(
+        source_run=source_run,
+        output_dir=request.output_dir.expanduser().resolve(),
+        record=record,
+        source_checks=source_checks,
+    )
+
+
+def _print_replay_plan(
+    *,
+    source_run: Path,
+    output_dir: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+    plan: Mapping[str, object],
+) -> int:
+    print(
+        json.dumps(
+            replay_plan_document(
+                source_run=source_run,
+                output_dir=output_dir,
+                record=record,
+                source_checks=source_checks,
+                plan=plan,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _print_replay_result(
+    *,
+    source_run: Path,
+    output_dir: Path,
+    record: RecordedRunMetadata,
+    source_checks: tuple[ReplaySourceCheck, ...],
+) -> int:
+    comparison = compare_replay_artifacts(
+        record,
+        original_run_dir=source_run,
+        replay_run_dir=output_dir,
+    )
+    print(
+        json.dumps(
+            replay_result_document(
+                source_run=source_run,
+                output_dir=output_dir,
+                record=record,
+                source_checks=source_checks,
+                comparison=comparison,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    if comparison.byte_identical:
+        return 0
+    return 1
 
 
 def _run_directory_with_backend[ActionT, CommandT](

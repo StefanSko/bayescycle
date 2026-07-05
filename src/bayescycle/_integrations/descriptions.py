@@ -29,6 +29,7 @@ class ExternalCommandPlanDescription:
     backend: str
     command: tuple[str, ...]
     backend_simulated_data: Path | None = None
+    extra_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,15 @@ type BackendPlanDescription = (
     | InProcessSamplePlanDescription
     | InProcessSettingsPlanDescription
 )
+
+
+def backend_replay_extra_args(description: BackendPlanDescription) -> tuple[str, ...]:
+    """Return backend passthrough args that must be preserved for replay."""
+    match description:
+        case ExternalCommandPlanDescription(extra_args=extra_args):
+            return extra_args
+        case InProcessSamplePlanDescription() | InProcessSettingsPlanDescription():
+            return ()
 
 
 def backend_plan_description_fields(

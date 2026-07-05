@@ -38,11 +38,11 @@ jobs:
       - name: Sync (bayeswire + jaxstanv5 inproc extra)
         run: uv sync --extra inproc
       - name: Format
-        run: uv run ruff format --check .
+        run: uv run ruff format --check --exclude .bayesite-src .
       - name: Lint
-        run: uv run ruff check .
+        run: uv run ruff check --exclude .bayesite-src .
       - name: Types
-        run: uv run ty check
+        run: uv run ty check src tests
       - name: Tests
         run: |
           export BAYESCYCLE_TEST_BAYESITE_BIN="$PWD/.bayesite-src/target/release/bayesite"

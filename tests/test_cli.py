@@ -659,6 +659,7 @@ def test_sample_writes_run_metadata_for_future_provenance(tmp_path: Path) -> Non
         "format": "bayescycle.run.v1",
         "kind": "sample",
         "backend": "bayesite",
+        "settings": {},
         "model": {
             "name": "Simple",
             "source_path": str(model_file.resolve()),
