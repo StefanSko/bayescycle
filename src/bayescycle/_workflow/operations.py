@@ -24,9 +24,11 @@ from bayescycle._run_artifacts.run_metadata import (
     RunMetadataInput,
     RunMetadataModel,
     RunMetadataOutput,
+    RunMetadataSetting,
     sha256_uri,
     write_run_metadata,
 )
+from bayescycle._settings import SamplerSettings
 from bayescycle._workflow.contexts import (
     DiagnoseRunContext,
     PlannedModelRunContext,
@@ -93,6 +95,7 @@ def plan_sample_run[ActionT, CommandT](
         context=context,
         draws_path=draws_path,
         backend=backend.backend_id,
+        settings=_sampler_settings(request.sampler),
         action=action,
     )
 
@@ -109,6 +112,7 @@ def materialize_sample_run[ActionT, CommandT](
             kind="sample",
             backend=plan.backend,
             outputs=(RunMetadataOutput(role="posterior", path=plan.draws_path),),
+            settings=plan.settings,
         ),
     )
     return backend.materialize(plan.action)
@@ -131,6 +135,7 @@ def plan_prior_predictive_run[ActionT, CommandT](
         context=context,
         prior_predictive_path=output_path,
         backend=backend.backend_id,
+        settings=_optional_settings(("seed", request.seed), ("draws", request.draws)),
         action=action,
     )
 
@@ -147,6 +152,7 @@ def materialize_prior_predictive_run[ActionT, CommandT](
             kind="prior-predictive",
             backend=plan.backend,
             outputs=(RunMetadataOutput(role="prior_predictive", path=plan.prior_predictive_path),),
+            settings=plan.settings,
         ),
     )
     return backend.materialize(plan.action)
@@ -173,6 +179,7 @@ def plan_simulate_run[ActionT, CommandT](
         truth_path=truth_path,
         simulated_data_path=output_path,
         backend=backend.backend_id,
+        settings=_optional_settings(("seed", request.seed)),
         action=action,
     )
 
@@ -192,6 +199,7 @@ def materialize_simulate_run[ActionT, CommandT](
             context,
             kind="simulate",
             backend=plan.backend,
+            settings=plan.settings,
             extra_inputs=(
                 RunMetadataInput(
                     role="truth",
@@ -267,6 +275,7 @@ def plan_sbc_run[ActionT, CommandT](
         context=context,
         sbc_path=output_path,
         backend=backend.backend_id,
+        settings=_optional_settings(("replicates", request.replicates)),
         action=action,
     )
 
@@ -283,6 +292,7 @@ def materialize_sbc_run[ActionT, CommandT](
             kind="sbc",
             backend=plan.backend,
             outputs=(RunMetadataOutput(role="sbc", path=plan.sbc_path),),
+            settings=plan.settings,
         ),
     )
     return backend.materialize(plan.action)
@@ -487,6 +497,7 @@ def _model_data_run_metadata(
     kind: str,
     backend: str,
     outputs: tuple[RunMetadataOutput, ...],
+    settings: tuple[RunMetadataSetting, ...] = (),
     extra_inputs: tuple[RunMetadataInput, ...] = (),
 ) -> RunMetadata:
     return RunMetadata(
@@ -509,6 +520,7 @@ def _model_data_run_metadata(
             *extra_inputs,
         ),
         outputs=outputs,
+        settings=settings,
     )
 
 
@@ -518,6 +530,7 @@ def _model_scenario_run_metadata(
     kind: str,
     backend: str,
     outputs: tuple[RunMetadataOutput, ...],
+    settings: tuple[RunMetadataSetting, ...] = (),
 ) -> RunMetadata:
     return RunMetadata(
         kind=kind,
@@ -537,6 +550,24 @@ def _model_scenario_run_metadata(
             ),
         ),
         outputs=outputs,
+        settings=settings,
+    )
+
+
+def _sampler_settings(settings: SamplerSettings) -> tuple[RunMetadataSetting, ...]:
+    return _optional_settings(
+        ("seed", settings.seed),
+        ("chains", settings.chains),
+        ("warmup", settings.warmup),
+        ("draws", settings.draws),
+        ("max_tree_depth", settings.max_tree_depth),
+        ("target_accept", settings.target_accept),
+    )
+
+
+def _optional_settings(*entries: tuple[str, str | None]) -> tuple[RunMetadataSetting, ...]:
+    return tuple(
+        RunMetadataSetting(name=name, value=value) for name, value in entries if value is not None
     )
 
 

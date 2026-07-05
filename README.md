@@ -145,7 +145,18 @@ bayescycle sbc model.py --scenario scenario.json -o runs/sbc-0001 --replicates 1
 Run directories are append-only discovery records. Commands refuse to reuse a
 non-empty output directory or overwrite an existing follow-up artifact; use a new
 run id for a new attempt. Fresh model-level runs also write `run.json` with
-narrow provenance metadata for future indexing.
+narrow provenance metadata for future indexing and replay.
+
+Audit a completed model-level run by replaying it into a fresh directory:
+
+```bash
+bayescycle replay run/ -o run-replay/
+bayescycle replay run/ -o run-replay/ --check-only
+```
+
+Replay verifies the recorded model/input source hashes before executing, refuses
+if sources drifted, and prints a per-artifact byte comparison. Use `--engine` on
+`replay` when replaying a Bayesite run with a non-default executable.
 
 `prior-predictive` supports both backends. `simulate`, `recover`, and `sbc` are
 currently Bayesite-backed; selecting `--backend jaxstanv5` returns a clear

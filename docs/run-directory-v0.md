@@ -43,12 +43,23 @@ backend-private materializations for generated outputs, such as
 are not workflow-stage artifacts.
 
 `run.json` uses `bayescycle.run.v1` and records the prepared run kind, selected
-backend, model source hash, input source hashes, materialized input paths, and
-expected output artifact paths. It is intended as a narrow provenance index for
-future study ledgers; the run directory remains the durable artifact contract.
+backend, replay-relevant CLI settings, model source hash, input source hashes,
+materialized input paths, and expected output artifact paths. It is intended as a
+narrow provenance index for future study ledgers and replay checks; the run
+directory remains the durable artifact contract.
 
 `dims.json` may only contain dimension labels and coordinates explicitly exposed
 by `bayeswire`; bayescycle must not infer labels from names, shapes, or data.
+
+## Replay
+
+`bayescycle replay <run-dir> -o <new-run-dir>` reads `run.json`, verifies that
+the recorded model and input source hashes still match, reconstructs the original
+model-level operation, executes it into a fresh run directory, and compares the
+recorded model/input/output artifacts byte-for-byte. `--check-only` verifies the
+hashes and prints the reconstructed plan without creating the replay directory.
+A replay returns exit code 0 for byte-identical artifacts and exit code 1 when a
+completed replay differs.
 
 ## Ownership
 

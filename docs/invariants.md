@@ -82,6 +82,9 @@ layout keeps matching the architecture.
 - `bayescycle._workflow.documents` renders typed plans to JSON-ready dry-plan
   documents. It must only lower backend-provided descriptions; it must not infer
   backend settings.
+- `bayescycle._workflow.replay` reconstructs typed model-level requests from
+  `run.json`, verifies recorded source hashes, and compares replay artifacts. It
+  must not execute backends directly or infer sampler semantics from artifacts.
 - `bayescycle._workflow.filesystem` contains generic file/path guards and copy
   helpers. It must not know model, sampler, or backend semantics.
 - `bayescycle._workflow.backend_plan` resolves multi-stage backend intent before
