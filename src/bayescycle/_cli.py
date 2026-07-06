@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -165,6 +166,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="sampling backend to use",
     )
     sample.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(sample)
     sample.add_argument("--seed", help="sampler seed forwarded to Bayesite")
     sample.add_argument("--chains", help="chain count forwarded to Bayesite")
     sample.add_argument("--warmup", help="warmup draw count forwarded to Bayesite")
@@ -194,6 +196,7 @@ def _build_parser() -> argparse.ArgumentParser:
     prior_predictive.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
+    _add_no_auto_provision_argument(prior_predictive)
     prior_predictive.add_argument("--seed", help="seed forwarded to the backend")
     prior_predictive.add_argument("--draws", help="prior-predictive draw count")
     _add_show_plan_argument(
@@ -216,6 +219,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="simulation backend to use",
     )
     simulate.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(simulate)
     simulate.add_argument("--seed", help="seed forwarded to Bayesite")
     _add_show_plan_argument(
         simulate,
@@ -236,6 +240,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recovery backend to use",
     )
     recover.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(recover)
     _add_show_plan_argument(
         recover,
         help_text="show the planned backend command without executing it",
@@ -255,6 +260,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="SBC backend to use",
     )
     sbc.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(sbc)
     sbc.add_argument("--replicates", help="replicate count overriding the scenario")
     _add_show_plan_argument(
         sbc,
@@ -267,6 +273,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     diagnose.add_argument("run_dir", type=Path, help="bayescycle run directory")
     diagnose.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(diagnose)
     _add_show_plan_argument(
         diagnose,
         help_text="validate run files and show the planned engine command",
@@ -281,6 +288,7 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_predictive.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
+    _add_no_auto_provision_argument(posterior_predictive)
     _add_show_plan_argument(
         posterior_predictive,
         help_text="validate run files and show the planned engine command",
@@ -301,6 +309,7 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_check.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
+    _add_no_auto_provision_argument(posterior_check)
     _add_show_plan_argument(
         posterior_check,
         help_text="validate run files and show the planned backend command",
@@ -321,6 +330,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recover-check backend to use",
     )
     recover_check.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(recover_check)
     _add_show_plan_argument(
         recover_check,
         help_text="validate run files and show the planned backend command",
@@ -336,6 +346,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--engine",
         help="Bayesite executable to invoke when replaying a bayesite run (default: bayesite)",
     )
+    _add_no_auto_provision_argument(replay)
     replay.add_argument(
         "--check-only",
         action="store_true",
@@ -371,6 +382,34 @@ def _add_model_selection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model", dest="model_name", help="model class name when discovery is ambiguous"
     )
+
+
+def _add_no_auto_provision_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-auto-provision",
+        dest="no_auto_provision",
+        action="store_true",
+        help=(
+            "do not auto-download the pinned Bayesite engine when --engine is unset and "
+            "bayesite is not found on PATH; the same effect as setting "
+            "BAYESCYCLE_NO_AUTO_PROVISION=1 (this flag takes precedence over the env var)"
+        ),
+    )
+
+
+def _auto_provision_enabled(
+    namespace: argparse.Namespace, env: Mapping[str, str] | None = None
+) -> bool:
+    """CLI-boundary auto-provision decision.
+
+    ``--no-auto-provision`` wins over ``BAYESCYCLE_NO_AUTO_PROVISION=1``;
+    ``env`` defaults to the real process environment and is only overridden
+    directly in tests.
+    """
+    if bool(getattr(namespace, "no_auto_provision", False)):
+        return False
+    resolved_env = env if env is not None else os.environ
+    return resolved_env.get("BAYESCYCLE_NO_AUTO_PROVISION") != "1"
 
 
 def _add_show_plan_argument(parser: argparse.ArgumentParser, *, help_text: str) -> None:
@@ -411,6 +450,7 @@ def _sample(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         return _sample_with_backend(backend, request, intent=intent)
@@ -449,6 +489,7 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         return _prior_predictive_with_backend(backend, request, intent=intent)
@@ -492,6 +533,7 @@ def _simulate(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_simulate_run(request, backend)
@@ -522,6 +564,7 @@ def _recover(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_recover_run(request, backend)
@@ -553,6 +596,7 @@ def _sbc(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_sbc_run(request, backend)
@@ -578,6 +622,7 @@ def _diagnose(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=(),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_diagnose_run(
@@ -600,6 +645,7 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=(),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_posterior_predictive_run(
@@ -624,6 +670,7 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_posterior_check_run(
@@ -648,6 +695,7 @@ def _recover_check(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_recover_check_run(
@@ -677,6 +725,7 @@ def _replay(namespace: argparse.Namespace) -> int:
             engine=cast(str | None, namespace.engine),
             extra_args=record.backend_extra_args,
             preflight=not check_only,
+            auto_provision=_auto_provision_enabled(namespace),
         )
         if record.kind == "sample":
             backend = resolve_sample_backend(runtime_options)
