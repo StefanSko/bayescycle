@@ -19,14 +19,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: StefanSko/jaxstanv5
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
           path: jaxstanv5
       - uses: astral-sh/setup-uv@v5
-      - name: Grant git read access to same-owner dependencies
-        env:
-          BAYES_REPOS_TOKEN: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${BAYES_REPOS_TOKEN}@github.com/StefanSko/".insteadOf "https://github.com/StefanSko/"
+        with:
+          enable-cache: true
       - name: Install jaxstanv5 against bayeswire HEAD
         working-directory: jaxstanv5
         run: |
@@ -34,7 +30,7 @@ jobs:
           uv pip install --reinstall ../bayeswire
       - name: Consume-conformance against this bayeswire
         working-directory: jaxstanv5
-        run: uv run pytest tests/integration/test_consume_conformance.py -q
+        run: uv run --no-sync pytest tests/integration/test_consume_conformance.py -q
 
   bayescycle-nojax:
     runs-on: ubuntu-latest
@@ -45,14 +41,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: StefanSko/bayescycle
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
           path: bayescycle
       - uses: astral-sh/setup-uv@v5
-      - name: Grant git read access to same-owner dependencies
-        env:
-          BAYES_REPOS_TOKEN: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${BAYES_REPOS_TOKEN}@github.com/StefanSko/".insteadOf "https://github.com/StefanSko/"
+        with:
+          enable-cache: true
       - name: Install bayescycle against bayeswire HEAD (no JAX)
         working-directory: bayescycle
         run: |
@@ -60,7 +52,7 @@ jobs:
           uv pip install --reinstall ../bayeswire
       - name: Workflow test subset with bayeswire HEAD
         working-directory: bayescycle
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q
 
   normative-prose-audit:
     runs-on: ubuntu-latest
@@ -68,17 +60,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: StefanSko/jaxstanv5
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
           path: jaxstanv5
       - uses: actions/checkout@v4
         with:
           repository: StefanSko/bayescycle
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
           path: bayescycle
       - uses: actions/checkout@v4
         with:
           repository: StefanSko/bayesite
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
           path: bayesite
       - name: Only bayeswire carries normative wire-format prose
         run: |
@@ -88,3 +77,39 @@ jobs:
           ! grep -rn "jaxstanv5_ir" jaxstanv5 bayescycle --include="*.py" --include="*.md" --include="*.rs" \
             | grep -v "docs/bayeswire-migration.md" || { echo "retired envelope key found"; exit 1; }
           ! grep -rn "jaxstanv5_ir" bayesite --include="*.rs" --include="*.py" || { echo "retired envelope key found in bayesite code"; exit 1; }
+
+  # PR CI in bayescycle now tests the pinned released engine, so this
+  # nightly job is the only place bayesite HEAD is exercised against
+  # consumers.
+  bayesite-head-vs-bayescycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: bayeswire
+      - uses: actions/checkout@v4
+        with:
+          repository: StefanSko/bayescycle
+          path: bayescycle
+      - uses: actions/checkout@v4
+        with:
+          repository: StefanSko/bayesite
+          path: bayesite
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bayesite
+      - name: Build bayesite HEAD
+        run: cargo build --release --manifest-path bayesite/Cargo.toml
+      - name: Install bayescycle against bayeswire HEAD
+        working-directory: bayescycle
+        run: |
+          uv sync
+          uv pip install --reinstall ../bayeswire
+      - name: Run bayescycle tests against bayesite HEAD
+        working-directory: bayescycle
+        run: |
+          export BAYESCYCLE_TEST_BAYESITE_BIN="$GITHUB_WORKSPACE/bayesite/target/release/bayesite"
+          uv run --no-sync pytest -q
