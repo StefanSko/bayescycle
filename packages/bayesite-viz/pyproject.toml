@@ -1,0 +1,29 @@
+[project]
+name = "bayesite-viz"
+version = "0.1.0"
+description = "Agent-operable CLI that renders ArviZ Bayesian plots from an InferenceData fit."
+readme = "README.md"
+authors = [{ name = "StefanSko" }]
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = [
+    "click",
+    "arviz-base>=1.2.0",
+    "arviz-plots>=1.2.0",
+    "arviz-stats>=1.2.0",
+    "matplotlib>=3.11.0",
+    "netcdf4>=1.7.4",
+    "numpy",
+    "xarray>=2026.4.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["bayesite_viz"]
+
+[project.scripts]
+bayesite-viz = "bayesite_viz.cli:cli"
