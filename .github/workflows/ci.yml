@@ -11,42 +11,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      # The bayes* repos are private; the default GITHUB_TOKEN is scoped to
-      # this repo only. BAYES_REPOS_TOKEN is a fine-grained PAT with
-      # contents:read on the same-owner dependencies (bayeswire, jaxstanv5).
-      - name: Grant git read access to pinned same-owner dependencies
-        env:
-          BAYES_REPOS_TOKEN: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${BAYES_REPOS_TOKEN}@github.com/StefanSko/".insteadOf "https://github.com/StefanSko/"
-      - name: Checkout bayesite
-        uses: actions/checkout@v4
         with:
-          repository: StefanSko/bayesite
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-          path: .bayesite-src
-      - name: Build bayesite release binary
-        run: cargo build --release --manifest-path .bayesite-src/Cargo.toml
-      - name: Preflight the pinned dependencies
-        run: |
-          for repo in bayeswire jaxstanv5; do
-            if ! git ls-remote "https://github.com/StefanSko/${repo}.git" HEAD >/dev/null 2>&1; then
-              echo "::error::Cannot read StefanSko/${repo}. The bayes* repos are private: add a fine-grained PAT with contents:read on them as the BAYES_REPOS_TOKEN Actions secret of this repo."
-              exit 1
-            fi
-          done
+          enable-cache: true
       - name: Sync (bayeswire + jaxstanv5 inproc extra)
         run: uv sync --extra inproc
       - name: Format
-        run: uv run ruff format --check --exclude .bayesite-src .
+        run: uv run ruff format --check .
       - name: Lint
-        run: uv run ruff check --exclude .bayesite-src .
+        run: uv run ruff check .
       - name: Types
         run: uv run ty check src tests
-      - name: Tests
+      - name: Fetch pinned bayesite engine
         run: |
-          export BAYESCYCLE_TEST_BAYESITE_BIN="$PWD/.bayesite-src/target/release/bayesite"
-          uv run pytest -q
+          echo "BAYESCYCLE_TEST_BAYESITE_BIN=$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" >> "$GITHUB_ENV"
+          # Unknown commands answer with a JSON usage error (exit 1); anything
+          # above that (bad exec format, segfault, ...) means the binary does
+          # not actually run on this runner.
+          "$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" capabilities || status=$?
+          if [ "${status:-0}" -gt 1 ]; then
+            echo "::error::pinned bayesite engine did not launch on this runner (exit ${status})"
+            exit 1
+          fi
+      - name: Tests
+        run: uv run pytest -q
 
   # The default agent path executes model.py with bayeswire only — no JAX,
   # ever. This job proves it end-to-end with a real bayesite binary.
@@ -55,21 +42,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Grant git read access to pinned same-owner dependencies
-        env:
-          BAYES_REPOS_TOKEN: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${BAYES_REPOS_TOKEN}@github.com/StefanSko/".insteadOf "https://github.com/StefanSko/"
-      - name: Checkout bayesite
-        uses: actions/checkout@v4
         with:
-          repository: StefanSko/bayesite
-          token: ${{ secrets.BAYES_REPOS_TOKEN || github.token }}
-          path: .bayesite-src
-      - name: Build bayesite release binary
-        run: cargo build --release --manifest-path .bayesite-src/Cargo.toml
+          enable-cache: true
       - name: Sync without the inproc extra (no JAX installed)
         run: uv sync
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Types
+        run: uv run ty check src tests
       - name: Assert JAX is absent
         run: |
           uv run python -c "
@@ -78,7 +60,13 @@ jobs:
           assert importlib.util.find_spec('jaxstanv5') is None, 'jaxstanv5 leaked onto the default path'
           import bayeswire
           "
-      - name: Bayesite-backend test subset
+      - name: Fetch pinned bayesite engine
         run: |
-          export BAYESCYCLE_TEST_BAYESITE_BIN="$PWD/.bayesite-src/target/release/bayesite"
-          uv run pytest -q
+          echo "BAYESCYCLE_TEST_BAYESITE_BIN=$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" >> "$GITHUB_ENV"
+          "$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" capabilities || status=$?
+          if [ "${status:-0}" -gt 1 ]; then
+            echo "::error::pinned bayesite engine did not launch on this runner (exit ${status})"
+            exit 1
+          fi
+      - name: Bayesite-backend test subset
+        run: uv run pytest -q
