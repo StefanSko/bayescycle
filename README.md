@@ -9,6 +9,24 @@ It is intentionally glue:
 model.py -> bayeswire ModelMeta -> bayeswire IR JSON -> bayesite engine -> run/
 ```
 
+## Zero-install quickstart
+
+`bayescycle` is the only thing you install by hand; it provisions the rest.
+
+```bash
+uv tool install git+https://github.com/StefanSko/bayescycle.git
+bayescycle sample model.py --data data.json -o run/
+bayescycle plot trace run/
+```
+
+The `sample` command downloads and sha256-verifies the pinned Bayesite engine
+release into `~/.cache/bayescycle/engines/` on first use if it isn't already
+on `PATH` (see "Auto-provisioning" below). The `plot` command reaches
+`bayesite-viz` the same way an agent invoking it from the command line would:
+via `uvx` against a pinned commit, so there is nothing to `pip install` for
+visualization either. Both steps print a one-line notice to stderr the first
+time they fetch something; subsequent runs are cache hits.
+
 ## Package split
 
 - **bayeswire**: Python model declaration eDSL, the `bayeswire_ir` wire format,
@@ -91,6 +109,18 @@ applies to `--backend bayesite`. Before execution, Bayescycle preflights the
 selected Bayesite binary for existence, executability, and required subcommand
 support so stale engines fail before run-directory writes. Install the
 in-process dependencies with `bayescycle[inproc]`.
+
+### Auto-provisioning
+
+When `--engine` is unset and no `bayesite` executable is found on `PATH`,
+Bayesite-backed commands (`sample`, `prior-predictive`, `simulate`, `recover`,
+`sbc`, `diagnose`, `posterior-predictive`, `posterior-check`,
+`recover-check`, `replay`, `idata`, `plot`) auto-download the pinned Bayesite
+engine release into the bayescycle cache before running. Opt out with
+`--no-auto-provision` on any of those commands, or set
+`BAYESCYCLE_NO_AUTO_PROVISION=1` for the whole environment (the flag wins if
+both are given). With auto-provisioning disabled, an unresolved engine fails
+with a clear error pointing at `bayescycle engine ensure` or `--engine`.
 
 Additional engine flags can be forwarded after `--`. The engine `--out` flag is reserved
 so the run directory always contains `run/posterior.ndjson`.
@@ -189,6 +219,62 @@ run/posterior_predictive.ndjson
 run/posterior_check.json
 run/recovery_check.json
 ```
+
+## Engine management
+
+The Bayesite engine binary is normally provisioned automatically (see
+"Auto-provisioning" above), but the pinned release can also be managed
+directly:
+
+```bash
+bayescycle engine ensure              # provision the pinned release if missing; prints its path
+bayescycle engine ensure --force      # re-download and re-verify even if already cached
+bayescycle engine path                # print the resolved path (PATH, else the cache); no network
+bayescycle engine info                # print the engine's structured capabilities as JSON
+```
+
+`ensure` and `path` accept `--cache-root` to target a non-default cache
+directory; `ensure` accepts `--base-url` to fetch from a mirrored or
+airgapped release host; `info` accepts `--engine` to inspect a specific
+binary instead of the resolved default. The pinned version and per-target
+checksums live in `PINNED_ENGINE_RELEASE` in
+`src/bayescycle/backends/bayesite/provisioning.py`, bumped with
+`scripts/bump_engine_release.py --tag vX.Y.Z`.
+
+## Visualization: idata and plot
+
+`bayescycle idata` exports a run directory to an ArviZ-compatible NetCDF fit
+file via `bayesite-viz`'s `bayesite-idata`, and `bayescycle plot <verb>`
+renders one of its plots from that fit file. Both run `bayesite-viz` through
+`uvx` against a pinned commit (`BAYESITE_VIZ_SOURCE` in
+`src/bayescycle/backends/bayesite_viz/uvx_runner.py`); no separate `pip
+install` of `bayesite-viz` is required, only `uv`/`uvx` on `PATH`.
+
+```bash
+bayescycle idata run/                       # writes run/fit.nc (default output path)
+bayescycle idata run/ -o run/custom-fit.nc
+bayescycle idata run/ --validate require    # require|warn|skip; forwarded to bayesite-idata
+```
+
+```bash
+bayescycle plot trace run/
+bayescycle plot posterior run/ --kind hist -o run/posterior.png
+bayescycle plot ppc run/ --kind cumulative --svg
+```
+
+The nine supported verbs are `trace`, `rank`, `forest`, `energies`, `pair`,
+`posterior`, `autocorr`, `ess-rhat`, and `ppc`. `--kind` only applies to
+`posterior` and `ppc`. `--var` (repeatable), `--coords key=value`
+(repeatable), `-b/--backend` (`matplotlib`, `bokeh`, or `plotly`), `-f/--format`
+(stdout announce format), and `--svg` forward straight to `bayesite-viz`.
+
+`plot` auto-runs `idata` when `run/fit.nc` (or `--fit`) doesn't exist yet, so
+`bayescycle plot trace run/` works directly after `sample` without a separate
+`idata` step. Pass `--no-auto-idata` to require an existing fit file instead.
+Both commands accept `--engine` and `--no-auto-provision` /
+`BAYESCYCLE_NO_AUTO_PROVISION` the same way the other Bayesite-backed
+commands do (see "Auto-provisioning" above), since an auto-run `idata` step
+still needs a Bayesite engine.
 
 ## Agentic study workflow
 
