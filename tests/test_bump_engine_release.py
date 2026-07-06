@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import functools
 import http.server
-import re
 import shutil
 import sys
 import threading
@@ -27,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from bump_engine_release import (  # noqa: E402
     TargetChecksum,
+    _target_block,
     bump_engine_release,
     fetch_all_checksums,
     fetch_checksum,
@@ -176,27 +176,56 @@ def test_rewrite_provisioning_fails_loudly_when_a_target_is_missing() -> None:
         rewrite_provisioning(source, "v9.9.9", (unknown_checksum,))
 
 
+def test_rewrite_provisioning_fails_loudly_when_archive_format_field_is_missing() -> None:
+    """A target's `archive_format` field must be looked up only within that
+    target's own `EngineTarget(...)` block.
+
+    If the field is missing -- e.g. a hand-edit dropped it -- the lookup must
+    not spill past the end of that block into the *next* target's entry and
+    silently accept its `archive_format`, even when the neighbor happens to
+    use the same format (here, the linux and x86_64-macOS entries are both
+    `tar.gz`). Recording a checksum under a target whose `archive_format`
+    couldn't actually be confirmed risks pairing it with the wrong archive.
+    """
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    musl_block = (
+        "        EngineTarget(\n"
+        '            target="x86_64-unknown-linux-musl",\n'
+        '            archive_format="tar.gz",\n'
+        '            sha256="fa537de8ba6247dd4bf3eb0eb5ef6547a1aa610a8cd2e76203de3359fe96ce47",\n'
+        "        ),\n"
+    )
+    assert source.count(musl_block) == 1
+    musl_block_without_archive_format = (
+        "        EngineTarget(\n"
+        '            target="x86_64-unknown-linux-musl",\n'
+        '            sha256="fa537de8ba6247dd4bf3eb0eb5ef6547a1aa610a8cd2e76203de3359fe96ce47",\n'
+        "        ),\n"
+    )
+    broken_source = source.replace(musl_block, musl_block_without_archive_format, 1)
+    # The next target, x86_64-apple-darwin, also uses tar.gz -- an unbounded
+    # scan starting at the musl target's `target="..."` field would find
+    # *that* block's `archive_format` and wrongly succeed.
+    assert 'target="x86_64-apple-darwin"' in broken_source
+
+    with pytest.raises(RuntimeError, match="x86_64-unknown-linux-musl"):
+        rewrite_provisioning(broken_source, "v9.9.9", _fake_checksums("v9.9.9"))
+
+
 def _windows_target_anchor(source: str) -> str:
     """Return the windows `EngineTarget(...)` block in `source`, closing
     `),` line and trailing newline included.
 
-    Derived from the file's current content by target name rather than a
-    hardcoded checksum literal, so it keeps matching after each real engine
-    bump rewrites every sha256 field in provisioning.py.
+    Delegates to the script's own `_target_block` (the same block-bounded
+    parse `_require_matching_archive_format` uses) rather than duplicating
+    the regex here, so this anchor and the script's field lookups can never
+    drift out of sync. Derived from the file's current content by target name
+    rather than a hardcoded checksum literal, so it keeps matching after each
+    real engine bump rewrites every sha256 field in provisioning.py.
     """
-    pattern = re.compile(
-        r"^[ \t]*EngineTarget\(\n"
-        r"(?:(?![ \t]*\),\n).*\n)*?"
-        r'[ \t]*target="x86_64-pc-windows-msvc",\n'
-        r"(?:(?![ \t]*\),\n).*\n)*"
-        r"[ \t]*\),\n",
-        re.MULTILINE,
-    )
-    matches = pattern.findall(source)
-    assert len(matches) == 1, (
-        f"expected exactly one windows EngineTarget block, found {len(matches)}"
-    )
-    return matches[0]
+    anchor = _target_block(source, "x86_64-pc-windows-msvc")
+    assert anchor is not None, "expected a windows EngineTarget block, found none"
+    return anchor
 
 
 def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> None:

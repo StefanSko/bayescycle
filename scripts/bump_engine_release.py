@@ -96,10 +96,31 @@ def _target_sha256_re(target: str) -> re.Pattern[str]:
     return re.compile(r'(target="' + re.escape(target) + r'".*?sha256=)"([0-9a-f]{64})"', re.DOTALL)
 
 
-def _target_archive_format_re(target: str) -> re.Pattern[str]:
-    # Non-greedy + DOTALL: matches from this target's `target="..."` field to
-    # its own `archive_format="..."` field, not a later target's.
-    return re.compile(r'target="' + re.escape(target) + r'".*?archive_format="([^"]+)"', re.DOTALL)
+_ARCHIVE_FORMAT_FIELD_RE = re.compile(r'archive_format="([^"]+)"')
+
+
+def _target_block_re(target: str) -> re.Pattern[str]:
+    """Match one whole `EngineTarget(...)` entry for `target`, start to close.
+
+    Bounds the match to this target's own entry -- from its `EngineTarget(`
+    opening line to its closing `),` line -- so a field lookup within it (e.g.
+    `archive_format`) can't spill past the end of the block into the *next*
+    target's entry when the field is missing from this one.
+    """
+    return re.compile(
+        r"^[ \t]*EngineTarget\(\n"
+        r"(?:(?![ \t]*\),\n).*\n)*?"
+        r'[ \t]*target="' + re.escape(target) + r'",\n'
+        r"(?:(?![ \t]*\),\n).*\n)*"
+        r"[ \t]*\),\n",
+        re.MULTILINE,
+    )
+
+
+def _target_block(source: str, target: str) -> str | None:
+    """Return the full `EngineTarget(...)` block for `target`, or `None`."""
+    match = _target_block_re(target).search(source)
+    return match.group(0) if match else None
 
 
 def _source_target_names(source: str) -> frozenset[str]:
@@ -115,8 +136,20 @@ def _require_matching_archive_format(source: str, checksum: TargetChecksum) -> N
     downloads another guarantees a sha256 verification failure at provision
     time, so a divergence between this script's `_TARGETS` and
     provisioning.py must abort the rewrite instead.
+
+    The `archive_format` field is looked up only within this target's own
+    `EngineTarget(...)` block (see `_target_block`), never in the file at
+    large -- otherwise a target missing the field would silently inherit the
+    next target's `archive_format` instead of failing loudly.
     """
-    match = _target_archive_format_re(checksum.target).search(source)
+    block = _target_block(source, checksum.target)
+    if block is None:
+        raise RuntimeError(
+            f"provisioning.py's EngineTarget entry for target={checksum.target!r} has no "
+            '`archive_format="..."` field; its shape may have changed since this script '
+            "was written."
+        )
+    match = _ARCHIVE_FORMAT_FIELD_RE.search(block)
     if match is None:
         raise RuntimeError(
             f"provisioning.py's EngineTarget entry for target={checksum.target!r} has no "
