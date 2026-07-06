@@ -15,6 +15,7 @@ from typing import cast
 from bayescycle import __version__
 from bayescycle._backend_runtime import (
     BackendRuntimeOptions,
+    resolve_bayesite_engine_path,
     resolve_diagnose_backend,
     resolve_posterior_check_backend,
     resolve_posterior_predictive_backend,
@@ -100,6 +101,15 @@ from bayescycle.backends.bayesite.provisioning import (
     cached_engine_path,
     ensure_engine,
 )
+from bayescycle.backends.bayesite_viz.uvx_runner import (
+    BAYESITE_VIZ_SOURCE,
+    VIZ_VERBS,
+    IdataOptions,
+    PlotOptions,
+    default_fit_path,
+    run_idata,
+    run_plot,
+)
 from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
 
@@ -147,6 +157,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _workflow_plan(namespace)
     if command == "engine":
         return _engine(namespace)
+    if command == "idata":
+        return _idata(namespace)
+    if command == "plot":
+        return _plot(namespace)
     parser.print_help(sys.stderr)
     return 2
 
@@ -433,6 +447,60 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="cache directory to look under (default: the bayescycle cache directory)",
     )
+
+    idata = subparsers.add_parser(
+        "idata",
+        description=(
+            "Export a bayescycle run directory to an ArviZ NetCDF fit file via bayesite-viz."
+        ),
+    )
+    idata.add_argument("run_dir", type=Path, help="bayescycle run directory")
+    idata.add_argument(
+        "-o", "--output", type=Path, help="output .nc path (default: RUN_DIR/fit.nc)"
+    )
+    idata.add_argument(
+        "--validate",
+        choices=("require", "warn", "skip"),
+        help="bayesite-idata validation mode (default: bayesite-idata's own default, warn)",
+    )
+    idata.add_argument(
+        "--engine", help="Bayesite executable forwarded as --bayesite (default: bayesite)"
+    )
+    _add_no_auto_provision_argument(idata)
+    idata.add_argument("--viz-source", help=argparse.SUPPRESS)
+
+    plot = subparsers.add_parser(
+        "plot",
+        description="Render a bayesite-viz plot from a bayescycle run directory.",
+    )
+    plot.add_argument("verb", choices=VIZ_VERBS, help="bayesite-viz plot verb")
+    plot.add_argument("run_dir", type=Path, help="bayescycle run directory")
+    plot.add_argument("-o", "--output", type=Path, help="output image path")
+    plot.add_argument(
+        "--fit", dest="fit_path", type=Path, help="fit .nc path (default: RUN_DIR/fit.nc)"
+    )
+    plot.add_argument("--kind", help="plot kind (posterior, ppc verbs only)")
+    plot.add_argument(
+        "-f", "--format", dest="output_format", help="bayesite-viz stdout announce format"
+    )
+    plot.add_argument("--var", dest="variables", action="append", help="variable name; repeatable")
+    plot.add_argument(
+        "--coords", dest="coords", action="append", help="coords key=value; repeatable"
+    )
+    plot.add_argument("-b", "--backend", dest="viz_backend", help="matplotlib|bokeh|plotly")
+    plot.add_argument("--svg", action="store_true", help="emit SVG instead of PNG")
+    plot.add_argument(
+        "--no-auto-idata",
+        dest="no_auto_idata",
+        action="store_true",
+        help="do not auto-run `bayescycle idata` when RUN_DIR/fit.nc (or --fit) is missing",
+    )
+    plot.add_argument(
+        "--engine",
+        help="Bayesite executable forwarded to the auto-run idata step (default: bayesite)",
+    )
+    _add_no_auto_provision_argument(plot)
+    plot.add_argument("--viz-source", help=argparse.SUPPRESS)
 
     return parser
 
@@ -1172,6 +1240,90 @@ def _engine_info(namespace: argparse.Namespace) -> int:
     }
     print(json.dumps(document, indent=2, sort_keys=True))
     return 0
+
+
+def _resolve_viz_source(namespace: argparse.Namespace) -> str:
+    override = cast(str | None, getattr(namespace, "viz_source", None))
+    return override if override is not None else BAYESITE_VIZ_SOURCE
+
+
+def _parse_coords(values: list[str] | None) -> tuple[tuple[str, str], ...]:
+    if not values:
+        return ()
+    parsed: list[tuple[str, str]] = []
+    for item in values:
+        if "=" not in item:
+            raise WorkflowError(f"--coords expects key=value, got: {item!r}")
+        key, value = item.split("=", 1)
+        parsed.append((key, value))
+    return tuple(parsed)
+
+
+def _idata(namespace: argparse.Namespace) -> int:
+    try:
+        run_dir = cast(Path, namespace.run_dir).expanduser().resolve()
+        if not run_dir.is_dir():
+            raise WorkflowError(f"run directory does not exist: {run_dir}")
+        output = cast(Path | None, namespace.output)
+        resolved_output = output if output is not None else default_fit_path(run_dir)
+        engine = resolve_bayesite_engine_path(
+            cast(str | None, namespace.engine), _auto_provision_enabled(namespace)
+        )
+        options = IdataOptions(
+            run_dir=run_dir,
+            output=resolved_output,
+            validate=cast(str | None, namespace.validate),
+            bayesite=engine,
+        )
+        return run_idata(options, source=_resolve_viz_source(namespace))
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _plot(namespace: argparse.Namespace) -> int:
+    try:
+        verb = cast(str, namespace.verb)
+        run_dir = cast(Path, namespace.run_dir).expanduser().resolve()
+        if not run_dir.is_dir():
+            raise WorkflowError(f"run directory does not exist: {run_dir}")
+        fit_path = cast(Path | None, namespace.fit_path)
+        resolved_fit_path = fit_path if fit_path is not None else default_fit_path(run_dir)
+        no_auto_idata = bool(cast(bool, namespace.no_auto_idata))
+        source = _resolve_viz_source(namespace)
+
+        if not resolved_fit_path.is_file():
+            if no_auto_idata:
+                raise WorkflowError(
+                    f"fit file not found: {resolved_fit_path}\n\n"
+                    f"Run `bayescycle idata {run_dir}` first, or pass --fit to point at an "
+                    "existing fit.nc."
+                )
+            engine = resolve_bayesite_engine_path(
+                cast(str | None, namespace.engine), _auto_provision_enabled(namespace)
+            )
+            idata_code = run_idata(
+                IdataOptions(run_dir=run_dir, output=resolved_fit_path, bayesite=engine),
+                source=source,
+            )
+            if idata_code != 0:
+                return idata_code
+
+        options = PlotOptions(
+            verb=verb,
+            fit_path=resolved_fit_path,
+            output=cast(Path | None, namespace.output),
+            kind=cast(str | None, namespace.kind),
+            fmt=cast(str | None, namespace.output_format),
+            variables=tuple(cast("list[str] | None", namespace.variables) or ()),
+            coords=_parse_coords(cast("list[str] | None", namespace.coords)),
+            backend=cast(str | None, namespace.viz_backend),
+            svg=bool(cast(bool, namespace.svg)),
+        )
+        return run_plot(options, source=source)
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
 
 
 def _intent_from_namespace(namespace: argparse.Namespace) -> CliIntent:

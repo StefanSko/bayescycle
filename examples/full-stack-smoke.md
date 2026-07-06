@@ -11,16 +11,16 @@ reset_workdir
 ensure_bayesite
 uv --quiet run bayescycle --version
 printf 'bayesite: %s\n' "$(basename "$BAYESITE_BIN")"
-bayesite_idata --help | sed -n '1p'
-bayesite_viz --help | sed -n '1p'
+uv --quiet run bayescycle idata --help | sed -n '1p'
+uv --quiet run bayescycle plot --help | sed -n '1p'
 
 ```
 
 ```output
 bayescycle 0.1.0
 bayesite: bayesite
-Usage: bayesite-idata [OPTIONS] RUN_DIR
-Usage: bayesite-viz [OPTIONS] COMMAND [ARGS]...
+usage: bayescycle idata [-h] [-o OUTPUT] [--validate {require,warn,skip}]
+usage: bayescycle plot [-h] [-o OUTPUT] [--fit FIT_PATH] [--kind KIND]
 ```
 
 Start with a real bayeswire model.py. The observed variable is vector-valued so posterior-predictive and PPC plots have a non-scalar observed dimension. The Dim metadata lets bayescycle write dims.json for downstream ArviZ coordinates.
@@ -149,17 +149,17 @@ draws: 200 sites: y
 site shape: [4]
 ```
 
-Now use bayesite-idata from bayesite-viz to convert the Bayesite run directory to an ArviZ NetCDF/DataTree file. The exporter also consumes the dims.json sidecar, so the observed y coordinate is named obs instead of an auto-generated dimension.
+Now use `bayescycle idata` to convert the Bayesite run directory to an ArviZ NetCDF/DataTree file. It threads the same resolved Bayesite engine through to bayesite-idata's own `bayesite diagnose` validation, and defaults the export to `RUN_DIR/fit.nc`. The exporter also consumes the dims.json sidecar, so the observed y coordinate is named obs instead of an auto-generated dimension.
 
 ```bash
 . examples/full-stack-smoke-lib.sh
 ensure_bayesite
-fit_path=$(bayesite_idata "$RUN" -o "$WORK/fit.nc" --validate require --bayesite "$BAYESITE_BIN")
-relpath "$fit_path"
+bayescycle_idata "$RUN" --validate require --engine "$BAYESITE_BIN" >/dev/null
+relpath "$RUN/fit.nc"
 python_with_viz - <<'PY'
 import xarray as xr
 
-dt = xr.open_datatree("examples/_showboat_work/fit.nc")
+dt = xr.open_datatree("examples/_showboat_work/run/fit.nc")
 print("groups:", ", ".join(sorted(group.lstrip("/") or "/" for group in dt.groups)))
 print("posterior.mu dims:", dt["/posterior"].ds["mu"].dims)
 print("observed_data.y dims:", dt["/observed_data"].ds["y"].dims)
@@ -170,21 +170,21 @@ PY
 ```
 
 ```output
-examples/_showboat_work/fit.nc
+examples/_showboat_work/run/fit.nc
 groups: /, observed_data, posterior, posterior_predictive, sample_stats
 posterior.mu dims: ('chain', 'draw')
 observed_data.y dims: ('obs',)
 obs coords: ['a', 'b', 'c', 'd']
-sample_stats: acceptance_rate, diverging, tree_depth
+sample_stats: acceptance_rate, diverging, energy, tree_depth
 ```
 
-Finally render agent-friendly ArviZ plots through bayesite-viz. The CLI prints absolute paths; the helper normalizes them before recording output.
+Finally render agent-friendly ArviZ plots through `bayescycle plot`. It finds `RUN_DIR/fit.nc` automatically (already exported above, so no auto re-export happens here); pass `-o` for a deterministic path and `png_summary` normalizes it for recording output.
 
 ```bash
 . examples/full-stack-smoke-lib.sh
 for verb in trace rank ppc; do
-  path=$(bayesite_viz "$verb" "$WORK/fit.nc" -o "$WORK/${verb}.png")
-  png_summary "$verb" "$path"
+  bayescycle_plot "$verb" "$RUN" -o "$WORK/${verb}.png" >/dev/null
+  png_summary "$verb" "$WORK/${verb}.png"
 done
 
 ```
