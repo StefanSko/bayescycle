@@ -164,6 +164,89 @@ def test_preflight_rejects_stale_engine_without_required_command(tmp_path: Path)
         )
 
 
+def test_preflight_uses_structured_capabilities_when_available(tmp_path: Path) -> None:
+    engine = tmp_path / "bayesite.py"
+    engine.write_text(
+        f"#!{sys.executable}\n"
+        "import json\n"
+        "import sys\n"
+        "if sys.argv[1:] == ['capabilities']:\n"
+        "    payload = {\n"
+        "        'capabilities_format': 'v0-provisional',\n"
+        "        'commands': ['sample', 'simulate', 'recover-check'],\n"
+        "        'version': '0.3.0',\n"
+        "        'ir': {'bayeswire_ir': 1},\n"
+        "        'schemas': {'ir': 'bayeswire_ir_v1.json'},\n"
+        "        'unknown_field': 'ignored',\n"
+        "    }\n"
+        "    print(json.dumps(payload))\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    engine.chmod(0o755)
+
+    info = preflight_bayesite_engine(
+        str(engine), (BayesiteCommandRequirement("simulate", "simulate"),)
+    )
+
+    assert info.commands == ("sample", "simulate", "recover-check")
+    assert info.capabilities is not None
+    assert info.capabilities.capabilities_format == "v0-provisional"
+    assert info.capabilities.commands == ("sample", "simulate", "recover-check")
+    assert info.capabilities.version == "0.3.0"
+    assert dict(info.capabilities.ir) == {"bayeswire_ir": 1}
+    assert dict(info.capabilities.schemas) == {"ir": "bayeswire_ir_v1.json"}
+
+
+def test_preflight_falls_back_to_regex_when_capabilities_subcommand_unknown(
+    tmp_path: Path,
+) -> None:
+    engine = tmp_path / "bayesite.py"
+    engine.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "if sys.argv[1:] == ['--help']:\n"
+        "    print('usage: bayesite sample\\nusage: bayesite simulate')\n"
+        "    raise SystemExit(0)\n"
+        "print('unknown subcommand: capabilities', file=sys.stderr)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    engine.chmod(0o755)
+
+    info = preflight_bayesite_engine(
+        str(engine), (BayesiteCommandRequirement("simulate", "simulate"),)
+    )
+
+    assert info.capabilities is None
+    assert "simulate" in info.commands
+
+
+def test_preflight_falls_back_when_capabilities_output_is_invalid_json(tmp_path: Path) -> None:
+    engine = tmp_path / "bayesite.py"
+    engine.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "if sys.argv[1:] == ['capabilities']:\n"
+        "    print('not json')\n"
+        "    raise SystemExit(0)\n"
+        "if sys.argv[1:] == ['--help']:\n"
+        "    print('usage: bayesite sample\\nusage: bayesite simulate')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    engine.chmod(0o755)
+
+    info = preflight_bayesite_engine(
+        str(engine), (BayesiteCommandRequirement("simulate", "simulate"),)
+    )
+
+    assert info.capabilities is None
+    assert "simulate" in info.commands
+
+
 def test_preflight_parses_single_line_json_error_probe(tmp_path: Path) -> None:
     """The real engine answers probes with one JSON object whose message embeds usage."""
     engine = tmp_path / "bayesite.py"
