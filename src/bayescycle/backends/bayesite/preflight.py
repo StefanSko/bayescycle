@@ -7,8 +7,10 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 
 from bayescycle._errors import WorkflowError
@@ -23,11 +25,27 @@ class BayesiteCommandRequirement:
 
 
 @dataclass(frozen=True)
+class BayesiteCapabilities:
+    """Structured capabilities advertised by ``bayesite capabilities``.
+
+    Mirrors the documented consumer contract (bayesite ``docs/capabilities-v0.md``):
+    unknown top-level fields are ignored and ``version`` is optional.
+    """
+
+    capabilities_format: str
+    commands: tuple[str, ...]
+    version: str | None
+    ir: Mapping[str, int]
+    schemas: Mapping[str, str]
+
+
+@dataclass(frozen=True)
 class BayesiteEngineInfo:
     """Resolved Bayesite engine executable and advertised commands."""
 
     executable: Path
     commands: tuple[str, ...]
+    capabilities: BayesiteCapabilities | None
 
 
 def preflight_bayesite_engine(
@@ -35,11 +53,17 @@ def preflight_bayesite_engine(
 ) -> BayesiteEngineInfo:
     """Validate a Bayesite engine path and required command support."""
     executable = _resolve_engine(engine)
-    commands = _engine_commands(executable)
+    capabilities = _try_structured_capabilities(executable)
+    if capabilities is not None:
+        commands = capabilities.commands
+        if not commands:
+            raise WorkflowError(_no_commands_message(executable))
+    else:
+        commands = _engine_commands(executable)
     for requirement in requirements:
         if requirement.command not in commands:
             raise WorkflowError(_missing_command_message(executable, requirement))
-    return BayesiteEngineInfo(executable=executable, commands=commands)
+    return BayesiteEngineInfo(executable=executable, commands=commands, capabilities=capabilities)
 
 
 def _resolve_engine(engine: str) -> Path:
@@ -79,11 +103,89 @@ def _engine_commands(executable: Path) -> tuple[str, ...]:
     )
     commands = tuple(dict.fromkeys(_usage_commands(probe_text)))
     if not commands:
-        raise WorkflowError(
-            f"Bayesite engine did not advertise any supported commands: {executable}\n\n"
-            "The binary may be stale or not the Bayesite CLI expected by bayescycle."
-        )
+        raise WorkflowError(_no_commands_message(executable))
     return commands
+
+
+def _no_commands_message(executable: Path) -> str:
+    return (
+        f"Bayesite engine did not advertise any supported commands: {executable}\n\n"
+        "The binary may be stale or not the Bayesite CLI expected by bayescycle."
+    )
+
+
+def _try_structured_capabilities(executable: Path) -> BayesiteCapabilities | None:
+    """Try the documented ``bayesite capabilities`` contract; ``None`` means fall back.
+
+    Older engine binaries do not know the ``capabilities`` subcommand and exit
+    nonzero; this is a normal, expected outcome, not an error. Any output that
+    is not a well-formed capabilities document is treated the same way so the
+    caller falls back to the regex usage-text scrape.
+    """
+    try:
+        completed = subprocess.run(  # noqa: S603
+            [str(executable), "capabilities"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        raise WorkflowError(f"cannot execute Bayesite engine {executable}: {exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise WorkflowError(f"Bayesite engine preflight timed out: {executable}") from exc
+    if completed.returncode != 0:
+        return None
+    try:
+        document: object = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    return _parse_capabilities(document)
+
+
+def _parse_capabilities(document: object) -> BayesiteCapabilities | None:
+    if not isinstance(document, dict):
+        return None
+    payload = cast("dict[str, object]", document)
+    capabilities_format = payload.get("capabilities_format")
+    if not isinstance(capabilities_format, str):
+        return None
+    commands_raw = payload.get("commands")
+    if not isinstance(commands_raw, list):
+        return None
+    typed_commands = cast("list[object]", commands_raw)
+    if not all(isinstance(item, str) for item in typed_commands):
+        return None
+    commands = tuple(cast("list[str]", typed_commands))
+    version = payload.get("version")
+    return BayesiteCapabilities(
+        capabilities_format=capabilities_format,
+        commands=commands,
+        version=version if isinstance(version, str) else None,
+        ir=_string_int_mapping(payload.get("ir")),
+        schemas=_string_str_mapping(payload.get("schemas")),
+    )
+
+
+def _string_int_mapping(value: object) -> Mapping[str, int]:
+    if not isinstance(value, dict):
+        return MappingProxyType({})
+    result: dict[str, int] = {}
+    for key, item in cast("dict[str, object]", value).items():
+        if isinstance(key, str) and isinstance(item, int) and not isinstance(item, bool):
+            result[key] = item
+    return MappingProxyType(result)
+
+
+def _string_str_mapping(value: object) -> Mapping[str, str]:
+    if not isinstance(value, dict):
+        return MappingProxyType({})
+    result: dict[str, str] = {}
+    for key, item in cast("dict[str, object]", value).items():
+        if isinstance(key, str) and isinstance(item, str):
+            result[key] = item
+    return MappingProxyType(result)
 
 
 def _run_engine_for_text(executable: Path, *args: str) -> str:
