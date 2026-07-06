@@ -5,6 +5,12 @@ RUN="$WORK/run"
 if [ -z "${BAYESITE_BIN:-}" ]; then
   BAYESITE_BIN="$(command -v bayesite || true)"
 fi
+# python_with_viz below reaches directly into bayesite-viz's own pinned
+# dependency set (xarray with DataTree support, ArviZ) purely to inspect a
+# fit.nc file with plain Python; it does not shell out to the bayesite-viz
+# CLIs. Those CLI invocations (bayesite-idata, bayesite-viz) are now owned by
+# `bayescycle idata`/`bayescycle plot`, which pin bayesite-viz once in
+# BAYESITE_VIZ_SOURCE under src/bayescycle/backends/bayesite_viz/uvx_runner.py.
 BAYESITE_VIZ_SOURCE="${BAYESITE_VIZ_SOURCE:-git+https://github.com/StefanSko/bayesite-viz.git@a2809452d1c753885602fae824d789bb627d5cb6}"
 
 reset_workdir() {
@@ -20,12 +26,12 @@ ensure_bayesite() {
   return 1
 }
 
-bayesite_idata() {
-  uvx --quiet --from "$BAYESITE_VIZ_SOURCE" bayesite-idata "$@"
+bayescycle_idata() {
+  uv --quiet run bayescycle idata "$@"
 }
 
-bayesite_viz() {
-  PYTHONWARNINGS=ignore MPLBACKEND=Agg uvx --quiet --from "$BAYESITE_VIZ_SOURCE" bayesite-viz "$@"
+bayescycle_plot() {
+  PYTHONWARNINGS=ignore MPLBACKEND=Agg uv --quiet run bayescycle plot "$@"
 }
 
 python_with_viz() {
