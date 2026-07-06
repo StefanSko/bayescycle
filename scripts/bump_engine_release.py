@@ -87,6 +87,7 @@ def fetch_all_checksums(base_url: str, tag: str) -> tuple[TargetChecksum, ...]:
 
 
 _VERSION_RE = re.compile(r'(PINNED_ENGINE_RELEASE = EngineRelease\(\s*version=)"([^"]*)"')
+_ENGINE_TARGET_NAME_RE = re.compile(r'EngineTarget\(\s*target="([^"]+)"')
 
 
 def _target_sha256_re(target: str) -> re.Pattern[str]:
@@ -95,13 +96,19 @@ def _target_sha256_re(target: str) -> re.Pattern[str]:
     return re.compile(r'(target="' + re.escape(target) + r'".*?sha256=)"([0-9a-f]{64})"', re.DOTALL)
 
 
+def _source_target_names(source: str) -> frozenset[str]:
+    """Return every target name in `source`'s `EngineTarget(...)` entries."""
+    return frozenset(_ENGINE_TARGET_NAME_RE.findall(source))
+
+
 def rewrite_provisioning(source: str, tag: str, checksums: tuple[TargetChecksum, ...]) -> str:
     """Return `source` with `PINNED_ENGINE_RELEASE`'s version and sha256s replaced.
 
     Raises `RuntimeError` without modifying anything if the expected
-    `version=` field or any target's `sha256=` field is missing -- that means
-    provisioning.py's shape changed and this script needs updating too,
-    rather than writing a corrupted pin.
+    `version=` field or any target's `sha256=` field is missing, or if
+    `source` has an `EngineTarget` entry that `checksums` doesn't cover --
+    each of those means provisioning.py's shape changed and this script needs
+    updating too, rather than writing a partially-rewritten pin.
     """
     if _VERSION_RE.search(source) is None:
         raise RuntimeError(
@@ -117,6 +124,16 @@ def rewrite_provisioning(source: str, tag: str, checksums: tuple[TargetChecksum,
                 "its shape may have changed since this script was written."
             )
         updated = pattern.sub(rf'\g<1>"{checksum.sha256}"', updated, count=1)
+
+    source_targets = _source_target_names(source)
+    checksum_targets = frozenset(checksum.target for checksum in checksums)
+    uncovered = sorted(source_targets - checksum_targets)
+    if uncovered:
+        raise RuntimeError(
+            "provisioning.py has EngineTarget entries this script fetched no checksum "
+            f"for: {uncovered}. Rewriting would leave their sha256 stale under the new "
+            "version -- add them to `_TARGETS` in this script before bumping."
+        )
     return updated
 
 

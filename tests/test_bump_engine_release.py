@@ -175,6 +175,32 @@ def test_rewrite_provisioning_fails_loudly_when_a_target_is_missing() -> None:
         rewrite_provisioning(source, "v9.9.9", (unknown_checksum,))
 
 
+_MSVC_SHA256 = "b713f8e9ac77c850e7e88204ac276cb5400c7ee3e4bc4cd2c5186643ebadf9b3"
+
+
+def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> None:
+    """A target added to provisioning.py that this script's `_TARGETS` list (and
+    therefore the fetched checksums) doesn't cover must fail loudly instead of
+    rewriting only the targets it knows about -- otherwise the new target's
+    stale sha256 would be recorded under the new version silently.
+    """
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    anchor = f'sha256="{_MSVC_SHA256}",\n        ),\n'
+    assert source.count(anchor) == 1
+    extra_entry = (
+        "        EngineTarget(\n"
+        '            target="aarch64-unknown-linux-musl",\n'
+        '            archive_format="tar.gz",\n'
+        f'            sha256="{"ef" * 32}",\n'
+        "        ),\n"
+    )
+    source_with_extra_target = source.replace(anchor, anchor + extra_entry, 1)
+    assert source_with_extra_target.count("EngineTarget(") == source.count("EngineTarget(") + 1
+
+    with pytest.raises(RuntimeError, match="aarch64-unknown-linux-musl"):
+        rewrite_provisioning(source_with_extra_target, "v9.9.9", _fake_checksums("v9.9.9"))
+
+
 def test_bump_engine_release_rewrites_a_copy_of_the_real_file_in_place(
     sidecar_server: SidecarServer, tmp_path: Path
 ) -> None:
