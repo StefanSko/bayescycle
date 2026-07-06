@@ -82,6 +82,33 @@ class RunMetadataSetting:
 
 
 @dataclass(frozen=True)
+class RunMetadataEngine:
+    """Bayesite engine provenance recorded for a materialized run.
+
+    ``kind`` records how bayescycle resolved the engine executable:
+    ``"explicit"`` (passed via ``--engine``), ``"system"`` (found on
+    ``PATH``), or ``"provisioned"`` (auto-downloaded into the bayescycle
+    cache). ``version`` and ``sha256`` are omitted from the wire format when
+    unknown; ``sha256`` is only ever set when the engine came from
+    auto-provisioning, since bayescycle does not hash arbitrary user-supplied
+    or PATH-resolved binaries.
+    """
+
+    kind: str
+    path: str
+    version: str | None = None
+    sha256: str | None = None
+
+    def as_json(self) -> dict[str, object]:
+        document: dict[str, object] = {"kind": self.kind, "path": self.path}
+        if self.version is not None:
+            document["version"] = self.version
+        if self.sha256 is not None:
+            document["sha256"] = self.sha256
+        return document
+
+
+@dataclass(frozen=True)
 class RunMetadata:
     """Append-only metadata for a prepared run directory."""
 
@@ -92,6 +119,7 @@ class RunMetadata:
     outputs: tuple[RunMetadataOutput, ...]
     settings: tuple[RunMetadataSetting, ...] = ()
     backend_extra_args: tuple[str, ...] = ()
+    engine: RunMetadataEngine | None = None
 
     def as_json(self, run_dir: Path) -> dict[str, object]:
         document: dict[str, object] = {
@@ -105,6 +133,8 @@ class RunMetadata:
         }
         if self.backend_extra_args:
             document["backend_options"] = {"extra_args": list(self.backend_extra_args)}
+        if self.engine is not None:
+            document["engine"] = self.engine.as_json()
         return document
 
 
@@ -139,6 +169,16 @@ class RecordedRunMetadataOutput:
 
 
 @dataclass(frozen=True)
+class RecordedRunMetadataEngine:
+    """Bayesite engine provenance loaded from an existing run metadata document."""
+
+    kind: str
+    path: str
+    version: str | None
+    sha256: str | None
+
+
+@dataclass(frozen=True)
 class RecordedRunMetadata:
     """Parsed append-only metadata for an existing run directory."""
 
@@ -149,6 +189,7 @@ class RecordedRunMetadata:
     outputs: tuple[RecordedRunMetadataOutput, ...]
     settings: tuple[RunMetadataSetting, ...]
     backend_extra_args: tuple[str, ...]
+    engine: RecordedRunMetadataEngine | None = None
 
     def setting(self, name: str) -> str | None:
         """Return a recorded setting value by name."""
@@ -203,6 +244,7 @@ def _parse_recorded_run_metadata(raw_document: object) -> RecordedRunMetadata:
         ),
         settings=_parse_recorded_settings(document.get("settings")),
         backend_extra_args=_parse_recorded_backend_extra_args(document.get("backend_options", {})),
+        engine=_parse_recorded_engine(document.get("engine")),
     )
 
 
@@ -251,6 +293,18 @@ def _parse_recorded_backend_extra_args(value: object) -> tuple[str, ...]:
     if "extra_args" not in document:
         return ()
     return _json_string_array(document.get("extra_args"), "backend_options.extra_args")
+
+
+def _parse_recorded_engine(value: object) -> RecordedRunMetadataEngine | None:
+    if value is None:
+        return None
+    document = _json_object(value, "engine")
+    return RecordedRunMetadataEngine(
+        kind=_json_string(document.get("kind"), "engine.kind"),
+        path=_json_string(document.get("path"), "engine.path"),
+        version=_optional_json_string(document.get("version"), "engine.version"),
+        sha256=_optional_json_string(document.get("sha256"), "engine.sha256"),
+    )
 
 
 def _json_object(value: object, label: str) -> dict[str, object]:
