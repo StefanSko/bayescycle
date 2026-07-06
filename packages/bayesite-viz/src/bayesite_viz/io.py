@@ -51,7 +51,8 @@ def load_fit(path: Path) -> xr.DataTree:
             sys.stderr.write(
                 f"{path} is not an InferenceData file (looks like raw engine "
                 f"output: NDJSON/JSON). Run `bayesite-idata run/ -o fit.nc` "
-                f"first to build a NetCDF InferenceData, then pass that path.\n"
+                f"from the separate `bayesite-idata` package first to build "
+                f"a NetCDF InferenceData, then pass that path.\n"
             )
             raise SystemExit(5) from e
         sys.stderr.write(f"failed to load InferenceData from {path}: {e}\n")
