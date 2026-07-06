@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from bayescycle._cli import main
+import bayescycle._cli as cli
+from bayescycle._cli import _idata_needs_engine, main
 
 
 @pytest.mark.parametrize("command", ("idata", "plot"))
@@ -106,6 +107,68 @@ def test_plot_auto_idata_reports_missing_uvx_without_touching_network(
     monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
 
     code = main(["plot", "trace", str(run_dir), "--engine", "/fake/bayesite"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "bayescycle: " in err
+    assert "uvx" in err
+
+
+@pytest.mark.parametrize(
+    ("validate", "explicit_engine", "expected"),
+    (
+        (None, None, True),
+        ("warn", None, True),
+        ("require", None, True),
+        ("skip", None, False),
+        ("skip", "/opt/bayesite", True),
+        (None, "/opt/bayesite", True),
+    ),
+)
+def test_idata_needs_engine_is_a_pure_decision(
+    validate: str | None, explicit_engine: str | None, expected: bool
+) -> None:
+    assert _idata_needs_engine(validate, explicit_engine) is expected
+
+
+def test_idata_validate_skip_without_engine_never_resolves_an_engine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--validate skip` exists so a run can be exported without a Bayesite
+    binary at all: no engine should be resolved (and no --bayesite forwarded)
+    when validation is skipped and the caller passed no explicit --engine.
+    """
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+
+    def _fail_if_called(engine: str | None, auto_provision: bool) -> str:
+        raise AssertionError(
+            "resolve_bayesite_engine_path must not be called under --validate skip"
+        )
+
+    monkeypatch.setattr(cli, "resolve_bayesite_engine_path", _fail_if_called)
+
+    code = main(["idata", str(run_dir), "--validate", "skip"])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "uvx" in err
+
+
+def test_idata_validate_skip_with_explicit_engine_still_resolves_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An explicit --engine is honored even under --validate skip."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+
+    code = main(["idata", str(run_dir), "--validate", "skip", "--engine", "/fake/bayesite"])
 
     assert code == 2
     err = capsys.readouterr().err

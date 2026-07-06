@@ -1259,6 +1259,26 @@ def _parse_coords(values: list[str] | None) -> tuple[tuple[str, str], ...]:
     return tuple(parsed)
 
 
+def _idata_needs_engine(validate: str | None, explicit_engine: str | None) -> bool:
+    """Decide whether an idata step needs a resolved Bayesite engine path.
+
+    ``--validate skip`` exists precisely so a run can be exported without a
+    Bayesite binary: ``bayesite-idata`` never invokes ``bayesite diagnose`` in
+    that mode, so resolving (and potentially auto-provisioning) an engine
+    would be pointless work with real network/filesystem side effects. An
+    explicit ``--engine`` is always honored and forwarded, even under skip,
+    since the caller named it on purpose.
+    """
+    return validate != "skip" or explicit_engine is not None
+
+
+def _resolve_idata_engine(namespace: argparse.Namespace, *, validate: str | None) -> str | None:
+    explicit_engine = cast(str | None, namespace.engine)
+    if not _idata_needs_engine(validate, explicit_engine):
+        return None
+    return resolve_bayesite_engine_path(explicit_engine, _auto_provision_enabled(namespace))
+
+
 def _idata(namespace: argparse.Namespace) -> int:
     try:
         run_dir = cast(Path, namespace.run_dir).expanduser().resolve()
@@ -1266,14 +1286,12 @@ def _idata(namespace: argparse.Namespace) -> int:
             raise WorkflowError(f"run directory does not exist: {run_dir}")
         output = cast(Path | None, namespace.output)
         resolved_output = output if output is not None else default_fit_path(run_dir)
-        engine = resolve_bayesite_engine_path(
-            cast(str | None, namespace.engine), _auto_provision_enabled(namespace)
-        )
+        validate = cast(str | None, namespace.validate)
         options = IdataOptions(
             run_dir=run_dir,
             output=resolved_output,
-            validate=cast(str | None, namespace.validate),
-            bayesite=engine,
+            validate=validate,
+            bayesite=_resolve_idata_engine(namespace, validate=validate),
         )
         return run_idata(options, source=_resolve_viz_source(namespace))
     except (WorkflowError, OSError) as exc:
@@ -1299,9 +1317,11 @@ def _plot(namespace: argparse.Namespace) -> int:
                     f"Run `bayescycle idata {run_dir}` first, or pass --fit to point at an "
                     "existing fit.nc."
                 )
-            engine = resolve_bayesite_engine_path(
-                cast(str | None, namespace.engine), _auto_provision_enabled(namespace)
-            )
+            # `plot` exposes no --validate of its own; its auto-idata step
+            # always runs bayesite-idata's own default (not "skip"), so this
+            # always resolves an engine -- shared decision function kept for
+            # consistency with `_idata` should that default ever change.
+            engine = _resolve_idata_engine(namespace, validate=None)
             idata_code = run_idata(
                 IdataOptions(run_dir=run_dir, output=resolved_fit_path, bayesite=engine),
                 source=source,
