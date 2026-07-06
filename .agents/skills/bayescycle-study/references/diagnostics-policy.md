@@ -52,6 +52,8 @@ Flag as warnings:
 - required bayesite-viz visual report is planned but not produced
 - diagnostics use unregistered run directories
 - raw NDJSON exists but no summarized diagnostics artifact is registered
+- a `data_snapshot` is used by a fit without an approved `data_audit` artifact
+  or a recorded waiver
 
 ## Computational checks
 
@@ -65,9 +67,26 @@ If reported, flag as errors:
 - warmup/adaptation draws used as posterior draws
 - missing or inconsistent seeds for recovery runs
 
-If thresholds are not in state, ask the human to choose defaults before treating
-borderline diagnostics as pass/fail. Do not rely only on raw-parameter diagnostics
+Thresholds live in `state.thresholds` (`rhat_max`, `ess_bulk_min`,
+`ess_tail_min`, `divergences_max`). If they are not in state, ask the human to
+choose defaults, record them as a state patch, and only then treat borderline
+diagnostics as pass/fail. Do not rely only on raw-parameter diagnostics
 when the reported result is a derived estimand, contrast, or prediction.
+
+## SBC interpretation
+
+`sbc.json` reports rank statistics and histograms only; the engine deliberately
+emits no uniformity verdict or p-value. Do not invent one. Instead:
+
+- produce a rank-histogram visual (`recovery_visual_report`) for the SBC run
+- read the standard shapes: roughly uniform ranks are consistent with a
+  well-calibrated estimator; a U shape suggests an overdispersed posterior; a
+  peaked (inverted-U) shape suggests an underdispersed posterior; a monotone
+  slope suggests bias
+- treat a gross, visually unambiguous deviation as an `error`
+- treat a borderline or ambiguous histogram as `warning` and ask for a human
+  gate decision rather than deciding alone; record the outcome as a decision
+  or waiver
 
 ## Severity levels
 

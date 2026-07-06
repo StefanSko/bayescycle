@@ -11,6 +11,9 @@ Goal: state what the study is trying to learn.
 Allowed work:
 
 - inspect data schema and metadata
+- validate data against its data dictionary: variable ranges, impossible
+  values, unit mismatches, event-status codes; record findings as a
+  `data_audit` artifact
 - propose candidate scientific questions and estimands
 - identify whether the estimand is causal, descriptive, predictive, or decision-oriented
 - for causal candidates, identify exposure/treatment `X`, outcome `Y`, and effect type
@@ -45,7 +48,11 @@ Visualization expectation: DAG/generative graph and observation-process visual
 when the model is causal or involves missingness, censoring, or competing events.
 
 Exit criterion: approved generative story, variables, observation process, DAG
-assumptions when causal, and scientific assumptions.
+assumptions when causal, and scientific assumptions. When censoring or
+truncation is present, the artifact must state the censoring-independence
+assumption explicitly: what the censoring mechanism is assumed to be random
+with respect to (for example, the exposure of interest), since the estimand is
+biased when that assumption fails.
 
 ## 3. estimator_plan
 
@@ -92,7 +99,8 @@ Goal: condition on real observations using the approved estimator.
 
 Allowed work:
 
-- prepare immutable data snapshots
+- prepare immutable data snapshots; a snapshot should reference an approved
+  `data_audit` artifact or a recorded waiver
 - run `bayescycle sample`
 - run diagnostics before posterior interpretation
 - check diagnostics for the approved estimand or derived quantity when practical
@@ -115,13 +123,43 @@ Allowed work:
 - diagnostic review
 - identify model failures and revised assumptions
 - revisit DAG assumptions, bad controls, and selection/censoring paths
+- re-examine the recorded censoring-independence assumption against the fitted
+  model and data when censoring is present
 
 Visualization expectation: posterior predictive and sensitivity visuals are
 reviewed by the human, with failures tied back to the scientific question.
 
 Exit criterion: approved criticism. If revision is needed, open a revision gate.
 
-## 7. revision
+## 7. report
+
+Goal: turn the approved posterior into the answer to the approved estimand.
+A parameter estimate is rarely the answer itself; the answer is usually a
+derived quantity.
+
+Allowed work:
+
+- compute the approved estimand as a derived quantity: contrasts, marginal
+  effects, predictions, poststratified summaries
+- state the answer with uncertainty, on the scale the estimand was posed in
+- state the assumptions the answer depends on, referencing approved artifacts
+- produce the posterior estimand visual report if not already reviewed
+
+Forbidden work:
+
+- introducing new derived quantities that were not part of the approved
+  estimand or estimator plan without a recorded decision
+- softening or dropping diagnostic caveats recorded during fit or critique
+
+Visualization expectation: the `posterior_estimand_visual_report` is produced
+and reviewed; the answer visual shows the contrast or derived quantity, not
+just raw parameter marginals.
+
+Exit criterion: approved report artifact that answers the approved estimand,
+with uncertainty and stated assumptions. This is the deliverable the estimand
+phase promised.
+
+## 8. revision
 
 Goal: change an earlier approved artifact deliberately.
 

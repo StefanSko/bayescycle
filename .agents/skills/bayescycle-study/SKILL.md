@@ -1,6 +1,6 @@
 ---
 name: bayescycle-study
-description: Runs one gated phase of an agentic Bayesian study workflow using JSON study state, append-only events, bayescycle/Bayesite run directories, diagnostics, and human approval gates. Use for estimand definition, generative modeling, estimator planning, simulation/recovery, fitting, and model criticism.
+description: Runs one gated phase of an agentic Bayesian study workflow using JSON study state, append-only events, bayescycle/Bayesite run directories, diagnostics, and human approval gates. Use for estimand definition, generative modeling, estimator planning, simulation/recovery, fitting, model criticism, and reporting the estimand answer.
 ---
 
 # Bayescycle Study
@@ -77,7 +77,8 @@ Do exactly one phase per invocation:
 4. `simulation`
 5. `fit`
 6. `critique`
-7. `revision`
+7. `report`
+8. `revision`
 
 Never advance to the next phase unless `state.gate` and blocking questions allow
 it. If a human decision is needed, stop and ask.

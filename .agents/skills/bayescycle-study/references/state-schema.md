@@ -18,11 +18,17 @@ snapshot may be reconstructed from events later, but the MVP treats
 - `title`: human-readable title.
 - `cycle`: integer workflow cycle, incremented when a major revision loop begins.
 - `phase`: current phase. One of `estimand`, `generative_model`,
-  `estimator_plan`, `simulation`, `fit`, `critique`, `revision`.
+  `estimator_plan`, `simulation`, `fit`, `critique`, `report`, `revision`.
 - `gate`: current gate status. One of `open`, `awaiting_human`, `approved`,
   `blocked`.
 - `toolchain`: current implementation profile.
-- `approved`: approved scientific artifacts by phase role.
+- `approved`: approved scientific artifacts by phase role. The optional
+  `report` role holds the final answer artifact for the cycle.
+- `thresholds`: optional diagnostic thresholds chosen by the human
+  (`rhat_max`, `ess_bulk_min`, `ess_tail_min`, `divergences_max`). Once
+  recorded here, diagnostic pass/fail checks are mechanical; if absent, the
+  agent must ask the human to choose defaults before treating borderline
+  diagnostics as pass/fail.
 - `open_questions`: unresolved questions that may block progress.
 - `decisions`: accepted or superseded human decisions.
 - `artifacts`: registered files produced by humans, agents, or tools.
@@ -74,6 +80,26 @@ decision with `supersedes` instead of editing the old decision out of history.
   "phase": "estimand",
   "status": "accepted",
   "text": "Use color == Black for cycle 1.",
+  "supersedes": []
+}
+```
+
+## Waivers
+
+A waiver is a decision with `"kind": "waiver"`. It is the only way to skip a
+required check (missing visualization, failed diagnostic, real-data fit before
+recovery approval, missing data audit). A waiver must state its scope (what
+exactly is waived, for which run or artifact) and its consequences (what risk
+the human is accepting). Workflow checks that say "unless explicitly waived"
+match only against recorded waiver decisions, never against chat history.
+
+```json
+{
+  "id": "D0007",
+  "kind": "waiver",
+  "phase": "fit",
+  "status": "accepted",
+  "text": "Waive rank-plot visual for runs/fit-0002; scope: fit gate only; consequence: mixing pathologies may be missed until critique.",
   "supersedes": []
 }
 ```

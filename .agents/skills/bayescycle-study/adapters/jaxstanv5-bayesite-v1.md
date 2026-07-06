@@ -132,6 +132,55 @@ calls are not needed for the simulation gate in this profile. Record the exact
 bayescycle command in the artifact and do not treat the output as approved until
 the human gate accepts it.
 
+`simulate`, `recover`, and `sbc` run on the Bayesite backend only in this
+profile; requesting them with `--backend jaxstanv5` returns an explicit
+unsupported-profile error.
+
+## Scenario and targets file schemas
+
+These schemas are easy to get wrong and the engine errors are terse; use the
+shapes below verbatim.
+
+`recover` scenario files require the version marker `recover_scenario`:
+
+```json
+{
+  "recover_scenario": "v0-provisional",
+  "data": { "x": [1.0, 2.0] },
+  "sample": { "chains": 4, "warmup": 400, "draws": 500, "target_accept": 0.9 },
+  "seed": 7
+}
+```
+
+`sbc` scenarios are the same with `"sbc_scenario": "v0-provisional"` and an
+optional `"replicates"`. The `sample` object accepts only
+`chains|warmup|draws|max_treedepth|target_accept`.
+
+`recover-check --targets` files must be a wrapped list, not a flat map:
+
+```json
+{
+  "targets": [
+    { "name": "alpha", "truth": "alpha", "posterior": "alpha" }
+  ]
+}
+```
+
+Omitting `--targets` auto-maps each truth name to the matching posterior
+parameter, which is the simplest path when names line up.
+
+## Operational notes
+
+- Run every `bayescycle` invocation from the bayescycle project directory with
+  absolute paths for study files: `uv run` extras (for example
+  `--extra inproc`) have no effect outside the project and the entry point may
+  not resolve from a study or run directory.
+- Set `PYTHONDONTWRITEBYTECODE=1` when loading study model files so
+  `__pycache__/` does not pollute study trees.
+- bayesite-viz requires Python >= 3.13 and cannot share the bayescycle (3.12)
+  virtualenv; run it from its own checkout or environment, for example
+  `uv run --no-project --with <path-to-bayesite-viz> --python 3.13 -- bayesite-viz ...`.
+
 ## Public contracts used
 
 - `bayescycle sample ...`

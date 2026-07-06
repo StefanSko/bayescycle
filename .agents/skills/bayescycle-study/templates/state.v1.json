@@ -18,7 +18,14 @@
     "estimator_plan": null,
     "simulation_tests": null,
     "real_fit": null,
-    "model_criticism": null
+    "model_criticism": null,
+    "report": null
+  },
+  "thresholds": {
+    "rhat_max": 1.01,
+    "ess_bulk_min": 400,
+    "ess_tail_min": 400,
+    "divergences_max": 0
   },
   "open_questions": [],
   "decisions": [],
