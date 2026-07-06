@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from typing import Any
 
 from bayescycle._errors import WorkflowError
+from bayescycle._run_artifacts.run_metadata import RunMetadataEngine
 from bayescycle._workflow.capabilities import (
     BAYESITE,
     FIRST_PARTY_BACKENDS,
@@ -28,6 +30,7 @@ from bayescycle.backends.bayesite.preflight import (
     BayesiteCommandRequirement,
     preflight_bayesite_engine,
 )
+from bayescycle.backends.bayesite.provisioning import ensure_engine
 from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
 
 
@@ -39,6 +42,7 @@ class BackendRuntimeOptions:
     engine: str | None
     extra_args: tuple[str, ...]
     preflight: bool
+    auto_provision: bool = True
 
 
 type OpaqueSampleBackend = SampleBackend[Any, Any]
@@ -153,20 +157,56 @@ def _resolve_backend(value: str, capability: BackendCapability) -> BackendId:
     return backend
 
 
+def _should_auto_provision(
+    engine_option: str | None,
+    which_result: str | None,
+    auto_provision_enabled: bool,
+) -> bool:
+    """Decide whether to auto-provision the pinned Bayesite engine.
+
+    Pure so it is testable without PATH/environment manipulation:
+    provisioning triggers only when the caller passed no explicit
+    ``--engine``, the engine is not already resolvable on ``PATH``
+    (``which_result``), and auto-provisioning has not been disabled.
+    """
+    return engine_option is None and which_result is None and auto_provision_enabled
+
+
 def _bayesite_backend(
     options: BackendRuntimeOptions,
     *,
     command: str,
     stage: str,
 ) -> BayesiteBackend:
-    engine = options.engine or str(BAYESITE)
+    engine_kind = "explicit" if options.engine is not None else "system"
+    provisioned_sha256: str | None = None
+    if options.preflight and _should_auto_provision(
+        options.engine, shutil.which(str(BAYESITE)), options.auto_provision
+    ):
+        provisioned = ensure_engine()
+        engine = str(provisioned.executable)
+        engine_kind = "provisioned"
+        provisioned_sha256 = provisioned.sha256
+    else:
+        engine = options.engine or str(BAYESITE)
+
+    version: str | None = None
     if options.preflight:
         info = preflight_bayesite_engine(
             engine,
             (BayesiteCommandRequirement(command, stage),),
         )
         engine = str(info.executable)
-    return BayesiteBackend(engine, extra_args=options.extra_args)
+        if info.capabilities is not None:
+            version = info.capabilities.version
+
+    provenance = RunMetadataEngine(
+        kind=engine_kind,
+        path=engine,
+        version=version,
+        sha256=provisioned_sha256,
+    )
+    return BayesiteBackend(engine, extra_args=options.extra_args, provenance=provenance)
 
 
 def _reject_bayesite_options_for_non_bayesite(

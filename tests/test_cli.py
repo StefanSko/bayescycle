@@ -676,6 +676,7 @@ def test_sample_writes_run_metadata_for_future_provenance(tmp_path: Path) -> Non
             }
         ],
         "outputs": [{"role": "posterior", "path": "posterior.ndjson"}],
+        "engine": {"kind": "explicit", "path": str(fake_engine.resolve())},
     }
 
 
