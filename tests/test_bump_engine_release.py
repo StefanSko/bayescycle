@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import functools
 import http.server
+import re
 import shutil
 import sys
 import threading
@@ -175,7 +176,27 @@ def test_rewrite_provisioning_fails_loudly_when_a_target_is_missing() -> None:
         rewrite_provisioning(source, "v9.9.9", (unknown_checksum,))
 
 
-_MSVC_SHA256 = "b713f8e9ac77c850e7e88204ac276cb5400c7ee3e4bc4cd2c5186643ebadf9b3"
+def _windows_target_anchor(source: str) -> str:
+    """Return the windows `EngineTarget(...)` block in `source`, closing
+    `),` line and trailing newline included.
+
+    Derived from the file's current content by target name rather than a
+    hardcoded checksum literal, so it keeps matching after each real engine
+    bump rewrites every sha256 field in provisioning.py.
+    """
+    pattern = re.compile(
+        r"^[ \t]*EngineTarget\(\n"
+        r"(?:(?![ \t]*\),\n).*\n)*?"
+        r'[ \t]*target="x86_64-pc-windows-msvc",\n'
+        r"(?:(?![ \t]*\),\n).*\n)*"
+        r"[ \t]*\),\n",
+        re.MULTILINE,
+    )
+    matches = pattern.findall(source)
+    assert len(matches) == 1, (
+        f"expected exactly one windows EngineTarget block, found {len(matches)}"
+    )
+    return matches[0]
 
 
 def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> None:
@@ -185,7 +206,7 @@ def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> 
     stale sha256 would be recorded under the new version silently.
     """
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    anchor = f'sha256="{_MSVC_SHA256}",\n        ),\n'
+    anchor = _windows_target_anchor(source)
     assert source.count(anchor) == 1
     extra_entry = (
         "        EngineTarget(\n"
@@ -199,6 +220,46 @@ def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> 
 
     with pytest.raises(RuntimeError, match="aarch64-unknown-linux-musl"):
         rewrite_provisioning(source_with_extra_target, "v9.9.9", _fake_checksums("v9.9.9"))
+
+
+def test_rewrite_provisioning_fails_loudly_on_archive_format_mismatch() -> None:
+    """Checksum substitution keys on the target name alone, but a checksum is a
+    property of one concrete archive. If provisioning.py's EngineTarget entry
+    downloads a different archive format than the one the script fetched the
+    sidecar for, recording that checksum guarantees a sha256 failure at
+    provision time -- fail loudly before substituting anything instead.
+    """
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    windows_anchor = _windows_target_anchor(source)
+    divergent_anchor = windows_anchor.replace('archive_format="zip"', 'archive_format="tar.gz"')
+    assert divergent_anchor != windows_anchor
+    divergent_source = source.replace(windows_anchor, divergent_anchor, 1)
+
+    with pytest.raises(RuntimeError, match="x86_64-pc-windows-msvc") as exc_info:
+        rewrite_provisioning(divergent_source, "v9.9.9", _fake_checksums("v9.9.9"))
+    message = str(exc_info.value)
+    assert "zip" in message
+    assert "tar.gz" in message
+
+
+def test_windows_anchor_derivation_survives_an_engine_bump() -> None:
+    """Regression guard for the anchor used above: a real engine bump rewrites
+    every sha256 in provisioning.py, so the injected-target anchor must be
+    derived from the file's current content by target name, not pinned to
+    today's checksum literal -- the literal approach broke on the next bump.
+    """
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    bumped = rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
+    assert bumped != source
+
+    anchor = _windows_target_anchor(bumped)
+
+    assert bumped.count(anchor) == 1
+    assert 'target="x86_64-pc-windows-msvc"' in anchor
+    windows_checksum = next(
+        c.sha256 for c in _fake_checksums("v9.9.9") if c.target == "x86_64-pc-windows-msvc"
+    )
+    assert f'sha256="{windows_checksum}"' in anchor
 
 
 def test_bump_engine_release_rewrites_a_copy_of_the_real_file_in_place(
