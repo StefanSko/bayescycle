@@ -142,6 +142,22 @@ def resolve_posterior_check_backend(
     raise _unsupported_runtime_backend(backend, BackendCapability.POSTERIOR_CHECK)
 
 
+def resolve_bayesite_engine_path(engine: str | None, auto_provision: bool) -> str:
+    """Resolve a Bayesite engine path for callers that only need its location.
+
+    Mirrors the engine-selection half of :func:`_bayesite_backend`: an
+    explicit ``engine`` wins, otherwise the pinned engine is auto-provisioned
+    when it is not already resolvable on ``PATH`` and ``auto_provision`` is
+    enabled. Unlike :func:`_bayesite_backend`, this performs no capability
+    preflight -- callers such as the ``idata``/``plot`` verbs only need an
+    executable path to forward to ``bayesite-idata --bayesite``, which does
+    its own engine validation before invoking ``bayesite diagnose``.
+    """
+    if _should_auto_provision(engine, shutil.which(str(BAYESITE)), auto_provision):
+        return str(ensure_engine().executable)
+    return engine or str(BAYESITE)
+
+
 def resolve_recover_check_backend(options: BackendRuntimeOptions) -> OpaqueRecoverCheckBackend:
     """Resolve a backend object with recover-check capability."""
     backend = _resolve_backend(options.backend, BackendCapability.RECOVER_CHECK)
