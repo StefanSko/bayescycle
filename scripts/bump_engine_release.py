@@ -96,34 +96,72 @@ def _target_sha256_re(target: str) -> re.Pattern[str]:
     return re.compile(r'(target="' + re.escape(target) + r'".*?sha256=)"([0-9a-f]{64})"', re.DOTALL)
 
 
+def _target_archive_format_re(target: str) -> re.Pattern[str]:
+    # Non-greedy + DOTALL: matches from this target's `target="..."` field to
+    # its own `archive_format="..."` field, not a later target's.
+    return re.compile(r'target="' + re.escape(target) + r'".*?archive_format="([^"]+)"', re.DOTALL)
+
+
 def _source_target_names(source: str) -> frozenset[str]:
     """Return every target name in `source`'s `EngineTarget(...)` entries."""
     return frozenset(_ENGINE_TARGET_NAME_RE.findall(source))
+
+
+def _require_matching_archive_format(source: str, checksum: TargetChecksum) -> None:
+    """Fail loudly if `source`'s entry for this target downloads a different archive.
+
+    A checksum is a property of one concrete archive file. Substituting a
+    checksum fetched for one archive format into an `EngineTarget` that
+    downloads another guarantees a sha256 verification failure at provision
+    time, so a divergence between this script's `_TARGETS` and
+    provisioning.py must abort the rewrite instead.
+    """
+    match = _target_archive_format_re(checksum.target).search(source)
+    if match is None:
+        raise RuntimeError(
+            f"provisioning.py's EngineTarget entry for target={checksum.target!r} has no "
+            '`archive_format="..."` field; its shape may have changed since this script '
+            "was written."
+        )
+    source_format = match.group(1)
+    if source_format != checksum.archive_format:
+        raise RuntimeError(
+            f"archive format mismatch for target={checksum.target!r}: this script fetched "
+            f"the checksum sidecar for {checksum.archive_format!r}, but provisioning.py's "
+            f"EngineTarget entry downloads {source_format!r}. Recording that checksum "
+            "would guarantee a sha256 failure at provision time -- align `_TARGETS` in "
+            "this script with provisioning.py before bumping."
+        )
 
 
 def rewrite_provisioning(source: str, tag: str, checksums: tuple[TargetChecksum, ...]) -> str:
     """Return `source` with `PINNED_ENGINE_RELEASE`'s version and sha256s replaced.
 
     Raises `RuntimeError` without modifying anything if the expected
-    `version=` field or any target's `sha256=` field is missing, or if
-    `source` has an `EngineTarget` entry that `checksums` doesn't cover --
-    each of those means provisioning.py's shape changed and this script needs
-    updating too, rather than writing a partially-rewritten pin.
+    `version=` field or any target's `sha256=` field is missing, if a
+    target's `archive_format` disagrees with the archive the checksum was
+    fetched for, or if `source` has an `EngineTarget` entry that `checksums`
+    doesn't cover -- each of those means provisioning.py's shape changed and
+    this script needs updating too, rather than writing a partially-rewritten
+    pin.
     """
     if _VERSION_RE.search(source) is None:
         raise RuntimeError(
             "provisioning.py does not match the expected PINNED_ENGINE_RELEASE shape: "
             'no `version="..."` field found under `PINNED_ENGINE_RELEASE = EngineRelease(`.'
         )
-    updated = _VERSION_RE.sub(rf'\g<1>"{tag}"', source, count=1)
     for checksum in checksums:
-        pattern = _target_sha256_re(checksum.target)
-        if pattern.search(updated) is None:
+        if _target_sha256_re(checksum.target).search(source) is None:
             raise RuntimeError(
                 f"provisioning.py has no EngineTarget entry for target={checksum.target!r}; "
                 "its shape may have changed since this script was written."
             )
-        updated = pattern.sub(rf'\g<1>"{checksum.sha256}"', updated, count=1)
+        _require_matching_archive_format(source, checksum)
+    updated = _VERSION_RE.sub(rf'\g<1>"{tag}"', source, count=1)
+    for checksum in checksums:
+        updated = _target_sha256_re(checksum.target).sub(
+            rf'\g<1>"{checksum.sha256}"', updated, count=1
+        )
 
     source_targets = _source_target_names(source)
     checksum_targets = frozenset(checksum.target for checksum in checksums)
