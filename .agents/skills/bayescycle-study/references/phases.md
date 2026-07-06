@@ -106,8 +106,8 @@ Allowed work:
 - check diagnostics for the approved estimand or derived quantity when practical
 - summarize posterior estimand only if diagnostics pass or failures are stated
 
-Visualization expectation: bayesite-viz diagnostic plots and posterior estimand
-visuals are produced or explicitly waived by the human.
+Visualization expectation: `bayescycle plot` diagnostic plots and posterior
+estimand visuals are produced or explicitly waived by the human.
 
 Exit criterion: approved real-fit artifact and diagnostics status.
 

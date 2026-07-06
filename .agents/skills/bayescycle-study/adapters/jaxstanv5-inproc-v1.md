@@ -17,8 +17,9 @@ contract used by the Bayesite profile.
 - `bayescycle`: Python workflow harness that loads model files, writes run
   directories, invokes the in-process backend, and serializes the posterior
   artifact contract.
-- `bayesite-idata`: exporter from run directory to ArviZ DataTree/NetCDF.
-- `bayesite-viz`: visualization boundary over exported ArviZ fit files.
+- `bayescycle idata`: exporter from run directory to ArviZ DataTree/NetCDF.
+- `bayescycle plot`: visualization boundary over exported ArviZ fit files,
+  reaching `bayesite-viz` through a single pinned `uvx` source.
 
 ## Current bayescycle commands
 
@@ -47,8 +48,8 @@ Run diagnostics and derived exports through the same run directory:
 
 ```bash
 bayescycle diagnose runs/fit-0001
-bayesite-idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
-bayesite-viz energies runs/fit-0001/fit.nc -o artifacts/fit-0001-energies.png
+bayescycle idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
+bayescycle plot energies runs/fit-0001 -o artifacts/fit-0001-energies.png
 ```
 
 `simulate`, `recover`, `sbc`, `posterior-check`, and `recover-check` are not yet
@@ -74,7 +75,7 @@ runs/fit-0001/
   sbc.json                  # Bayesite-backed profile only today
   recovery_check.json       # Bayesite-backed profile only today
   posterior_check.json      # Bayesite-backed profile only today
-  fit.nc                    # optional; produced by bayesite-idata for visualization
+  fit.nc                    # optional; produced by `bayescycle idata` for visualization
 ```
 
 Treat `posterior.ndjson` as raw backend output serialized into the bayescycle

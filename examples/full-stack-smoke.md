@@ -84,8 +84,10 @@ PY
 ```output
 data.json
 dims.json
+manifest.json
 model.ir.json
 posterior.ndjson
+run.json
 ir: 1
 dims: bayescycle-dims-v1 ['obs'] ['a', 'b', 'c', 'd']
 draws: v0-provisional chains 2 draws 200

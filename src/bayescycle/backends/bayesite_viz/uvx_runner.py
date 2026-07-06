@@ -16,9 +16,10 @@ from pathlib import Path
 from bayescycle._errors import WorkflowError
 from bayescycle._integrations.external_command import ExternalCommand, run_external_command
 
-# Consumer pin: exact bayesite-viz commit. Bump deliberately via
-# docs/releasing.md alongside a coordinated compatibility review -- this is
-# the single place the pin lives. bayesite-viz is a uv workspace with two
+# Consumer pin: exact bayesite-viz commit. Bump deliberately via the
+# bayeswire repo's docs/releasing.md consumer pin checklist, alongside a
+# coordinated compatibility review -- this is the single place the pin
+# lives. bayesite-viz is a uv workspace with two
 # separate distributions (packages/bayesite-idata, packages/bayesite-viz);
 # `uvx --from <source> <entry-point>` needs a `#subdirectory=` fragment to
 # find either entry point's own pyproject.toml, so BAYESITE_VIZ_SOURCE is the

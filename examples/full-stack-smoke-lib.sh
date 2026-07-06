@@ -11,7 +11,9 @@ fi
 # CLIs. Those CLI invocations (bayesite-idata, bayesite-viz) are now owned by
 # `bayescycle idata`/`bayescycle plot`, which pin bayesite-viz once in
 # BAYESITE_VIZ_SOURCE under src/bayescycle/backends/bayesite_viz/uvx_runner.py.
-BAYESITE_VIZ_SOURCE="${BAYESITE_VIZ_SOURCE:-git+https://github.com/StefanSko/bayesite-viz.git@a2809452d1c753885602fae824d789bb627d5cb6}"
+# Derive the default from that single pin so this script never carries its
+# own, second, divergent commit.
+BAYESITE_VIZ_SOURCE="${BAYESITE_VIZ_SOURCE:-$(uv --quiet run python -c 'from bayescycle.backends.bayesite_viz.uvx_runner import BAYESITE_VIZ_SOURCE as s; print(s)')}"
 
 reset_workdir() {
   rm -rf "$WORK"

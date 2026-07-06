@@ -15,8 +15,9 @@ The scientific workflow remains tool-agnostic. This adapter is swappable.
 - `bayescycle`: Python workflow harness that loads model files, writes run
   directories, and invokes Bayesite.
 - `bayesite`: engine that consumes IR/data and emits draws/diagnostics.
-- `bayesite-viz`: first-class visualization boundary over exported ArviZ fit
-  files derived from run artifacts.
+- `bayescycle idata` / `bayescycle plot`: first-class visualization boundary
+  over exported ArviZ fit files derived from run artifacts, reaching
+  `bayesite-viz` through a single pinned `uvx` source.
 
 ## Current bayescycle commands
 
@@ -78,7 +79,7 @@ runs/fit-0001/
   sbc.json
   recovery_check.json
   posterior_check.json
-  fit.nc                    # optional; produced by bayesite-idata for visualization
+  fit.nc                    # optional; produced by `bayescycle idata` for visualization
 ```
 
 Treat `posterior.ndjson` as raw engine output. Treat `diagnostics.json` as a
@@ -88,14 +89,15 @@ large contents into state.
 
 ## Visualization path
 
-For a completed run, use bayesite-viz through its exporter boundary:
+For a completed run, use `bayescycle idata`/`bayescycle plot` through the
+exporter boundary:
 
 ```bash
-bayesite-idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
-bayesite-viz trace runs/fit-0001/fit.nc -o artifacts/fit-0001-trace.png
-bayesite-viz rank runs/fit-0001/fit.nc -o artifacts/fit-0001-rank.png
-bayesite-viz posterior runs/fit-0001/fit.nc --kind hist -o artifacts/fit-0001-posterior.png
-bayesite-viz ppc runs/fit-0001/fit.nc --kind dist -o artifacts/fit-0001-ppc-dist.png
+bayescycle idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
+bayescycle plot trace runs/fit-0001 -o artifacts/fit-0001-trace.png
+bayescycle plot rank runs/fit-0001 -o artifacts/fit-0001-rank.png
+bayescycle plot posterior runs/fit-0001 --kind hist -o artifacts/fit-0001-posterior.png
+bayescycle plot ppc runs/fit-0001 --kind dist -o artifacts/fit-0001-ppc-dist.png
 ```
 
 See `adapters/bayesite-viz.md` for the full visual vocabulary. Visual artifacts
@@ -177,9 +179,11 @@ parameter, which is the simplest path when names line up.
   not resolve from a study or run directory.
 - Set `PYTHONDONTWRITEBYTECODE=1` when loading study model files so
   `__pycache__/` does not pollute study trees.
-- bayesite-viz requires Python >= 3.13 and cannot share the bayescycle (3.12)
-  virtualenv; run it from its own checkout or environment, for example
-  `uv run --no-project --with <path-to-bayesite-viz> --python 3.13 -- bayesite-viz ...`.
+- `bayescycle idata`/`bayescycle plot` reach `bayesite-viz` through a pinned
+  `uvx` invocation, so no separate Python version or virtualenv is needed;
+  `uv`/`uvx` on `PATH` is enough. Invoking `bayesite-idata`/`bayesite-viz`
+  directly from a separate `bayesite-viz` checkout remains an escape hatch for
+  debugging the exporter/plotter themselves, not the default path.
 
 ## Public contracts used
 
@@ -193,8 +197,8 @@ parameter, which is the simplest path when names line up.
 - `bayescycle posterior-check ...`
 - `bayescycle recover-check ...`
 - run-directory files documented by `bayescycle`
-- `bayesite-idata <run-dir> -o <fit.nc>`
-- `bayesite-viz <verb> <fit.nc> -o <artifact>`
+- `bayescycle idata <run-dir> -o <fit.nc>`
+- `bayescycle plot <verb> <run-dir> -o <artifact>`
 
 ## Forbidden assumptions
 
@@ -203,8 +207,9 @@ parameter, which is the simplest path when names line up.
 - Do not infer model semantics from file names, shapes, or array labels.
 - Do not treat Bayesite stdout/stderr as posterior semantics unless summarized by
   an explicit diagnostics artifact.
-- Do not assume `bayesite-viz` owns run-directory discovery; use `bayesite-idata`
-  as the exporter boundary.
+- Do not assume `bayescycle plot` owns run-directory discovery beyond the
+  `run_dir` argument given on the command line; use `bayescycle idata` as the
+  exporter boundary.
 
 ## Boundary rules
 

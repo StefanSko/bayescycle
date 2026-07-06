@@ -1,54 +1,51 @@
 # Adapter: bayesite-viz
 
-`bayesite-viz` is the visualization boundary for bayescycle studies.
+`bayescycle idata` and `bayescycle plot` are the visualization boundary for
+bayescycle studies. They are first-class bayescycle CLI verbs that reach
+`bayesite-viz` through a single pinned `uvx` source
+(`BAYESITE_VIZ_SOURCE` in `src/bayescycle/backends/bayesite_viz/uvx_runner.py`
+in the bayescycle repository), so there is nothing to install by hand.
 
 Repository: <https://github.com/StefanSko/bayesite-viz>
 
-It provides two agent-operable CLIs:
+`bayescycle` provides two agent-operable verbs over that boundary:
 
-- `bayesite-idata`: Bayesite run directory -> ArviZ NetCDF/DataTree fit file
-- `bayesite-viz`: ArviZ NetCDF/DataTree fit file -> PNG/SVG plot
+- `bayescycle idata`: bayescycle run directory -> ArviZ NetCDF/DataTree fit file
+- `bayescycle plot`: ArviZ NetCDF/DataTree fit file -> PNG/SVG plot
 
-The plot command prints only the absolute output path to stdout by default, so
-agents can capture and register visual artifacts deterministically.
+Both verbs inherit stdio from the underlying `bayesite-idata`/`bayesite-viz`
+process, so an agent still sees the same path-only stdout contract for
+`plot` (controlled by `-f/--format`).
 
 ## Boundary
 
 ```text
-bayescycle/Bayesite run directory -> bayesite-idata -> fit.nc -> bayesite-viz -> image
+bayescycle run directory -> bayescycle idata -> fit.nc -> bayescycle plot -> image
 ```
 
-`bayesite-viz` is not canonical state and not a report database. Images are
-visual evidence registered as artifacts.
+`bayescycle plot` output is not canonical state and not a report database.
+Images are visual evidence registered as artifacts.
 
-## Install / invocation
-
-Preferred installed commands:
+## Invocation
 
 ```bash
-bayesite-idata --help
-bayesite-viz --help
+bayescycle idata --help
+bayescycle plot --help
 ```
 
-Ad hoc invocation:
-
-```bash
-uvx bayesite-viz --help
-```
+There is no separate install step: `bayescycle idata`/`bayescycle plot` fetch
+`bayesite-viz` through `uvx` against the pinned commit on first use. Only
+`uv`/`uvx` need to be on `PATH`.
 
 ## Export a run directory
 
-Before plotting, export the run directory to ArviZ NetCDF:
+`bayescycle plot` auto-runs `idata` when `RUN_DIR/fit.nc` is missing, so an
+explicit export step is only needed to control validation or output path:
 
 ```bash
-bayesite-idata runs/fit-0001 -o runs/fit-0001/fit.nc
-```
-
-Validation options when available:
-
-```bash
-bayesite-idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
-bayesite-idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require --bayesite /path/to/bayesite
+bayescycle idata runs/fit-0001
+bayescycle idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require
+bayescycle idata runs/fit-0001 -o runs/fit-0001/fit.nc --validate require --engine /path/to/bayesite
 ```
 
 Register `fit.nc` as a derived implementation artifact only if useful. It is
@@ -59,33 +56,33 @@ usually enough to register the visual outputs.
 Diagnostic plots:
 
 ```bash
-bayesite-viz trace    runs/fit-0001/fit.nc -o artifacts/fit-0001-trace.png
-bayesite-viz rank     runs/fit-0001/fit.nc -o artifacts/fit-0001-rank.png
-bayesite-viz autocorr runs/fit-0001/fit.nc -o artifacts/fit-0001-autocorr.png
-bayesite-viz forest   runs/fit-0001/fit.nc -o artifacts/fit-0001-forest.png
+bayescycle plot trace    runs/fit-0001 -o artifacts/fit-0001-trace.png
+bayescycle plot rank     runs/fit-0001 -o artifacts/fit-0001-rank.png
+bayescycle plot autocorr runs/fit-0001 -o artifacts/fit-0001-autocorr.png
+bayescycle plot forest   runs/fit-0001 -o artifacts/fit-0001-forest.png
 ```
 
 Energy diagnostics, when the fit contains `sample_stats.energy`:
 
 ```bash
-bayesite-viz energies runs/fit-0001/fit.nc -o artifacts/fit-0001-energies.png
+bayescycle plot energies runs/fit-0001 -o artifacts/fit-0001-energies.png
 ```
 
 Posterior and pair plots:
 
 ```bash
-bayesite-viz posterior runs/fit-0001/fit.nc --kind hist -o artifacts/fit-0001-posterior.png
-bayesite-viz pair      runs/fit-0001/fit.nc --var mu --var tau -o artifacts/fit-0001-pair.png
+bayescycle plot posterior runs/fit-0001 --kind hist -o artifacts/fit-0001-posterior.png
+bayescycle plot pair      runs/fit-0001 --var mu --var tau -o artifacts/fit-0001-pair.png
 ```
 
 Posterior predictive checks:
 
 ```bash
-bayesite-viz ppc runs/fit-0001/fit.nc --kind dist      -o artifacts/fit-0001-ppc-dist.png
-bayesite-viz ppc runs/fit-0001/fit.nc --kind interval  -o artifacts/fit-0001-ppc-interval.png
-bayesite-viz ppc runs/fit-0001/fit.nc --kind pit       -o artifacts/fit-0001-ppc-pit.png
-bayesite-viz ppc runs/fit-0001/fit.nc --kind rootogram -o artifacts/fit-0001-ppc-rootogram.png
-bayesite-viz ppc runs/fit-0001/fit.nc --kind tstat     -o artifacts/fit-0001-ppc-tstat.png
+bayescycle plot ppc runs/fit-0001 --kind dist      -o artifacts/fit-0001-ppc-dist.png
+bayescycle plot ppc runs/fit-0001 --kind interval  -o artifacts/fit-0001-ppc-interval.png
+bayescycle plot ppc runs/fit-0001 --kind pit       -o artifacts/fit-0001-ppc-pit.png
+bayescycle plot ppc runs/fit-0001 --kind rootogram -o artifacts/fit-0001-ppc-rootogram.png
+bayescycle plot ppc runs/fit-0001 --kind tstat     -o artifacts/fit-0001-ppc-tstat.png
 ```
 
 `rootogram` is for discrete outcomes. Choose PPC kinds based on the approved
@@ -93,22 +90,22 @@ estimator plan and model criticism questions.
 
 ## Shared options
 
-Useful options from the bayesite-viz contract:
+Useful options from the `bayescycle plot` contract:
 
 ```text
 -o FILE                       output path
 --svg                         emit SVG instead of PNG
--f path|markdown|html|json|alt stdout format
---alt TEXT                    alt text for non-path formats
+-f path|markdown|html|json|alt bayesite-viz stdout announce format
 --var NAME                    repeatable variable selection
---like / --regex              variable selection mode
 --coords key=val              repeatable coordinate selection
 -b matplotlib|bokeh|plotly    backend; matplotlib is the v1 default/tested backend
+--fit FIT_PATH                fit .nc path override (default: RUN_DIR/fit.nc)
+--no-auto-idata                require an existing fit.nc instead of auto-exporting
 ```
 
 ## Workflow use
 
-At phase gates, register bayesite-viz outputs as visual artifacts:
+At phase gates, register `bayescycle plot` outputs as visual artifacts:
 
 - `fit_diagnostic_visual_report`: trace/rank/autocorr/forest/energies
 - `posterior_estimand_visual_report`: posterior plot for approved estimand
@@ -121,22 +118,26 @@ visual interpretation.
 
 ## Public contracts used
 
-- `bayesite-idata <run-dir> -o <fit.nc>` for run-directory export
-- `bayesite-viz <verb> <fit.nc> -o <artifact>` for plots
+- `bayescycle idata <run-dir>` for run-directory export
+- `bayescycle plot <verb> <run-dir>` for plots
 - stdout path-only output contract for agent capture
 
 ## Forbidden assumptions
 
-- Do not make `bayesite-viz` discover bayescycle run directories implicitly.
-- Do not parse Bayesite NDJSON inside plotting commands; use the exporter
-  boundary.
+- Do not make `bayescycle plot` discover run directories other than the one
+  named on the command line.
+- Do not parse Bayesite NDJSON inside plotting commands; use the `idata`
+  exporter boundary.
 - Do not treat visual artifacts as approval; they are evidence for human review.
 - If this adapter conflicts with `bayesite-viz` invariants, the `bayesite-viz`
-  repository wins and the agent must stop and ask.
+  repository wins and the agent must stop and ask. Invoking `bayesite-idata`/
+  `bayesite-viz` directly (bypassing `bayescycle idata`/`bayescycle plot`) is
+  an escape hatch for debugging the exporter/plotter themselves, not the
+  default workflow path.
 
 ## Failure handling
 
-If `bayesite-idata` cannot export the run, do not skip visualization silently.
+If `bayescycle idata` cannot export the run, do not skip visualization silently.
 Record a diagnostics or visualization artifact with the failure and ask whether
 to:
 

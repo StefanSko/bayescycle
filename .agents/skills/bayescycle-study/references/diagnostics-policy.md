@@ -49,7 +49,7 @@ Flag as errors:
 Flag as warnings:
 
 - posterior predictive checks missing before critique
-- required bayesite-viz visual report is planned but not produced
+- required `bayescycle plot` visual report is planned but not produced
 - diagnostics use unregistered run directories
 - raw NDJSON exists but no summarized diagnostics artifact is registered
 - a `data_snapshot` is used by a fit without an approved `data_audit` artifact
@@ -105,6 +105,6 @@ or critique. When in doubt, write a diagnostics artifact and ask for a gate
 decision.
 
 Diagnostics and visualization are complementary: `diagnostics.json` can flag
-sampler pathologies, while bayesite-viz plots expose the failures that humans are
-likely to catch visually. Do not use one as a silent substitute for the other
-unless the human records a waiver.
+sampler pathologies, while `bayescycle plot` plots expose the failures that
+humans are likely to catch visually. Do not use one as a silent substitute for
+the other unless the human records a waiver.
