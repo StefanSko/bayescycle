@@ -22,6 +22,7 @@ from bayescycle._run_artifacts.manifest import write_data_manifest
 from bayescycle._run_artifacts.references import CanonicalDataArtifact, IrArtifact
 from bayescycle._run_artifacts.run_metadata import (
     RunMetadata,
+    RunMetadataEngine,
     RunMetadataInput,
     RunMetadataModel,
     RunMetadataOutput,
@@ -77,6 +78,19 @@ from bayescycle._workflow.requests import (
     SbcRequest,
     SimulateRequest,
 )
+from bayescycle.backends.bayesite.adapter import BayesiteBackend
+
+
+def _bayesite_engine_metadata(backend: object) -> RunMetadataEngine | None:
+    """Return recorded engine provenance for a Bayesite-backed run, else None.
+
+    Narrow, explicit isinstance check rather than a generic protocol member:
+    engine provenance is Bayesite-specific and other backends (jaxstanv5,
+    test fakes) have no notion of an external engine executable to record.
+    """
+    if isinstance(backend, BayesiteBackend):
+        return backend.provenance
+    return None
 
 
 def plan_sample_run[ActionT, CommandT](
@@ -116,6 +130,7 @@ def materialize_sample_run[ActionT, CommandT](
             outputs=(RunMetadataOutput(role="posterior", path=plan.draws_path),),
             settings=plan.settings,
             backend_extra_args=plan.backend_extra_args,
+            engine=_bayesite_engine_metadata(backend),
         ),
     )
     return backend.materialize(plan.action)
@@ -158,6 +173,7 @@ def materialize_prior_predictive_run[ActionT, CommandT](
             outputs=(RunMetadataOutput(role="prior_predictive", path=plan.prior_predictive_path),),
             settings=plan.settings,
             backend_extra_args=plan.backend_extra_args,
+            engine=_bayesite_engine_metadata(backend),
         ),
     )
     return backend.materialize(plan.action)
@@ -222,6 +238,7 @@ def materialize_simulate_run[ActionT, CommandT](
                     artifact_format=DATA_DOC_FORMAT,
                 ),
             ),
+            engine=_bayesite_engine_metadata(backend),
         ),
     )
     return backend.materialize(plan.action)
@@ -262,6 +279,7 @@ def materialize_recover_run[ActionT, CommandT](
             backend=plan.backend,
             outputs=(RunMetadataOutput(role="recovery", path=plan.recovery_path),),
             backend_extra_args=plan.backend_extra_args,
+            engine=_bayesite_engine_metadata(backend),
         ),
     )
     return backend.materialize(plan.action)
@@ -304,6 +322,7 @@ def materialize_sbc_run[ActionT, CommandT](
             outputs=(RunMetadataOutput(role="sbc", path=plan.sbc_path),),
             settings=plan.settings,
             backend_extra_args=plan.backend_extra_args,
+            engine=_bayesite_engine_metadata(backend),
         ),
     )
     return backend.materialize(plan.action)
@@ -511,6 +530,7 @@ def _model_data_run_metadata(
     settings: tuple[RunMetadataSetting, ...] = (),
     backend_extra_args: tuple[str, ...] = (),
     extra_inputs: tuple[RunMetadataInput, ...] = (),
+    engine: RunMetadataEngine | None = None,
 ) -> RunMetadata:
     return RunMetadata(
         kind=kind,
@@ -534,6 +554,7 @@ def _model_data_run_metadata(
         outputs=outputs,
         settings=settings,
         backend_extra_args=backend_extra_args,
+        engine=engine,
     )
 
 
@@ -545,6 +566,7 @@ def _model_scenario_run_metadata(
     outputs: tuple[RunMetadataOutput, ...],
     settings: tuple[RunMetadataSetting, ...] = (),
     backend_extra_args: tuple[str, ...] = (),
+    engine: RunMetadataEngine | None = None,
 ) -> RunMetadata:
     return RunMetadata(
         kind=kind,
@@ -566,6 +588,7 @@ def _model_scenario_run_metadata(
         outputs=outputs,
         settings=settings,
         backend_extra_args=backend_extra_args,
+        engine=engine,
     )
 
 

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
@@ -91,6 +93,13 @@ from bayescycle._workflow.requests import (
     SbcRequest,
     SimulateRequest,
 )
+from bayescycle.backends.bayesite.preflight import preflight_bayesite_engine
+from bayescycle.backends.bayesite.provisioning import (
+    PINNED_ENGINE_RELEASE,
+    EngineRelease,
+    cached_engine_path,
+    ensure_engine,
+)
 from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
 
@@ -136,6 +145,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _replay(namespace)
     if command == "workflow-plan":
         return _workflow_plan(namespace)
+    if command == "engine":
+        return _engine(namespace)
     parser.print_help(sys.stderr)
     return 2
 
@@ -165,6 +176,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="sampling backend to use",
     )
     sample.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(sample)
     sample.add_argument("--seed", help="sampler seed forwarded to Bayesite")
     sample.add_argument("--chains", help="chain count forwarded to Bayesite")
     sample.add_argument("--warmup", help="warmup draw count forwarded to Bayesite")
@@ -194,6 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
     prior_predictive.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
+    _add_no_auto_provision_argument(prior_predictive)
     prior_predictive.add_argument("--seed", help="seed forwarded to the backend")
     prior_predictive.add_argument("--draws", help="prior-predictive draw count")
     _add_show_plan_argument(
@@ -216,6 +229,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="simulation backend to use",
     )
     simulate.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(simulate)
     simulate.add_argument("--seed", help="seed forwarded to Bayesite")
     _add_show_plan_argument(
         simulate,
@@ -236,6 +250,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recovery backend to use",
     )
     recover.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(recover)
     _add_show_plan_argument(
         recover,
         help_text="show the planned backend command without executing it",
@@ -255,6 +270,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="SBC backend to use",
     )
     sbc.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(sbc)
     sbc.add_argument("--replicates", help="replicate count overriding the scenario")
     _add_show_plan_argument(
         sbc,
@@ -267,6 +283,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     diagnose.add_argument("run_dir", type=Path, help="bayescycle run directory")
     diagnose.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(diagnose)
     _add_show_plan_argument(
         diagnose,
         help_text="validate run files and show the planned engine command",
@@ -281,6 +298,7 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_predictive.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
+    _add_no_auto_provision_argument(posterior_predictive)
     _add_show_plan_argument(
         posterior_predictive,
         help_text="validate run files and show the planned engine command",
@@ -301,6 +319,7 @@ def _build_parser() -> argparse.ArgumentParser:
     posterior_check.add_argument(
         "--engine", help="Bayesite executable to invoke (default: bayesite)"
     )
+    _add_no_auto_provision_argument(posterior_check)
     _add_show_plan_argument(
         posterior_check,
         help_text="validate run files and show the planned backend command",
@@ -321,6 +340,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="recover-check backend to use",
     )
     recover_check.add_argument("--engine", help="Bayesite executable to invoke (default: bayesite)")
+    _add_no_auto_provision_argument(recover_check)
     _add_show_plan_argument(
         recover_check,
         help_text="validate run files and show the planned backend command",
@@ -336,6 +356,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--engine",
         help="Bayesite executable to invoke when replaying a bayesite run (default: bayesite)",
     )
+    _add_no_auto_provision_argument(replay)
     replay.add_argument(
         "--check-only",
         action="store_true",
@@ -363,6 +384,56 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     workflow_plan.add_argument("--engine", help="Bayesite executable for selected bayesite stages")
     workflow_plan.add_argument("--config", type=Path, help="TOML backend-plan config")
+
+    engine = subparsers.add_parser(
+        "engine",
+        description="Manage the pinned Bayesite engine binary used by bayescycle.",
+    )
+    engine_subparsers = engine.add_subparsers(dest="engine_command", required=True)
+
+    engine_ensure = engine_subparsers.add_parser(
+        "ensure",
+        description="Provision the pinned Bayesite engine into the local cache if missing.",
+    )
+    engine_ensure.add_argument(
+        "--force",
+        action="store_true",
+        help="re-download and re-verify even if already cached",
+    )
+    engine_ensure.add_argument(
+        "--cache-root",
+        type=Path,
+        help="cache directory to install under (default: the bayescycle cache directory)",
+    )
+    engine_ensure.add_argument(
+        "--base-url",
+        help="override the pinned release base URL (for airgapped/mirrored release hosting)",
+    )
+
+    engine_path = engine_subparsers.add_parser(
+        "path",
+        description="Print the resolved Bayesite engine path without downloading anything.",
+    )
+    engine_path.add_argument(
+        "--cache-root",
+        type=Path,
+        help="cache directory to look under (default: the bayescycle cache directory)",
+    )
+
+    engine_info = engine_subparsers.add_parser(
+        "info",
+        description="Print structured Bayesite engine capabilities as JSON.",
+    )
+    engine_info.add_argument(
+        "--engine",
+        help="Bayesite executable to inspect (default: PATH, then the bayescycle cache)",
+    )
+    engine_info.add_argument(
+        "--cache-root",
+        type=Path,
+        help="cache directory to look under (default: the bayescycle cache directory)",
+    )
+
     return parser
 
 
@@ -371,6 +442,34 @@ def _add_model_selection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model", dest="model_name", help="model class name when discovery is ambiguous"
     )
+
+
+def _add_no_auto_provision_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-auto-provision",
+        dest="no_auto_provision",
+        action="store_true",
+        help=(
+            "do not auto-download the pinned Bayesite engine when --engine is unset and "
+            "bayesite is not found on PATH; the same effect as setting "
+            "BAYESCYCLE_NO_AUTO_PROVISION=1 (this flag takes precedence over the env var)"
+        ),
+    )
+
+
+def _auto_provision_enabled(
+    namespace: argparse.Namespace, env: Mapping[str, str] | None = None
+) -> bool:
+    """CLI-boundary auto-provision decision.
+
+    ``--no-auto-provision`` wins over ``BAYESCYCLE_NO_AUTO_PROVISION=1``;
+    ``env`` defaults to the real process environment and is only overridden
+    directly in tests.
+    """
+    if bool(getattr(namespace, "no_auto_provision", False)):
+        return False
+    resolved_env = env if env is not None else os.environ
+    return resolved_env.get("BAYESCYCLE_NO_AUTO_PROVISION") != "1"
 
 
 def _add_show_plan_argument(parser: argparse.ArgumentParser, *, help_text: str) -> None:
@@ -411,6 +510,7 @@ def _sample(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         return _sample_with_backend(backend, request, intent=intent)
@@ -449,6 +549,7 @@ def _prior_predictive(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         return _prior_predictive_with_backend(backend, request, intent=intent)
@@ -492,6 +593,7 @@ def _simulate(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_simulate_run(request, backend)
@@ -522,6 +624,7 @@ def _recover(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_recover_run(request, backend)
@@ -553,6 +656,7 @@ def _sbc(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_sbc_run(request, backend)
@@ -578,6 +682,7 @@ def _diagnose(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=(),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_diagnose_run(
@@ -600,6 +705,7 @@ def _posterior_predictive(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=(),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_posterior_predictive_run(
@@ -624,6 +730,7 @@ def _posterior_check(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_posterior_check_run(
@@ -648,6 +755,7 @@ def _recover_check(namespace: argparse.Namespace) -> int:
                 engine=cast(str | None, namespace.engine),
                 extra_args=tuple(cast(list[str], namespace.engine_args)),
                 preflight=not _intent_skips_execution(intent),
+                auto_provision=_auto_provision_enabled(namespace),
             )
         )
         plan = plan_recover_check_run(
@@ -677,6 +785,7 @@ def _replay(namespace: argparse.Namespace) -> int:
             engine=cast(str | None, namespace.engine),
             extra_args=record.backend_extra_args,
             preflight=not check_only,
+            auto_provision=_auto_provision_enabled(namespace),
         )
         if record.kind == "sample":
             backend = resolve_sample_backend(runtime_options)
@@ -990,6 +1099,79 @@ def _workflow_plan(namespace: argparse.Namespace) -> int:
     except WorkflowError as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _engine(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        subcommand = cast(str, namespace.engine_command)
+        if subcommand == "ensure":
+            return _engine_ensure(namespace)
+        if subcommand == "path":
+            return _engine_path(namespace)
+        return _engine_info(namespace)
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _engine_release(base_url: str | None) -> EngineRelease:
+    if base_url is None:
+        return PINNED_ENGINE_RELEASE
+    return replace(PINNED_ENGINE_RELEASE, base_url=base_url)
+
+
+def _engine_ensure(namespace: argparse.Namespace) -> int:
+    release = _engine_release(cast(str | None, namespace.base_url))
+    cache_root = cast(Path | None, namespace.cache_root)
+    provisioned = ensure_engine(release, cache_root=cache_root, force=bool(namespace.force))
+    print(provisioned.executable)
+    return 0
+
+
+def _resolve_cached_or_path_engine(cache_root: Path | None) -> Path:
+    found = shutil.which(str(BAYESITE))
+    if found is not None:
+        return Path(found).resolve(strict=False)
+    candidate = cached_engine_path(cache_root=cache_root)
+    if candidate.is_file():
+        return candidate
+    raise WorkflowError(
+        "Bayesite engine is not installed: not found on PATH and not cached under "
+        f"{candidate.parent}.\n\n"
+        "Run `bayescycle engine ensure` to provision it, or pass --engine explicitly."
+    )
+
+
+def _engine_path(namespace: argparse.Namespace) -> int:
+    cache_root = cast(Path | None, namespace.cache_root)
+    print(_resolve_cached_or_path_engine(cache_root))
+    return 0
+
+
+def _engine_info(namespace: argparse.Namespace) -> int:
+    engine = cast(str | None, namespace.engine)
+    cache_root = cast(Path | None, namespace.cache_root)
+    resolved_engine = (
+        engine if engine is not None else str(_resolve_cached_or_path_engine(cache_root))
+    )
+    info = preflight_bayesite_engine(resolved_engine, ())
+    if info.capabilities is None:
+        raise WorkflowError(
+            f"Bayesite engine does not support structured capabilities: {info.executable}\n\n"
+            "The binary may be stale. Rebuild or reprovision a newer Bayesite release, for "
+            "example: bayescycle engine ensure --force"
+        )
+    capabilities = info.capabilities
+    document: dict[str, object] = {
+        "capabilities_format": capabilities.capabilities_format,
+        "commands": list(capabilities.commands),
+        "version": capabilities.version,
+        "ir": dict(capabilities.ir),
+        "schemas": dict(capabilities.schemas),
+    }
+    print(json.dumps(document, indent=2, sort_keys=True))
+    return 0
 
 
 def _intent_from_namespace(namespace: argparse.Namespace) -> CliIntent:

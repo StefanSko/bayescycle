@@ -12,6 +12,7 @@ import hashlib
 import os
 import platform
 import shutil
+import sys
 import tarfile
 import urllib.request
 import zipfile
@@ -22,6 +23,15 @@ from tempfile import TemporaryDirectory
 from bayescycle._errors import WorkflowError
 
 _DOWNLOAD_TIMEOUT_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class ProvisionedEngine:
+    """A Bayesite engine binary installed into the local bayescycle cache."""
+
+    executable: Path
+    version: str
+    sha256: str
 
 
 @dataclass(frozen=True)
@@ -95,6 +105,77 @@ def platform_target(system: str | None = None, machine: str | None = None) -> st
             f"Supported platforms: {supported}"
         )
     return target
+
+
+def cache_dir() -> Path:
+    """Resolve the bayescycle cache root directory.
+
+    Uses ``$XDG_CACHE_HOME/bayescycle`` when set, otherwise
+    ``~/.cache/bayescycle``. Deliberate macOS/Windows simplification: this
+    does not use platform-specific cache locations (``~/Library/Caches`` on
+    macOS, ``%LOCALAPPDATA%`` on Windows) -- one Linux-style cache path is
+    used on every platform to keep provisioning behavior uniform and easy to
+    reason about.
+    """
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg_cache_home) if xdg_cache_home else Path.home() / ".cache"
+    return base / "bayescycle"
+
+
+def _cache_engine_dir(release: EngineRelease, target: str, cache_root: Path | None) -> Path:
+    root = cache_root if cache_root is not None else cache_dir()
+    return root / "engines" / "bayesite" / release.version / target
+
+
+def cached_engine_path(
+    release: EngineRelease = PINNED_ENGINE_RELEASE,
+    *,
+    target: str | None = None,
+    cache_root: Path | None = None,
+) -> Path:
+    """Return the expected cached engine binary path, installed or not.
+
+    ``target`` defaults to :func:`platform_target`. This does not touch the
+    filesystem or network; callers check ``.is_file()`` themselves.
+    """
+    resolved_target = target if target is not None else platform_target()
+    dest_dir = _cache_engine_dir(release, resolved_target, cache_root)
+    return _install_dir(dest_dir, release, resolved_target) / _binary_name(resolved_target)
+
+
+def ensure_engine(
+    release: EngineRelease = PINNED_ENGINE_RELEASE,
+    *,
+    cache_root: Path | None = None,
+    force: bool = False,
+) -> ProvisionedEngine:
+    """Ensure the pinned Bayesite engine release is installed in the cache.
+
+    Installs under ``<cache_root or cache_dir()>/engines/bayesite/<version>/
+    <target>/``. Idempotent: if the binary is already installed there, no
+    network request is made. ``cache_root`` exists so callers (and tests) can
+    inject an explicit cache location, e.g. a ``tmp_path``, instead of
+    monkeypatching environment variables. ``force=True`` re-downloads and
+    re-verifies even when a binary is already cached. Prints a one-line
+    notice to stderr only when a download actually happens.
+    """
+    target = platform_target()
+    engine_target = _find_target(release, target)
+    dest_dir = _cache_engine_dir(release, target, cache_root)
+    binary_path = _install_dir(dest_dir, release, target) / _binary_name(target)
+    if force and binary_path.parent.exists():
+        shutil.rmtree(binary_path.parent)
+    if not binary_path.is_file():
+        print(
+            f"bayescycle: provisioning bayesite {release.version} ({target}) into {dest_dir}",
+            file=sys.stderr,
+        )
+    resolved_binary = fetch_and_verify(release, target, dest_dir)
+    return ProvisionedEngine(
+        executable=resolved_binary,
+        version=release.version,
+        sha256=engine_target.sha256,
+    )
 
 
 def fetch_and_verify(release: EngineRelease, target: str, dest_dir: Path) -> Path:

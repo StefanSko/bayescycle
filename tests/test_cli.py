@@ -45,6 +45,55 @@ def test_plan_commands_expose_show_plan_not_legacy_dry_run(
     assert "--dry-run" not in out
 
 
+@pytest.mark.parametrize(
+    "command",
+    (
+        "sample",
+        "prior-predictive",
+        "simulate",
+        "recover",
+        "sbc",
+        "diagnose",
+        "posterior-predictive",
+        "posterior-check",
+        "recover-check",
+        "replay",
+    ),
+)
+def test_engine_commands_expose_no_auto_provision_flag(
+    command: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main([command, "--help"])
+
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "--no-auto-provision" in out
+
+
+def test_auto_provision_enabled_flag_wins_over_env_and_defaults_true() -> None:
+    from bayescycle._cli import _auto_provision_enabled
+
+    assert _auto_provision_enabled(argparse.Namespace(no_auto_provision=False), {}) is True
+    assert _auto_provision_enabled(argparse.Namespace(no_auto_provision=True), {}) is False
+    assert (
+        _auto_provision_enabled(
+            argparse.Namespace(no_auto_provision=False),
+            {"BAYESCYCLE_NO_AUTO_PROVISION": "1"},
+        )
+        is False
+    )
+    assert (
+        _auto_provision_enabled(
+            argparse.Namespace(no_auto_provision=True),
+            {"BAYESCYCLE_NO_AUTO_PROVISION": "0"},
+        )
+        is False
+    )
+    assert _auto_provision_enabled(argparse.Namespace(), {}) is True
+
+
 def test_cli_intent_from_namespace_maps_plan_flags_to_explicit_intent() -> None:
     show_plan_intent = _intent_from_namespace(argparse.Namespace(show_plan=True))
     legacy_plan_intent = _intent_from_namespace(argparse.Namespace(dry_run=True))
@@ -526,6 +575,60 @@ def test_sample_missing_engine_fails_before_output_dir_creation(
     assert not output_dir.exists()
 
 
+def test_sample_no_auto_provision_flag_skips_provisioning_and_fails_on_path_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+            "--no-auto-provision",
+        ]
+    )
+
+    assert code == 2
+    assert "was not found on PATH" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+def test_sample_no_auto_provision_env_var_skips_provisioning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("BAYESCYCLE_NO_AUTO_PROVISION", "1")
+    model_file = _write_simple_model(tmp_path)
+    data_file = _write_input_data(tmp_path)
+    output_dir = tmp_path / "run"
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(output_dir),
+        ]
+    )
+
+    assert code == 2
+    assert "was not found on PATH" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
 def test_sample_invokes_engine_with_explicit_out_instead_of_stdout_capture(
     tmp_path: Path,
 ) -> None:
@@ -676,6 +779,7 @@ def test_sample_writes_run_metadata_for_future_provenance(tmp_path: Path) -> Non
             }
         ],
         "outputs": [{"role": "posterior", "path": "posterior.ndjson"}],
+        "engine": {"kind": "explicit", "path": str(fake_engine.resolve())},
     }
 
 

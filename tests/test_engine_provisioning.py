@@ -22,6 +22,9 @@ from bayescycle._errors import WorkflowError
 from bayescycle.backends.bayesite.provisioning import (
     EngineRelease,
     EngineTarget,
+    ProvisionedEngine,
+    cache_dir,
+    ensure_engine,
     fetch_and_verify,
     platform_target,
 )
@@ -174,3 +177,93 @@ def test_platform_target_defaults_resolve_without_arguments() -> None:
         "aarch64-apple-darwin",
         "x86_64-pc-windows-msvc",
     }
+
+
+def _local_release(archive_server: ArchiveServer, *, version: str = "v9.9.9") -> EngineRelease:
+    base_url, serve_dir, _requests = archive_server
+    target = platform_target()
+    binary_bytes = f"#!/bin/sh\necho {version}\n".encode()
+    sha256 = _build_tar_gz(serve_dir, version, target, binary_bytes)
+    return EngineRelease(
+        version=version,
+        base_url=base_url,
+        targets=(EngineTarget(target=target, archive_format="tar.gz", sha256=sha256),),
+    )
+
+
+def test_cache_dir_defaults_under_home_cache_on_every_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    assert cache_dir() == tmp_path / ".cache" / "bayescycle"
+
+
+def test_cache_dir_honors_xdg_cache_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    xdg = tmp_path / "xdg-cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg))
+
+    assert cache_dir() == xdg / "bayescycle"
+
+
+def test_ensure_engine_fresh_install_prints_notice_and_installs_under_cache_layout(
+    archive_server: ArchiveServer,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    release = _local_release(archive_server)
+    _base_url, _serve_dir, requests = archive_server
+    cache_root = tmp_path / "cache"
+    target = platform_target()
+
+    provisioned = ensure_engine(release, cache_root=cache_root)
+
+    assert isinstance(provisioned, ProvisionedEngine)
+    assert provisioned.executable.is_file()
+    assert provisioned.version == release.version
+    assert provisioned.sha256 == release.targets[0].sha256
+    expected_prefix = cache_root / "engines" / "bayesite" / release.version / target
+    assert str(provisioned.executable).startswith(str(expected_prefix))
+    assert len(requests) == 1
+    err = capsys.readouterr().err
+    assert "provisioning bayesite" in err
+    assert release.version in err
+
+
+def test_ensure_engine_cached_short_circuits_without_download(
+    archive_server: ArchiveServer, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    release = _local_release(archive_server)
+    _base_url, _serve_dir, requests = archive_server
+    cache_root = tmp_path / "cache"
+
+    first = ensure_engine(release, cache_root=cache_root)
+    assert len(requests) == 1
+    capsys.readouterr()
+
+    second = ensure_engine(release, cache_root=cache_root)
+
+    assert len(requests) == 1
+    assert second.executable == first.executable
+    err = capsys.readouterr().err
+    assert err == ""
+
+
+def test_ensure_engine_force_redownloads_and_reverifies(
+    archive_server: ArchiveServer, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    release = _local_release(archive_server)
+    _base_url, _serve_dir, requests = archive_server
+    cache_root = tmp_path / "cache"
+
+    first = ensure_engine(release, cache_root=cache_root)
+    assert len(requests) == 1
+    capsys.readouterr()
+
+    second = ensure_engine(release, cache_root=cache_root, force=True)
+
+    assert len(requests) == 2
+    assert second.executable == first.executable
+    err = capsys.readouterr().err
+    assert "provisioning bayesite" in err

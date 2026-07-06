@@ -8,6 +8,7 @@ import pytest
 
 from bayescycle._backend_runtime import (
     BackendRuntimeOptions,
+    _should_auto_provision,
     resolve_diagnose_backend,
     resolve_posterior_check_backend,
     resolve_posterior_predictive_backend,
@@ -19,6 +20,7 @@ from bayescycle._backend_runtime import (
     resolve_simulate_backend,
 )
 from bayescycle._errors import WorkflowError
+from bayescycle._run_artifacts.run_metadata import RunMetadataEngine
 from bayescycle.backends.bayesite import BayesiteBackend
 from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
 
@@ -89,6 +91,58 @@ def test_sample_backend_runtime_rejects_bayesite_options_for_jaxstanv5() -> None
                 engine=None,
                 extra_args=("--debug",),
                 preflight=False,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("engine_option", "which_result", "auto_provision_enabled", "expected"),
+    (
+        (None, None, True, True),
+        ("bayesite", None, True, False),
+        (None, "/usr/bin/bayesite", True, False),
+        (None, None, False, False),
+        ("bayesite", "/usr/bin/bayesite", False, False),
+    ),
+)
+def test_should_auto_provision_is_a_pure_decision(
+    engine_option: str | None,
+    which_result: str | None,
+    auto_provision_enabled: bool,
+    expected: bool,
+) -> None:
+    assert _should_auto_provision(engine_option, which_result, auto_provision_enabled) is expected
+
+
+def test_sample_backend_runtime_records_explicit_engine_provenance(tmp_path: Path) -> None:
+    engine = _write_fake_bayesite(tmp_path, "sample")
+
+    backend = resolve_sample_backend(
+        BackendRuntimeOptions(
+            backend="bayesite",
+            engine=str(engine),
+            extra_args=(),
+            preflight=True,
+        )
+    )
+
+    assert isinstance(backend, BayesiteBackend)
+    assert backend.provenance == RunMetadataEngine(kind="explicit", path=str(engine.resolve()))
+
+
+def test_sample_backend_runtime_does_not_auto_provision_when_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    with pytest.raises(WorkflowError, match="was not found on PATH"):
+        resolve_sample_backend(
+            BackendRuntimeOptions(
+                backend="bayesite",
+                engine=None,
+                extra_args=(),
+                preflight=True,
+                auto_provision=False,
             )
         )
 

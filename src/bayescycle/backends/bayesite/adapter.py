@@ -9,6 +9,7 @@ from bayescycle._errors import WorkflowError
 from bayescycle._integrations.descriptions import ExternalCommandPlanDescription
 from bayescycle._integrations.external_command import ExternalCommand, run_external_command
 from bayescycle._run_artifacts.references import BackendPrivateArtifact, CanonicalDataArtifact
+from bayescycle._run_artifacts.run_metadata import RunMetadataEngine
 from bayescycle._settings import SamplerSettings
 from bayescycle._workflow.contexts import (
     DiagnoseRunContext,
@@ -57,6 +58,7 @@ class BayesiteBackend:
 
     engine: str
     extra_args: tuple[str, ...] = ()
+    provenance: RunMetadataEngine | None = None
 
     @property
     def backend_id(self) -> str:
