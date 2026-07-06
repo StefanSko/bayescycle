@@ -239,7 +239,7 @@ airgapped release host; `info` accepts `--engine` to inspect a specific
 binary instead of the resolved default. The pinned version and per-target
 checksums live in `PINNED_ENGINE_RELEASE` in
 `src/bayescycle/backends/bayesite/provisioning.py`, bumped with
-`scripts/bump_engine_release.py --tag vX.Y.Z`.
+`uv run python scripts/bump_engine_release.py --tag vX.Y.Z`.
 
 ## Visualization: idata and plot
 
