@@ -75,9 +75,17 @@ def _build_release_archive(serve_dir: Path, version: str, target: str, binary_by
     return hashlib.sha256(archive_path.read_bytes()).hexdigest()
 
 
-def test_engine_ensure_downloads_from_base_url_into_cache_root(
+def test_engine_ensure_honors_base_url_and_cache_root_seams(
     archive_server: ArchiveServer, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """`engine ensure --base-url --cache-root` reaches the local mirror.
+
+    `--base-url` only overrides the mirror host; the pinned release still
+    enforces its real, hardcoded sha256 (a locally fabricated archive cannot
+    match it). That's checked here as a sha256-verification failure, which
+    still proves both seams are wired: the request reached our local server
+    (not the real GitHub release) and the notice names our cache_root.
+    """
     base_url, serve_dir, requests = archive_server
     target = platform_target()
     _build_release_archive(serve_dir, "v0.2.0", target, b"#!/bin/sh\necho ok\n")
@@ -94,15 +102,14 @@ def test_engine_ensure_downloads_from_base_url_into_cache_root(
         ]
     )
 
-    assert code == 0
-    out = capsys.readouterr().out.strip()
-    printed_path = Path(out)
-    assert printed_path.is_file()
-    assert str(printed_path).startswith(str(cache_root / "engines" / "bayesite" / "v0.2.0"))
+    assert code == 2
     assert len(requests) == 1
+    err = capsys.readouterr().err
+    assert "sha256" in err
+    assert str(cache_root) in err
 
 
-def test_engine_ensure_is_idempotent_across_invocations(
+def test_engine_ensure_does_not_cache_a_verification_failure(
     archive_server: ArchiveServer, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base_url, serve_dir, requests = archive_server
@@ -111,17 +118,12 @@ def test_engine_ensure_is_idempotent_across_invocations(
     cache_root = tmp_path / "cache"
     args = ["engine", "ensure", "--base-url", base_url, "--cache-root", str(cache_root)]
 
-    first_code = main(args)
-    first_path = capsys.readouterr().out.strip()
-    assert first_code == 0
+    assert main(args) == 2
+    capsys.readouterr()
     assert len(requests) == 1
 
-    second_code = main(args)
-    second_path = capsys.readouterr().out.strip()
-
-    assert second_code == 0
-    assert second_path == first_path
-    assert len(requests) == 1
+    assert main(args) == 2
+    assert len(requests) == 2
 
 
 def test_engine_path_reports_workflow_error_when_absent(
@@ -146,19 +148,33 @@ def test_engine_path_prints_cached_path_without_downloading(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """A binary already cached (by whatever means) is reported, no download."""
+    from bayescycle.backends.bayesite.provisioning import EngineRelease, EngineTarget, ensure_engine
+
     monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
     base_url, serve_dir, requests = archive_server
     target = platform_target()
-    _build_release_archive(serve_dir, "v0.2.0", target, b"#!/bin/sh\necho ok\n")
+    sha256 = _build_release_archive(serve_dir, "v0.2.0", target, b"#!/bin/sh\necho ok\n")
     cache_root = tmp_path / "cache"
-    main(["engine", "ensure", "--base-url", base_url, "--cache-root", str(cache_root)])
-    ensured_path = capsys.readouterr().out.strip()
+    # Populate the cache directly through the Python API (with a release
+    # whose sha256 matches our local fixture) -- this is the same cache
+    # layout `bayescycle engine ensure` would produce for the real pinned
+    # release, just reached without needing byte-identical mirror content.
+    provisioned = ensure_engine(
+        EngineRelease(
+            version="v0.2.0",
+            base_url=base_url,
+            targets=(EngineTarget(target=target, archive_format="tar.gz", sha256=sha256),),
+        ),
+        cache_root=cache_root,
+    )
+    capsys.readouterr()
     assert len(requests) == 1
 
     code = main(["engine", "path", "--cache-root", str(cache_root)])
 
     assert code == 0
-    assert capsys.readouterr().out.strip() == ensured_path
+    assert capsys.readouterr().out.strip() == str(provisioned.executable)
     assert len(requests) == 1
 
 

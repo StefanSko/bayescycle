@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
@@ -92,6 +93,13 @@ from bayescycle._workflow.requests import (
     SbcRequest,
     SimulateRequest,
 )
+from bayescycle.backends.bayesite.preflight import preflight_bayesite_engine
+from bayescycle.backends.bayesite.provisioning import (
+    PINNED_ENGINE_RELEASE,
+    EngineRelease,
+    cached_engine_path,
+    ensure_engine,
+)
 from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
 
@@ -137,6 +145,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _replay(namespace)
     if command == "workflow-plan":
         return _workflow_plan(namespace)
+    if command == "engine":
+        return _engine(namespace)
     parser.print_help(sys.stderr)
     return 2
 
@@ -374,6 +384,56 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     workflow_plan.add_argument("--engine", help="Bayesite executable for selected bayesite stages")
     workflow_plan.add_argument("--config", type=Path, help="TOML backend-plan config")
+
+    engine = subparsers.add_parser(
+        "engine",
+        description="Manage the pinned Bayesite engine binary used by bayescycle.",
+    )
+    engine_subparsers = engine.add_subparsers(dest="engine_command", required=True)
+
+    engine_ensure = engine_subparsers.add_parser(
+        "ensure",
+        description="Provision the pinned Bayesite engine into the local cache if missing.",
+    )
+    engine_ensure.add_argument(
+        "--force",
+        action="store_true",
+        help="re-download and re-verify even if already cached",
+    )
+    engine_ensure.add_argument(
+        "--cache-root",
+        type=Path,
+        help="cache directory to install under (default: the bayescycle cache directory)",
+    )
+    engine_ensure.add_argument(
+        "--base-url",
+        help="override the pinned release base URL (for airgapped/mirrored release hosting)",
+    )
+
+    engine_path = engine_subparsers.add_parser(
+        "path",
+        description="Print the resolved Bayesite engine path without downloading anything.",
+    )
+    engine_path.add_argument(
+        "--cache-root",
+        type=Path,
+        help="cache directory to look under (default: the bayescycle cache directory)",
+    )
+
+    engine_info = engine_subparsers.add_parser(
+        "info",
+        description="Print structured Bayesite engine capabilities as JSON.",
+    )
+    engine_info.add_argument(
+        "--engine",
+        help="Bayesite executable to inspect (default: PATH, then the bayescycle cache)",
+    )
+    engine_info.add_argument(
+        "--cache-root",
+        type=Path,
+        help="cache directory to look under (default: the bayescycle cache directory)",
+    )
+
     return parser
 
 
@@ -1039,6 +1099,79 @@ def _workflow_plan(namespace: argparse.Namespace) -> int:
     except WorkflowError as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
+
+
+def _engine(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        subcommand = cast(str, namespace.engine_command)
+        if subcommand == "ensure":
+            return _engine_ensure(namespace)
+        if subcommand == "path":
+            return _engine_path(namespace)
+        return _engine_info(namespace)
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _engine_release(base_url: str | None) -> EngineRelease:
+    if base_url is None:
+        return PINNED_ENGINE_RELEASE
+    return replace(PINNED_ENGINE_RELEASE, base_url=base_url)
+
+
+def _engine_ensure(namespace: argparse.Namespace) -> int:
+    release = _engine_release(cast(str | None, namespace.base_url))
+    cache_root = cast(Path | None, namespace.cache_root)
+    provisioned = ensure_engine(release, cache_root=cache_root, force=bool(namespace.force))
+    print(provisioned.executable)
+    return 0
+
+
+def _resolve_cached_or_path_engine(cache_root: Path | None) -> Path:
+    found = shutil.which(str(BAYESITE))
+    if found is not None:
+        return Path(found).resolve(strict=False)
+    candidate = cached_engine_path(cache_root=cache_root)
+    if candidate.is_file():
+        return candidate
+    raise WorkflowError(
+        "Bayesite engine is not installed: not found on PATH and not cached under "
+        f"{candidate.parent}.\n\n"
+        "Run `bayescycle engine ensure` to provision it, or pass --engine explicitly."
+    )
+
+
+def _engine_path(namespace: argparse.Namespace) -> int:
+    cache_root = cast(Path | None, namespace.cache_root)
+    print(_resolve_cached_or_path_engine(cache_root))
+    return 0
+
+
+def _engine_info(namespace: argparse.Namespace) -> int:
+    engine = cast(str | None, namespace.engine)
+    cache_root = cast(Path | None, namespace.cache_root)
+    resolved_engine = (
+        engine if engine is not None else str(_resolve_cached_or_path_engine(cache_root))
+    )
+    info = preflight_bayesite_engine(resolved_engine, ())
+    if info.capabilities is None:
+        raise WorkflowError(
+            f"Bayesite engine does not support structured capabilities: {info.executable}\n\n"
+            "The binary may be stale. Rebuild or reprovision a newer Bayesite release, for "
+            "example: bayescycle engine ensure --force"
+        )
+    capabilities = info.capabilities
+    document: dict[str, object] = {
+        "capabilities_format": capabilities.capabilities_format,
+        "commands": list(capabilities.commands),
+        "version": capabilities.version,
+        "ir": dict(capabilities.ir),
+        "schemas": dict(capabilities.schemas),
+    }
+    print(json.dumps(document, indent=2, sort_keys=True))
+    return 0
 
 
 def _intent_from_namespace(namespace: argparse.Namespace) -> CliIntent:
