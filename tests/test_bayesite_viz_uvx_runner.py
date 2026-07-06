@@ -1,0 +1,199 @@
+"""Pure argv-construction tests for the bayesite-viz uvx runner.
+
+`idata_command`/`plot_command` build argv without running anything, so these
+tests exercise exact argv tuples and option forwarding without needing `uvx`
+or network access.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from bayescycle._errors import WorkflowError
+from bayescycle.backends.bayesite_viz.uvx_runner import (
+    BAYESITE_VIZ_SOURCE,
+    VIZ_VERBS,
+    IdataOptions,
+    PlotOptions,
+    default_fit_path,
+    idata_command,
+    plot_command,
+)
+
+
+def test_pinned_source_derives_distinct_workspace_package_sources() -> None:
+    """bayesite-viz is a uv workspace; idata and viz need their own subdirectory."""
+    assert f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-idata" == _IDATA_SOURCE
+    assert f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-viz" == _VIZ_SOURCE
+    assert _IDATA_SOURCE != _VIZ_SOURCE
+
+
+def test_default_fit_path_is_run_dir_slash_fit_nc() -> None:
+    assert default_fit_path(Path("run")) == Path("run/fit.nc")
+    assert default_fit_path(Path("/abs/run")) == Path("/abs/run/fit.nc")
+
+
+def test_viz_verbs_match_the_bayesite_viz_contract() -> None:
+    assert VIZ_VERBS == (
+        "trace",
+        "rank",
+        "forest",
+        "energies",
+        "pair",
+        "posterior",
+        "autocorr",
+        "ess-rhat",
+        "ppc",
+    )
+
+
+_IDATA_SOURCE = f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-idata"
+_VIZ_SOURCE = f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-viz"
+
+
+def test_idata_command_minimal() -> None:
+    options = IdataOptions(run_dir=Path("run"), output=Path("run/fit.nc"))
+
+    command = idata_command(options)
+
+    assert command.argv == (
+        "uvx",
+        "--quiet",
+        "--from",
+        _IDATA_SOURCE,
+        "bayesite-idata",
+        "run",
+        "-o",
+        "run/fit.nc",
+    )
+    assert command.output_paths == (Path("run/fit.nc"),)
+
+
+def test_idata_command_forwards_validate_and_bayesite() -> None:
+    options = IdataOptions(
+        run_dir=Path("run"),
+        output=Path("run/fit.nc"),
+        validate="require",
+        bayesite="/opt/bayesite",
+    )
+
+    command = idata_command(options)
+
+    assert command.argv == (
+        "uvx",
+        "--quiet",
+        "--from",
+        _IDATA_SOURCE,
+        "bayesite-idata",
+        "run",
+        "-o",
+        "run/fit.nc",
+        "--validate",
+        "require",
+        "--bayesite",
+        "/opt/bayesite",
+    )
+
+
+def test_idata_command_honors_source_override() -> None:
+    options = IdataOptions(run_dir=Path("run"), output=Path("run/fit.nc"))
+
+    command = idata_command(options, source="git+https://example.invalid/mirror.git@deadbeef")
+
+    assert command.argv[3] == (
+        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-idata"
+    )
+
+
+def test_plot_command_minimal() -> None:
+    options = PlotOptions(verb="trace", fit_path=Path("run/fit.nc"))
+
+    command = plot_command(options)
+
+    assert command.argv == (
+        "uvx",
+        "--quiet",
+        "--from",
+        _VIZ_SOURCE,
+        "bayesite-viz",
+        "trace",
+        "run/fit.nc",
+    )
+    assert command.output_paths == ()
+
+
+def test_plot_command_forwards_all_set_options() -> None:
+    options = PlotOptions(
+        verb="posterior",
+        fit_path=Path("run/fit.nc"),
+        output=Path("viz/posterior.png"),
+        kind="hist",
+        fmt="json",
+        variables=("mu", "tau"),
+        coords=(("obs", "a"),),
+        backend="bokeh",
+        svg=True,
+    )
+
+    command = plot_command(options)
+
+    assert command.argv == (
+        "uvx",
+        "--quiet",
+        "--from",
+        _VIZ_SOURCE,
+        "bayesite-viz",
+        "posterior",
+        "run/fit.nc",
+        "-o",
+        "viz/posterior.png",
+        "--kind",
+        "hist",
+        "-f",
+        "json",
+        "--var",
+        "mu",
+        "--var",
+        "tau",
+        "--coords",
+        "obs=a",
+        "-b",
+        "bokeh",
+        "--svg",
+    )
+    assert command.output_paths == (Path("viz/posterior.png"),)
+
+
+def test_plot_command_honors_source_override() -> None:
+    options = PlotOptions(verb="trace", fit_path=Path("run/fit.nc"))
+
+    command = plot_command(options, source="git+https://example.invalid/mirror.git@deadbeef")
+
+    assert command.argv[3] == (
+        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-viz"
+    )
+
+
+def test_plot_command_rejects_unknown_verb() -> None:
+    options = PlotOptions(verb="not-a-verb", fit_path=Path("run/fit.nc"))
+
+    with pytest.raises(WorkflowError, match="unknown bayesite-viz verb"):
+        plot_command(options)
+
+
+def test_plot_command_rejects_kind_for_non_kind_verb() -> None:
+    options = PlotOptions(verb="trace", fit_path=Path("run/fit.nc"), kind="hist")
+
+    with pytest.raises(WorkflowError, match="--kind is only supported"):
+        plot_command(options)
+
+
+def test_plot_command_accepts_kind_for_ppc_verb() -> None:
+    options = PlotOptions(verb="ppc", fit_path=Path("run/fit.nc"), kind="dist")
+
+    command = plot_command(options)
+
+    assert "--kind" in command.argv
+    assert "dist" in command.argv
