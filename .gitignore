@@ -12,5 +12,9 @@ build/
 run/
 runs/
 
+# Fetched engine binaries (see scripts/fetch_engine_release.py)
+.bayesite-bin/
+.bayesite-src/
+
 # macOS
 .DS_Store
