@@ -34,6 +34,7 @@
         "simulation",
         "fit",
         "critique",
+        "report",
         "revision"
       ]
     },
@@ -71,7 +72,18 @@
         "estimator_plan": { "$ref": "#/$defs/nullableArtifactRef" },
         "simulation_tests": { "$ref": "#/$defs/nullableArtifactRef" },
         "real_fit": { "$ref": "#/$defs/nullableArtifactRef" },
-        "model_criticism": { "$ref": "#/$defs/nullableArtifactRef" }
+        "model_criticism": { "$ref": "#/$defs/nullableArtifactRef" },
+        "report": { "$ref": "#/$defs/nullableArtifactRef" }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "rhat_max": { "type": "number" },
+        "ess_bulk_min": { "type": "number" },
+        "ess_tail_min": { "type": "number" },
+        "divergences_max": { "type": "integer" }
       }
     },
     "open_questions": {

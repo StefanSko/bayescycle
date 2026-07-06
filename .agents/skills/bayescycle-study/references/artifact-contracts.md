@@ -62,10 +62,19 @@ simulation/recovery tests and pass/fail criteria.
 Concrete model source, e.g. `models/adoption_hazard.py`, or serialized IR. It is
 an implementation artifact, not the scientific generative model itself.
 
+### `data_audit`
+
+Markdown. Validation of a data source against its data dictionary: variable
+ranges, impossible or out-of-range values, unit mismatches, duplicate or
+conflicting records, and event-status/censoring code checks. Produced before or
+alongside the first `data_snapshot`; a fit using a snapshot without an approved
+data audit or recorded waiver is flagged.
+
 ### `data_snapshot`
 
 Immutable data file or manifest used by a run. Should include source, transform
-script if any, and hash if available.
+script if any, and hash if available. Should reference the `data_audit`
+artifact that covered its source.
 
 ### `prior_predictive_run`
 
@@ -133,6 +142,14 @@ estimand definitions.
 Final criticism artifact for a cycle. May recommend revision, sensitivity
 analysis, or stopping.
 
+### `report`
+
+Markdown. The answer to the approved estimand: the derived quantity (contrast,
+marginal effect, prediction, poststratified summary) with uncertainty, on the
+scale the estimand was posed in, plus the assumptions and diagnostic caveats
+the answer depends on. References the approved fit, critique, and
+`posterior_estimand_visual_report`. A parameter table is not a report.
+
 ## Invalidation rules
 
 Changing an approved artifact invalidates downstream artifacts:
@@ -142,6 +159,7 @@ Changing an approved artifact invalidates downstream artifacts:
 - DAG/adjustment-set change invalidates estimator plan and later artifacts for
   causal estimands
 - estimator plan change invalidates simulation, fit, and critique
+- fit or critique change invalidates the report
 - model code/data change after recovery invalidates recovery-to-fit continuity
 - failed diagnostics block fit approval unless explicitly waived
 - missing required visualization artifacts block phase approval unless explicitly
