@@ -40,4 +40,4 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ty.environment]
 python = "./.venv"
 python-version = "3.12"
-root = ["./src", "./tests"]
+root = ["./src", "./tests", "./scripts"]
