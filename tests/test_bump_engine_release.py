@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import functools
 import http.server
+import re
 import shutil
 import sys
 import threading
@@ -188,20 +189,16 @@ def test_rewrite_provisioning_fails_loudly_when_archive_format_field_is_missing(
     couldn't actually be confirmed risks pairing it with the wrong archive.
     """
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    musl_block = (
-        "        EngineTarget(\n"
-        '            target="x86_64-unknown-linux-musl",\n'
-        '            archive_format="tar.gz",\n'
-        '            sha256="fa537de8ba6247dd4bf3eb0eb5ef6547a1aa610a8cd2e76203de3359fe96ce47",\n'
-        "        ),\n"
-    )
+    musl_block = _target_anchor(source, "x86_64-unknown-linux-musl")
     assert source.count(musl_block) == 1
-    musl_block_without_archive_format = (
-        "        EngineTarget(\n"
-        '            target="x86_64-unknown-linux-musl",\n'
-        '            sha256="fa537de8ba6247dd4bf3eb0eb5ef6547a1aa610a8cd2e76203de3359fe96ce47",\n'
-        "        ),\n"
+    # Derived from the file's current content, not a hardcoded checksum
+    # literal, so this test keeps matching after a real engine bump rewrites
+    # every sha256 field in provisioning.py (see the anchor-survival
+    # regression tests below).
+    musl_block_without_archive_format = re.sub(
+        r'[ \t]*archive_format="[^"]*",\n', "", musl_block, count=1
     )
+    assert musl_block_without_archive_format != musl_block
     broken_source = source.replace(musl_block, musl_block_without_archive_format, 1)
     # The next target, x86_64-apple-darwin, also uses tar.gz -- an unbounded
     # scan starting at the musl target's `target="..."` field would find
@@ -212,8 +209,8 @@ def test_rewrite_provisioning_fails_loudly_when_archive_format_field_is_missing(
         rewrite_provisioning(broken_source, "v9.9.9", _fake_checksums("v9.9.9"))
 
 
-def _windows_target_anchor(source: str) -> str:
-    """Return the windows `EngineTarget(...)` block in `source`, closing
+def _target_anchor(source: str, target: str) -> str:
+    """Return `target`'s `EngineTarget(...)` block in `source`, closing
     `),` line and trailing newline included.
 
     Delegates to the script's own `_target_block` (the same block-bounded
@@ -223,8 +220,8 @@ def _windows_target_anchor(source: str) -> str:
     rather than a hardcoded checksum literal, so it keeps matching after each
     real engine bump rewrites every sha256 field in provisioning.py.
     """
-    anchor = _target_block(source, "x86_64-pc-windows-msvc")
-    assert anchor is not None, "expected a windows EngineTarget block, found none"
+    anchor = _target_block(source, target)
+    assert anchor is not None, f"expected a {target!r} EngineTarget block, found none"
     return anchor
 
 
@@ -235,7 +232,7 @@ def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> 
     stale sha256 would be recorded under the new version silently.
     """
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    anchor = _windows_target_anchor(source)
+    anchor = _target_anchor(source, "x86_64-pc-windows-msvc")
     assert source.count(anchor) == 1
     extra_entry = (
         "        EngineTarget(\n"
@@ -259,7 +256,7 @@ def test_rewrite_provisioning_fails_loudly_on_archive_format_mismatch() -> None:
     provision time -- fail loudly before substituting anything instead.
     """
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    windows_anchor = _windows_target_anchor(source)
+    windows_anchor = _target_anchor(source, "x86_64-pc-windows-msvc")
     divergent_anchor = windows_anchor.replace('archive_format="zip"', 'archive_format="tar.gz"')
     assert divergent_anchor != windows_anchor
     divergent_source = source.replace(windows_anchor, divergent_anchor, 1)
@@ -281,7 +278,7 @@ def test_windows_anchor_derivation_survives_an_engine_bump() -> None:
     bumped = rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
     assert bumped != source
 
-    anchor = _windows_target_anchor(bumped)
+    anchor = _target_anchor(bumped, "x86_64-pc-windows-msvc")
 
     assert bumped.count(anchor) == 1
     assert 'target="x86_64-pc-windows-msvc"' in anchor
@@ -289,6 +286,26 @@ def test_windows_anchor_derivation_survives_an_engine_bump() -> None:
         c.sha256 for c in _fake_checksums("v9.9.9") if c.target == "x86_64-pc-windows-msvc"
     )
     assert f'sha256="{windows_checksum}"' in anchor
+
+
+def test_musl_anchor_derivation_survives_an_engine_bump() -> None:
+    """Regression guard for the anchor used by the archive-format-missing
+    test above: it must be derived from the file's current content by target
+    name, not pinned to today's checksum literal, so it keeps matching after
+    a real engine bump rewrites every sha256 in provisioning.py.
+    """
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    bumped = rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
+    assert bumped != source
+
+    anchor = _target_anchor(bumped, "x86_64-unknown-linux-musl")
+
+    assert bumped.count(anchor) == 1
+    assert 'target="x86_64-unknown-linux-musl"' in anchor
+    musl_checksum = next(
+        c.sha256 for c in _fake_checksums("v9.9.9") if c.target == "x86_64-unknown-linux-musl"
+    )
+    assert f'sha256="{musl_checksum}"' in anchor
 
 
 def test_bump_engine_release_rewrites_a_copy_of_the_real_file_in_place(
