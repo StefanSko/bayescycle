@@ -1,18 +1,23 @@
 """Bumping PINNED_ENGINE_RELEASE via scripts/bump_engine_release.py.
 
-Exercises the sidecar download and in-place rewrite against a real stdlib
-HTTP server (no mocks) serving `.sha256` sidecar fixtures, and against a copy
-of the real `provisioning.py`, so a change to that file's shape that this
-script no longer understands fails the test rather than failing silently in
-production.
+Exercises the sidecar download and rewrite against a real stdlib HTTP server
+(no mocks) serving `.sha256` sidecar fixtures, and against a copy of the real
+`provisioning.py`. Assertions are made on PARSED data (the rewritten file's
+`ast`, or the real `EngineRelease` object obtained by executing it) rather
+than on string fragments, because the rewrite itself now works at the data
+level: it regenerates the whole `PINNED_ENGINE_RELEASE = EngineRelease(...)`
+assignment from fetched checksums instead of patching individual fields in
+place, so a change to that file's shape that this script no longer
+understands fails the test rather than failing silently in production.
 """
 
 from __future__ import annotations
 
+import ast
 import functools
 import http.server
-import re
 import shutil
+import subprocess
 import sys
 import threading
 from collections.abc import Iterator
@@ -27,7 +32,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from bump_engine_release import (  # noqa: E402
     TargetChecksum,
-    _target_block,
     bump_engine_release,
     fetch_all_checksums,
     fetch_checksum,
@@ -99,6 +103,47 @@ def _fake_checksums(tag: str) -> tuple[TargetChecksum, ...]:
     )
 
 
+def _exec_release(source: str, path: Path) -> EngineRelease:
+    """Execute a rewritten provisioning.py source and return its `EngineRelease`.
+
+    This runs the module's own top-level code (a real, trusted source file
+    from this repo, not user input), the same way Python itself would when
+    the file is imported -- it is the most direct way to confirm the
+    rewritten text is valid Python that actually defines the constant
+    correctly, complementing the `ast`-level checks below.
+    """
+    namespace: dict[str, object] = {}
+    exec(compile(source, str(path), "exec"), namespace)  # noqa: S102
+    return cast(EngineRelease, namespace["PINNED_ENGINE_RELEASE"])
+
+
+def _parsed_target_pairs(source: str) -> frozenset[tuple[str, str]]:
+    """Return the `(target, archive_format)` pairs in a `PINNED_ENGINE_RELEASE`
+    assignment, via `ast`, without depending on any bump-script internals."""
+    tree = ast.parse(source)
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "PINNED_ENGINE_RELEASE"
+        ):
+            call = node.value
+            assert isinstance(call, ast.Call)
+            for keyword in call.keywords:
+                if keyword.arg == "targets":
+                    assert isinstance(keyword.value, ast.Tuple)
+                    pairs: set[tuple[str, str]] = set()
+                    for element in keyword.value.elts:
+                        assert isinstance(element, ast.Call)
+                        fields = {kw.arg: ast.literal_eval(kw.value) for kw in element.keywords}
+                        pairs.add(
+                            (cast(str, fields["target"]), cast(str, fields["archive_format"]))
+                        )
+                    return frozenset(pairs)
+    raise AssertionError("no PINNED_ENGINE_RELEASE assignment found")
+
+
 def test_fetch_checksum_downloads_sidecar(sidecar_server: SidecarServer) -> None:
     base_url, serve_dir = sidecar_server
     tag = "v0.3.0"
@@ -140,100 +185,105 @@ def test_fetch_all_checksums_downloads_every_pinned_target(sidecar_server: Sidec
     assert checksums == expected
 
 
-def test_rewrite_provisioning_updates_version_and_every_target_sha256() -> None:
+def test_rewrite_provisioning_regenerates_version_and_every_target() -> None:
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
     tag = "v9.9.9"
     checksums = _fake_checksums(tag)
 
     updated = rewrite_provisioning(source, tag, checksums)
 
-    assert 'version="v9.9.9"' in updated
-    for checksum in checksums:
-        assert f'sha256="{checksum.sha256}"' in updated
-    # Rewriting is the only change: line count and every target/format field
-    # are untouched, so a real EngineRelease still parses out of the module.
-    assert updated.count("EngineTarget(") == source.count("EngineTarget(")
-    for target, archive_format in zip(
-        _TARGET_ORDER, (c.archive_format for c in checksums), strict=True
-    ):
-        assert f'target="{target}"' in updated
-        assert f'archive_format="{archive_format}"' in updated
+    release = _exec_release(updated, _REAL_PROVISIONING_PATH)
+    assert release.version == tag
+    # base_url is untouched by a bump: carried over from the file verbatim.
+    original_release = _exec_release(source, _REAL_PROVISIONING_PATH)
+    assert release.base_url == original_release.base_url
+    assert tuple((t.target, t.archive_format, t.sha256) for t in release.targets) == tuple(
+        (c.target, c.archive_format, c.sha256) for c in checksums
+    )
+    # Target order is preserved from the file, not `_TARGETS`' order.
+    assert tuple(t.target for t in release.targets) == _TARGET_ORDER
 
 
-def test_rewrite_provisioning_fails_loudly_when_version_field_is_missing() -> None:
-    source = 'PINNED_ENGINE_RELEASE = EngineRelease(\n    base_url="x",\n)\n'
+def test_rewrite_provisioning_only_touches_the_pinned_release_assignment() -> None:
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    tag = "v9.9.9"
 
-    with pytest.raises(RuntimeError, match="PINNED_ENGINE_RELEASE shape"):
+    updated = rewrite_provisioning(source, tag, _fake_checksums(tag))
+
+    # `_PLATFORM_TARGETS` is the next top-level definition after the
+    # assignment and never changes on a bump, so everything from it onward
+    # must be byte-for-byte identical in `updated`.
+    anchor = "_PLATFORM_TARGETS: dict[tuple[str, str], str] = {"
+    prefix = source.partition("PINNED_ENGINE_RELEASE = EngineRelease(")[0]
+    source_after_anchor = source.partition(anchor)[2]
+    updated_after_anchor = updated.partition(anchor)[2]
+    assert updated.startswith(prefix)
+    assert updated_after_anchor == source_after_anchor
+
+
+def test_rewritten_file_is_valid_python_and_ruff_formatted(tmp_path: Path) -> None:
+    """End-to-end sanity check: the rewritten file must parse and must
+    already satisfy `ruff format --check` -- the rendered block matches
+    provisioning.py's existing formatting conventions exactly."""
+    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
+    tag = "v9.9.9"
+
+    updated = rewrite_provisioning(source, tag, _fake_checksums(tag))
+
+    ast.parse(updated)  # raises SyntaxError if malformed
+    rewritten_path = tmp_path / "provisioning.py"
+    rewritten_path.write_text(updated, encoding="utf-8")
+    result = subprocess.run(
+        ["ruff", "format", "--check", str(rewritten_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_rewrite_provisioning_fails_loudly_when_assignment_is_missing() -> None:
+    source = "SOMETHING_ELSE = 1\n"
+
+    with pytest.raises(RuntimeError, match="no top-level"):
         rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
 
 
-def test_rewrite_provisioning_fails_loudly_when_a_target_is_missing() -> None:
+def test_rewrite_provisioning_fails_loudly_when_source_is_not_valid_python() -> None:
+    source = "PINNED_ENGINE_RELEASE = EngineRelease(\n    this is not python\n"
+
+    with pytest.raises(RuntimeError, match="not valid Python"):
+        rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
+
+
+def test_rewrite_provisioning_fails_loudly_when_base_url_field_is_missing() -> None:
+    source = 'PINNED_ENGINE_RELEASE = EngineRelease(\n    version="v0.1.0",\n    targets=(),\n)\n'
+
+    with pytest.raises(RuntimeError, match="base_url"):
+        rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
+
+
+def test_rewrite_provisioning_fails_loudly_when_a_target_is_missing_from_the_file() -> None:
+    """A target this script fetched a checksum for, but that provisioning.py
+    has no `EngineTarget` entry for, must fail loudly rather than silently
+    dropping that target from the rewrite."""
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    unknown_checksum = TargetChecksum(
-        target="riscv64-unknown-linux-musl", archive_format="tar.gz", sha256="cd" * 32
+    checksums = _fake_checksums("v9.9.9") + (
+        TargetChecksum(
+            target="riscv64-unknown-linux-musl", archive_format="tar.gz", sha256="cd" * 32
+        ),
     )
 
-    with pytest.raises(RuntimeError, match="no EngineTarget entry"):
-        rewrite_provisioning(source, "v9.9.9", (unknown_checksum,))
+    with pytest.raises(RuntimeError, match="riscv64-unknown-linux-musl"):
+        rewrite_provisioning(source, "v9.9.9", checksums)
 
 
-def test_rewrite_provisioning_fails_loudly_when_archive_format_field_is_missing() -> None:
-    """A target's `archive_format` field must be looked up only within that
-    target's own `EngineTarget(...)` block.
-
-    If the field is missing -- e.g. a hand-edit dropped it -- the lookup must
-    not spill past the end of that block into the *next* target's entry and
-    silently accept its `archive_format`, even when the neighbor happens to
-    use the same format (here, the linux and x86_64-macOS entries are both
-    `tar.gz`). Recording a checksum under a target whose `archive_format`
-    couldn't actually be confirmed risks pairing it with the wrong archive.
+def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present_in_the_file() -> None:
+    """A target added to provisioning.py that this script's `_TARGETS` list
+    (and therefore the fetched checksums) doesn't cover must fail loudly
+    instead of rewriting only the targets it knows about -- otherwise the new
+    target's stale sha256 would be recorded under the new version silently.
     """
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    musl_block = _target_anchor(source, "x86_64-unknown-linux-musl")
-    assert source.count(musl_block) == 1
-    # Derived from the file's current content, not a hardcoded checksum
-    # literal, so this test keeps matching after a real engine bump rewrites
-    # every sha256 field in provisioning.py (see the anchor-survival
-    # regression tests below).
-    musl_block_without_archive_format = re.sub(
-        r'[ \t]*archive_format="[^"]*",\n', "", musl_block, count=1
-    )
-    assert musl_block_without_archive_format != musl_block
-    broken_source = source.replace(musl_block, musl_block_without_archive_format, 1)
-    # The next target, x86_64-apple-darwin, also uses tar.gz -- an unbounded
-    # scan starting at the musl target's `target="..."` field would find
-    # *that* block's `archive_format` and wrongly succeed.
-    assert 'target="x86_64-apple-darwin"' in broken_source
-
-    with pytest.raises(RuntimeError, match="x86_64-unknown-linux-musl"):
-        rewrite_provisioning(broken_source, "v9.9.9", _fake_checksums("v9.9.9"))
-
-
-def _target_anchor(source: str, target: str) -> str:
-    """Return `target`'s `EngineTarget(...)` block in `source`, closing
-    `),` line and trailing newline included.
-
-    Delegates to the script's own `_target_block` (the same block-bounded
-    parse `_require_matching_archive_format` uses) rather than duplicating
-    the regex here, so this anchor and the script's field lookups can never
-    drift out of sync. Derived from the file's current content by target name
-    rather than a hardcoded checksum literal, so it keeps matching after each
-    real engine bump rewrites every sha256 field in provisioning.py.
-    """
-    anchor = _target_block(source, target)
-    assert anchor is not None, f"expected a {target!r} EngineTarget block, found none"
-    return anchor
-
-
-def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> None:
-    """A target added to provisioning.py that this script's `_TARGETS` list (and
-    therefore the fetched checksums) doesn't cover must fail loudly instead of
-    rewriting only the targets it knows about -- otherwise the new target's
-    stale sha256 would be recorded under the new version silently.
-    """
-    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    anchor = _target_anchor(source, "x86_64-pc-windows-msvc")
-    assert source.count(anchor) == 1
     extra_entry = (
         "        EngineTarget(\n"
         '            target="aarch64-unknown-linux-musl",\n'
@@ -241,71 +291,37 @@ def test_rewrite_provisioning_fails_loudly_when_an_extra_target_is_present() -> 
         f'            sha256="{"ef" * 32}",\n'
         "        ),\n"
     )
-    source_with_extra_target = source.replace(anchor, anchor + extra_entry, 1)
-    assert source_with_extra_target.count("EngineTarget(") == source.count("EngineTarget(") + 1
+    # Insert right after the `targets=(` opening -- a stable structural
+    # anchor (field name plus indentation), not a data literal that changes
+    # on every bump.
+    source_with_extra_target = source.replace("    targets=(\n", "    targets=(\n" + extra_entry, 1)
+    assert source_with_extra_target != source
 
     with pytest.raises(RuntimeError, match="aarch64-unknown-linux-musl"):
         rewrite_provisioning(source_with_extra_target, "v9.9.9", _fake_checksums("v9.9.9"))
 
 
 def test_rewrite_provisioning_fails_loudly_on_archive_format_mismatch() -> None:
-    """Checksum substitution keys on the target name alone, but a checksum is a
-    property of one concrete archive. If provisioning.py's EngineTarget entry
-    downloads a different archive format than the one the script fetched the
-    sidecar for, recording that checksum guarantees a sha256 failure at
-    provision time -- fail loudly before substituting anything instead.
+    """Checksum substitution keys on the target name alone, but a checksum is
+    a property of one concrete archive. If provisioning.py's `EngineTarget`
+    entry downloads a different archive format than the one the script
+    fetched the sidecar for, recording that checksum guarantees a sha256
+    failure at provision time -- fail loudly before rewriting anything.
     """
     source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    windows_anchor = _target_anchor(source, "x86_64-pc-windows-msvc")
-    divergent_anchor = windows_anchor.replace('archive_format="zip"', 'archive_format="tar.gz"')
-    assert divergent_anchor != windows_anchor
-    divergent_source = source.replace(windows_anchor, divergent_anchor, 1)
+    divergent_source = source.replace(
+        '            target="x86_64-pc-windows-msvc",\n            archive_format="zip",',
+        '            target="x86_64-pc-windows-msvc",\n            archive_format="tar.gz",',
+        1,
+    )
+    assert divergent_source != source
+    assert _parsed_target_pairs(divergent_source) != _parsed_target_pairs(source)
 
     with pytest.raises(RuntimeError, match="x86_64-pc-windows-msvc") as exc_info:
         rewrite_provisioning(divergent_source, "v9.9.9", _fake_checksums("v9.9.9"))
     message = str(exc_info.value)
     assert "zip" in message
     assert "tar.gz" in message
-
-
-def test_windows_anchor_derivation_survives_an_engine_bump() -> None:
-    """Regression guard for the anchor used above: a real engine bump rewrites
-    every sha256 in provisioning.py, so the injected-target anchor must be
-    derived from the file's current content by target name, not pinned to
-    today's checksum literal -- the literal approach broke on the next bump.
-    """
-    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    bumped = rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
-    assert bumped != source
-
-    anchor = _target_anchor(bumped, "x86_64-pc-windows-msvc")
-
-    assert bumped.count(anchor) == 1
-    assert 'target="x86_64-pc-windows-msvc"' in anchor
-    windows_checksum = next(
-        c.sha256 for c in _fake_checksums("v9.9.9") if c.target == "x86_64-pc-windows-msvc"
-    )
-    assert f'sha256="{windows_checksum}"' in anchor
-
-
-def test_musl_anchor_derivation_survives_an_engine_bump() -> None:
-    """Regression guard for the anchor used by the archive-format-missing
-    test above: it must be derived from the file's current content by target
-    name, not pinned to today's checksum literal, so it keeps matching after
-    a real engine bump rewrites every sha256 in provisioning.py.
-    """
-    source = _REAL_PROVISIONING_PATH.read_text(encoding="utf-8")
-    bumped = rewrite_provisioning(source, "v9.9.9", _fake_checksums("v9.9.9"))
-    assert bumped != source
-
-    anchor = _target_anchor(bumped, "x86_64-unknown-linux-musl")
-
-    assert bumped.count(anchor) == 1
-    assert 'target="x86_64-unknown-linux-musl"' in anchor
-    musl_checksum = next(
-        c.sha256 for c in _fake_checksums("v9.9.9") if c.target == "x86_64-unknown-linux-musl"
-    )
-    assert f'sha256="{musl_checksum}"' in anchor
 
 
 def test_bump_engine_release_rewrites_a_copy_of_the_real_file_in_place(
@@ -323,11 +339,15 @@ def test_bump_engine_release_rewrites_a_copy_of_the_real_file_in_place(
 
     assert result == expected
     rewritten = provisioning_copy.read_text(encoding="utf-8")
-    assert 'version="v9.9.9"' in rewritten
-    for checksum in expected:
-        assert f'sha256="{checksum.sha256}"' in rewritten
-    namespace: dict[str, object] = {}
-    exec(compile(rewritten, str(provisioning_copy), "exec"), namespace)  # noqa: S102
-    release = cast(EngineRelease, namespace["PINNED_ENGINE_RELEASE"])
+    ast.parse(rewritten)
+    format_result = subprocess.run(
+        ["ruff", "format", "--check", str(provisioning_copy)],
+        capture_output=True,
+        text=True,
+    )
+    assert format_result.returncode == 0, format_result.stdout + format_result.stderr
+
+    release = _exec_release(rewritten, provisioning_copy)
     assert release.version == tag
     assert tuple(t.sha256 for t in release.targets) == tuple(c.sha256 for c in expected)
+    assert tuple(t.target for t in release.targets) == _TARGET_ORDER

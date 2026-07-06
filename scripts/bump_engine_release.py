@@ -1,16 +1,25 @@
 """Bump the pinned Bayesite engine release in provisioning.py.
 
 Given a released bayesite tag, downloads the four `.sha256` checksum
-sidecars published alongside that release's archives and rewrites
-`PINNED_ENGINE_RELEASE` in
-`src/bayescycle/backends/bayesite/provisioning.py` in place: the
-`version=` field and each target's `sha256=` field. This is the one code
-path that should ever change that constant; hand-editing it risks a typo
-in a checksum that fails silently until a user's download is rejected.
+sidecars published alongside that release's archives and replaces the whole
+`PINNED_ENGINE_RELEASE = EngineRelease(...)` assignment in
+`src/bayescycle/backends/bayesite/provisioning.py` with a freshly rendered
+one built from the fetched data. This is the one code path that should ever
+change that constant; hand-editing it risks a typo in a checksum that fails
+silently until a user's download is rejected.
+
+The rewrite works at the data level, not the string level: the existing
+assignment is `ast`-parsed into its `base_url` and `(target, archive_format)`
+pairs, that shape is validated against what was fetched, and only then is a
+brand-new assignment rendered and spliced in over the old one's exact source
+span. Nothing here regexes over checksum literals or scans unbounded source
+text -- there are no anchors to go stale.
 
 Fails loudly (raises, non-zero exit) instead of doing a partial rewrite if
 `provisioning.py` no longer has the expected shape -- e.g. after a target
-was added, removed, or renamed in `EngineRelease.targets`.
+was added, removed, or renamed in `EngineRelease.targets`, or if the file's
+targets and the fetched checksums disagree on target names or archive
+formats.
 
 Usage:
     uv run python scripts/bump_engine_release.py --tag v0.3.0
@@ -19,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import urllib.request
 from dataclasses import dataclass
@@ -31,10 +41,13 @@ _DEFAULT_PROVISIONING_PATH = (
     _REPO_ROOT / "src" / "bayescycle" / "backends" / "bayesite" / "provisioning.py"
 )
 
-# Target/archive-format pairs, in the order they appear in
-# `PINNED_ENGINE_RELEASE.targets`. Kept in lockstep with provisioning.py by
-# hand; `rewrite_provisioning` fails loudly if a target here has no matching
-# `EngineTarget` entry in the file.
+# Target/archive-format pairs bayesite currently releases, used to know what
+# to fetch. This is the one place that needs a hand-update when a new
+# platform target ships; `rewrite_provisioning` fails loudly if this list and
+# provisioning.py's `EngineTarget` entries ever disagree on the *set* of
+# `(target, archive_format)` pairs, so drift between "what bayesite ships"
+# and "what the file declares" can't silently produce a stale or mismatched
+# checksum.
 _TARGETS: tuple[tuple[str, str], ...] = (
     ("x86_64-unknown-linux-musl", "tar.gz"),
     ("x86_64-apple-darwin", "tar.gz"),
@@ -44,6 +57,10 @@ _TARGETS: tuple[tuple[str, str], ...] = (
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
+_ASSIGNMENT_NAME = "PINNED_ENGINE_RELEASE"
+_RELEASE_CALL_NAME = "EngineRelease"
+_TARGET_CALL_NAME = "EngineTarget"
+
 
 @dataclass(frozen=True)
 class TargetChecksum:
@@ -52,6 +69,14 @@ class TargetChecksum:
     target: str
     archive_format: str
     sha256: str
+
+
+@dataclass(frozen=True)
+class _ParsedTarget:
+    """One `EngineTarget(...)` entry's target/format, read out of provisioning.py."""
+
+    target: str
+    archive_format: str
 
 
 def fetch_checksum(base_url: str, tag: str, target: str, archive_format: str) -> str:
@@ -86,126 +111,232 @@ def fetch_all_checksums(base_url: str, tag: str) -> tuple[TargetChecksum, ...]:
     )
 
 
-_VERSION_RE = re.compile(r'(PINNED_ENGINE_RELEASE = EngineRelease\(\s*version=)"([^"]*)"')
-_ENGINE_TARGET_NAME_RE = re.compile(r'EngineTarget\(\s*target="([^"]+)"')
+def _char_offset(source: str, lineno: int, col_offset: int) -> int:
+    """Convert an `ast` position (1-indexed line, UTF-8-byte column) into an
+    absolute character offset into `source`.
 
-
-def _target_sha256_re(target: str) -> re.Pattern[str]:
-    # Non-greedy + DOTALL: matches from this target's `target="..."` field to
-    # its own `sha256="..."` field, not a later target's.
-    return re.compile(r'(target="' + re.escape(target) + r'".*?sha256=)"([0-9a-f]{64})"', re.DOTALL)
-
-
-_ARCHIVE_FORMAT_FIELD_RE = re.compile(r'archive_format="([^"]+)"')
-
-
-def _target_block_re(target: str) -> re.Pattern[str]:
-    """Match one whole `EngineTarget(...)` entry for `target`, start to close.
-
-    Bounds the match to this target's own entry -- from its `EngineTarget(`
-    opening line to its closing `),` line -- so a field lookup within it (e.g.
-    `archive_format`) can't spill past the end of the block into the *next*
-    target's entry when the field is missing from this one.
+    `ast` column offsets are UTF-8 byte offsets, not character offsets; this
+    always lands on a token boundary, so decoding the truncated byte prefix
+    back to `str` is safe.
     """
-    return re.compile(
-        r"^[ \t]*EngineTarget\(\n"
-        r"(?:(?![ \t]*\),\n).*\n)*?"
-        r'[ \t]*target="' + re.escape(target) + r'",\n'
-        r"(?:(?![ \t]*\),\n).*\n)*"
-        r"[ \t]*\),\n",
-        re.MULTILINE,
+    lines = source.splitlines(keepends=True)
+    preceding = sum(len(line) for line in lines[: lineno - 1])
+    line = lines[lineno - 1] if lineno - 1 < len(lines) else ""
+    within_line = len(line.encode("utf-8")[:col_offset].decode("utf-8"))
+    return preceding + within_line
+
+
+def _find_pinned_release_assign(source: str) -> ast.Assign:
+    """Return the top-level `PINNED_ENGINE_RELEASE = ...` assignment node.
+
+    Raises `RuntimeError` if `source` isn't valid Python or has no such
+    assignment -- this is the only place the rewrite looks for the constant,
+    so a renamed, removed, or malformed assignment fails loudly instead of
+    silently matching nothing.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise RuntimeError(f"provisioning.py is not valid Python: {exc}") from exc
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == _ASSIGNMENT_NAME
+        ):
+            return node
+    raise RuntimeError(
+        f"provisioning.py has no top-level `{_ASSIGNMENT_NAME} = ...` assignment; "
+        "its shape may have changed since this script was written."
     )
 
 
-def _target_block(source: str, target: str) -> str | None:
-    """Return the full `EngineTarget(...)` block for `target`, or `None`."""
-    match = _target_block_re(target).search(source)
-    return match.group(0) if match else None
+def _literal_str(node: ast.expr, field: str) -> str:
+    value = ast.literal_eval(node)
+    if not isinstance(value, str):
+        raise RuntimeError(
+            f"`{field}=` is not a string literal; its shape may have changed since "
+            "this script was written."
+        )
+    return value
 
 
-def _source_target_names(source: str) -> frozenset[str]:
-    """Return every target name in `source`'s `EngineTarget(...)` entries."""
-    return frozenset(_ENGINE_TARGET_NAME_RE.findall(source))
+def _parsed_target(node: ast.expr) -> _ParsedTarget:
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == _TARGET_CALL_NAME
+    ):
+        raise RuntimeError(
+            f"a `targets=` entry is not an `{_TARGET_CALL_NAME}(...)` call; its shape "
+            "may have changed since this script was written."
+        )
+    target: str | None = None
+    archive_format: str | None = None
+    for keyword in node.keywords:
+        if keyword.arg == "target":
+            target = _literal_str(keyword.value, "target")
+        elif keyword.arg == "archive_format":
+            archive_format = _literal_str(keyword.value, "archive_format")
+    if target is None or archive_format is None:
+        raise RuntimeError(
+            f"an `{_TARGET_CALL_NAME}(...)` entry is missing `target=` or "
+            "`archive_format=`; its shape may have changed since this script was written."
+        )
+    return _ParsedTarget(target=target, archive_format=archive_format)
 
 
-def _require_matching_archive_format(source: str, checksum: TargetChecksum) -> None:
-    """Fail loudly if `source`'s entry for this target downloads a different archive.
+def _parsed_targets(node: ast.expr) -> tuple[_ParsedTarget, ...]:
+    if not isinstance(node, ast.Tuple):
+        raise RuntimeError(
+            f"`{_ASSIGNMENT_NAME}`'s `targets=` field is not a tuple literal; its shape "
+            "may have changed since this script was written."
+        )
+    return tuple(_parsed_target(element) for element in node.elts)
 
-    A checksum is a property of one concrete archive file. Substituting a
-    checksum fetched for one archive format into an `EngineTarget` that
-    downloads another guarantees a sha256 verification failure at provision
-    time, so a divergence between this script's `_TARGETS` and
-    provisioning.py must abort the rewrite instead.
 
-    The `archive_format` field is looked up only within this target's own
-    `EngineTarget(...)` block (see `_target_block`), never in the file at
-    large -- otherwise a target missing the field would silently inherit the
-    next target's `archive_format` instead of failing loudly.
+def _parsed_release(assign: ast.Assign) -> tuple[str, tuple[_ParsedTarget, ...]]:
+    """Return `(base_url, targets)` parsed out of the assignment's `EngineRelease(...)` call.
+
+    Reads the call's keyword arguments structurally via `ast`, not by
+    matching field text, so a reordered -- but still shape-correct -- file
+    parses the same way.
     """
-    block = _target_block(source, checksum.target)
-    if block is None:
+    call = assign.value
+    if not (
+        isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == _RELEASE_CALL_NAME
+    ):
         raise RuntimeError(
-            f"provisioning.py's EngineTarget entry for target={checksum.target!r} has no "
-            '`archive_format="..."` field; its shape may have changed since this script '
-            "was written."
+            f"`{_ASSIGNMENT_NAME}` is not assigned an `{_RELEASE_CALL_NAME}(...)` call; "
+            "its shape may have changed since this script was written."
         )
-    match = _ARCHIVE_FORMAT_FIELD_RE.search(block)
-    if match is None:
+    base_url: str | None = None
+    targets: tuple[_ParsedTarget, ...] | None = None
+    for keyword in call.keywords:
+        if keyword.arg == "base_url":
+            base_url = _literal_str(keyword.value, "base_url")
+        elif keyword.arg == "targets":
+            targets = _parsed_targets(keyword.value)
+    if base_url is None:
         raise RuntimeError(
-            f"provisioning.py's EngineTarget entry for target={checksum.target!r} has no "
-            '`archive_format="..."` field; its shape may have changed since this script '
-            "was written."
+            f'`{_ASSIGNMENT_NAME}` has no `base_url="..."` field; its shape may have '
+            "changed since this script was written."
         )
-    source_format = match.group(1)
-    if source_format != checksum.archive_format:
+    if targets is None:
         raise RuntimeError(
-            f"archive format mismatch for target={checksum.target!r}: this script fetched "
-            f"the checksum sidecar for {checksum.archive_format!r}, but provisioning.py's "
-            f"EngineTarget entry downloads {source_format!r}. Recording that checksum "
-            "would guarantee a sha256 failure at provision time -- align `_TARGETS` in "
-            "this script with provisioning.py before bumping."
+            f"`{_ASSIGNMENT_NAME}` has no `targets=(...)` field; its shape may have "
+            "changed since this script was written."
         )
+    return base_url, targets
+
+
+def _validate_targets_match(
+    parsed_targets: tuple[_ParsedTarget, ...], checksums: tuple[TargetChecksum, ...]
+) -> None:
+    """Fail loudly unless the file's targets and the fetched checksums cover
+    exactly the same set of `(target, archive_format)` pairs.
+
+    Comparing pairs, not just target names, catches a checksum fetched for
+    one archive format being paired with an `EngineTarget` that downloads a
+    different one -- recording it would guarantee a sha256 verification
+    failure at provision time.
+    """
+    parsed_by_name = {t.target: t.archive_format for t in parsed_targets}
+    fetched_by_name = {c.target: c.archive_format for c in checksums}
+    parsed_names = frozenset(parsed_by_name)
+    fetched_names = frozenset(fetched_by_name)
+    extra = sorted(parsed_names - fetched_names)
+    missing = sorted(fetched_names - parsed_names)
+    mismatched = sorted(
+        name
+        for name in parsed_names & fetched_names
+        if parsed_by_name[name] != fetched_by_name[name]
+    )
+    if not (extra or missing or mismatched):
+        return
+    problems: list[str] = []
+    if extra:
+        problems.append(
+            f"provisioning.py has EngineTarget entries this script fetched no checksum for: {extra}"
+        )
+    if missing:
+        problems.append(
+            "this script fetched checksums for targets provisioning.py has no "
+            f"EngineTarget entry for: {missing}"
+        )
+    if mismatched:
+        details = ", ".join(
+            f"{name} (file={parsed_by_name[name]!r}, fetched={fetched_by_name[name]!r})"
+            for name in mismatched
+        )
+        problems.append(f"archive format mismatch for: {details}")
+    raise RuntimeError(
+        "provisioning.py's EngineTarget entries don't match the checksums this script "
+        "fetched -- " + "; ".join(problems)
+    )
+
+
+def _render_target_block(checksum: TargetChecksum) -> str:
+    return (
+        "        EngineTarget(\n"
+        f'            target="{checksum.target}",\n'
+        f'            archive_format="{checksum.archive_format}",\n'
+        f'            sha256="{checksum.sha256}",\n'
+        "        ),"
+    )
+
+
+def _render_pinned_engine_release(
+    *, version: str, base_url: str, targets: tuple[TargetChecksum, ...]
+) -> str:
+    """Render the full `PINNED_ENGINE_RELEASE = EngineRelease(...)` assignment.
+
+    Matches provisioning.py's existing formatting exactly (4-space top-level
+    fields, 8-space `EngineTarget(` entries, 12-space fields, trailing commas
+    throughout) so `ruff format --check` sees no diff on an ordinary bump.
+    """
+    target_blocks = "\n".join(_render_target_block(t) for t in targets)
+    return (
+        f"{_ASSIGNMENT_NAME} = {_RELEASE_CALL_NAME}(\n"
+        f'    version="{version}",\n'
+        f'    base_url="{base_url}",\n'
+        "    targets=(\n"
+        f"{target_blocks}\n"
+        "    ),\n"
+        ")"
+    )
 
 
 def rewrite_provisioning(source: str, tag: str, checksums: tuple[TargetChecksum, ...]) -> str:
-    """Return `source` with `PINNED_ENGINE_RELEASE`'s version and sha256s replaced.
+    """Return `source` with `PINNED_ENGINE_RELEASE` replaced by a freshly
+    rendered block built from `tag` and `checksums`.
 
-    Raises `RuntimeError` without modifying anything if the expected
-    `version=` field or any target's `sha256=` field is missing, if a
-    target's `archive_format` disagrees with the archive the checksum was
-    fetched for, or if `source` has an `EngineTarget` entry that `checksums`
-    doesn't cover -- each of those means provisioning.py's shape changed and
-    this script needs updating too, rather than writing a partially-rewritten
-    pin.
+    Regenerates the whole assignment instead of patching individual fields:
+    `base_url=` is carried over from the file verbatim, and `targets=`
+    entries are emitted in the file's existing order (not `_TARGETS`' order),
+    so an ordinary bump's diff is just the changed values. Raises
+    `RuntimeError` without modifying anything if the assignment is missing or
+    malformed, or if the file's targets and `checksums` don't cover exactly
+    the same `(target, archive_format)` pairs.
     """
-    if _VERSION_RE.search(source) is None:
-        raise RuntimeError(
-            "provisioning.py does not match the expected PINNED_ENGINE_RELEASE shape: "
-            'no `version="..."` field found under `PINNED_ENGINE_RELEASE = EngineRelease(`.'
-        )
-    for checksum in checksums:
-        if _target_sha256_re(checksum.target).search(source) is None:
-            raise RuntimeError(
-                f"provisioning.py has no EngineTarget entry for target={checksum.target!r}; "
-                "its shape may have changed since this script was written."
-            )
-        _require_matching_archive_format(source, checksum)
-    updated = _VERSION_RE.sub(rf'\g<1>"{tag}"', source, count=1)
-    for checksum in checksums:
-        updated = _target_sha256_re(checksum.target).sub(
-            rf'\g<1>"{checksum.sha256}"', updated, count=1
-        )
+    assign = _find_pinned_release_assign(source)
+    base_url, parsed_targets = _parsed_release(assign)
+    _validate_targets_match(parsed_targets, checksums)
 
-    source_targets = _source_target_names(source)
-    checksum_targets = frozenset(checksum.target for checksum in checksums)
-    uncovered = sorted(source_targets - checksum_targets)
-    if uncovered:
-        raise RuntimeError(
-            "provisioning.py has EngineTarget entries this script fetched no checksum "
-            f"for: {uncovered}. Rewriting would leave their sha256 stale under the new "
-            "version -- add them to `_TARGETS` in this script before bumping."
-        )
-    return updated
+    checksum_by_target = {checksum.target: checksum for checksum in checksums}
+    ordered_checksums = tuple(checksum_by_target[t.target] for t in parsed_targets)
+    rendered = _render_pinned_engine_release(
+        version=tag, base_url=base_url, targets=ordered_checksums
+    )
+
+    if assign.end_lineno is None or assign.end_col_offset is None:
+        raise RuntimeError("could not determine the end of the PINNED_ENGINE_RELEASE assignment")
+    start = _char_offset(source, assign.lineno, assign.col_offset)
+    end = _char_offset(source, assign.end_lineno, assign.end_col_offset)
+    return source[:start] + rendered + source[end:]
 
 
 def bump_engine_release(
