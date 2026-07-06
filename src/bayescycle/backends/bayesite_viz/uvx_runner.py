@@ -1,0 +1,162 @@
+"""uvx-mediated invocation of the bayesite-viz CLIs (bayesite-idata, bayesite-viz).
+
+`bayesite-viz` ships only as an installable Python package (no platform
+binary), so bayescycle reaches it the same way an agent would from the
+command line: `uvx --from <source> <entry-point> ...`. This module owns the
+one consumer pin (`BAYESITE_VIZ_SOURCE`) and builds the argv for both
+entry points as pure, testable functions before any subprocess runs.
+"""
+
+from __future__ import annotations
+
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+
+from bayescycle._errors import WorkflowError
+from bayescycle._integrations.external_command import ExternalCommand, run_external_command
+
+# Consumer pin: exact bayesite-viz commit. Bump deliberately via
+# docs/releasing.md alongside a coordinated compatibility review -- this is
+# the single place the pin lives. bayesite-viz is a uv workspace with two
+# separate distributions (packages/bayesite-idata, packages/bayesite-viz);
+# `uvx --from <source> <entry-point>` needs a `#subdirectory=` fragment to
+# find either entry point's own pyproject.toml, so BAYESITE_VIZ_SOURCE is the
+# *base* repo@commit and each uvx invocation derives its own package source
+# from it via `_package_source`.
+BAYESITE_VIZ_SOURCE = (
+    "git+https://github.com/StefanSko/bayesite-viz.git@beb0b4c7fe60715bd4548c05f648c47a928b526b"
+)
+
+_IDATA_SUBDIRECTORY = "packages/bayesite-idata"
+_VIZ_SUBDIRECTORY = "packages/bayesite-viz"
+
+
+def _package_source(base_source: str, subdirectory: str) -> str:
+    """Derive a uvx `--from` source for one bayesite-viz workspace package."""
+    return f"{base_source}#subdirectory={subdirectory}"
+
+
+# The nine bayesite-viz plot verbs, in the order the bayesite-viz CLI group
+# registers them.
+VIZ_VERBS: tuple[str, ...] = (
+    "trace",
+    "rank",
+    "forest",
+    "energies",
+    "pair",
+    "posterior",
+    "autocorr",
+    "ess-rhat",
+    "ppc",
+)
+
+_KIND_VERBS = frozenset({"posterior", "ppc"})
+
+
+@dataclass(frozen=True)
+class IdataOptions:
+    """Options forwarded to `bayesite-idata`."""
+
+    run_dir: Path
+    output: Path
+    validate: str | None = None
+    bayesite: str | None = None
+
+
+@dataclass(frozen=True)
+class PlotOptions:
+    """Options forwarded to one `bayesite-viz` verb."""
+
+    verb: str
+    fit_path: Path
+    output: Path | None = None
+    kind: str | None = None
+    fmt: str | None = None
+    variables: tuple[str, ...] = ()
+    coords: tuple[tuple[str, str], ...] = ()
+    backend: str | None = None
+    svg: bool = False
+
+
+def default_fit_path(run_dir: Path) -> Path:
+    """Return the conventional fit-file path for a run directory."""
+    return run_dir / "fit.nc"
+
+
+def idata_command(options: IdataOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
+    """Build the argv for `bayesite-idata` without running anything."""
+    argv: list[str] = [
+        "uvx",
+        "--quiet",
+        "--from",
+        _package_source(source, _IDATA_SUBDIRECTORY),
+        "bayesite-idata",
+        str(options.run_dir),
+        "-o",
+        str(options.output),
+    ]
+    if options.validate is not None:
+        argv.extend(("--validate", options.validate))
+    if options.bayesite is not None:
+        argv.extend(("--bayesite", options.bayesite))
+    return ExternalCommand(argv=tuple(argv), output_paths=(options.output,))
+
+
+def plot_command(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
+    """Build the argv for one `bayesite-viz` verb without running anything."""
+    if options.verb not in VIZ_VERBS:
+        known = ", ".join(VIZ_VERBS)
+        raise WorkflowError(
+            f"unknown bayesite-viz verb: {options.verb!r}; expected one of: {known}"
+        )
+    if options.kind is not None and options.verb not in _KIND_VERBS:
+        raise WorkflowError(
+            f"--kind is only supported for the posterior and ppc verbs, not {options.verb!r}"
+        )
+    argv: list[str] = [
+        "uvx",
+        "--quiet",
+        "--from",
+        _package_source(source, _VIZ_SUBDIRECTORY),
+        "bayesite-viz",
+        options.verb,
+        str(options.fit_path),
+    ]
+    if options.output is not None:
+        argv.extend(("-o", str(options.output)))
+    if options.kind is not None:
+        argv.extend(("--kind", options.kind))
+    if options.fmt is not None:
+        argv.extend(("-f", options.fmt))
+    for variable in options.variables:
+        argv.extend(("--var", variable))
+    for key, value in options.coords:
+        argv.extend(("--coords", f"{key}={value}"))
+    if options.backend is not None:
+        argv.extend(("-b", options.backend))
+    if options.svg:
+        argv.append("--svg")
+    output_paths = (options.output,) if options.output is not None else ()
+    return ExternalCommand(argv=tuple(argv), output_paths=output_paths)
+
+
+def run_idata(options: IdataOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> int:
+    """Run `bayesite-idata` under uvx, inheriting stdio."""
+    _require_uvx()
+    return run_external_command(idata_command(options, source=source))
+
+
+def run_plot(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> int:
+    """Run one `bayesite-viz` verb under uvx, inheriting stdio."""
+    _require_uvx()
+    return run_external_command(plot_command(options, source=source))
+
+
+def _require_uvx() -> None:
+    if shutil.which("uvx") is None:
+        raise WorkflowError(
+            "uvx was not found on PATH; bayescycle idata/plot run bayesite-viz through uvx.\n\n"
+            "Install uv (which provides uvx): "
+            "https://docs.astral.sh/uv/getting-started/installation/"
+        )
