@@ -1,6 +1,7 @@
 """Fetch and verify the pinned Bayesite engine release for the local platform.
 
-CI (and, later, user-facing auto-provisioning) runs this instead of building
+CI (and bayescycle's own user-facing auto-provisioning and `bayescycle engine
+ensure`) all share this one provisioning code path instead of building
 bayesite from source. Prints only the resolved binary path to stdout.
 """
 
@@ -9,11 +10,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from bayescycle.backends.bayesite.provisioning import (
-    PINNED_ENGINE_RELEASE,
-    fetch_and_verify,
-    platform_target,
-)
+from bayescycle.backends.bayesite.provisioning import ensure_engine
 
 
 def main() -> None:
@@ -21,12 +18,12 @@ def main() -> None:
     parser.add_argument(
         "--out",
         default=".bayesite-bin",
-        help="Directory to install the Bayesite engine binary into (default: .bayesite-bin)",
+        help="Cache root to install the Bayesite engine binary under (default: .bayesite-bin)",
     )
     args = parser.parse_args()
 
-    binary_path = fetch_and_verify(PINNED_ENGINE_RELEASE, platform_target(), Path(args.out))
-    print(binary_path)
+    provisioned = ensure_engine(cache_root=Path(args.out))
+    print(provisioned.executable)
 
 
 if __name__ == "__main__":
