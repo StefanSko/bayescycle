@@ -30,7 +30,7 @@ jobs:
           uv pip install --reinstall ../bayeswire
       - name: Consume-conformance against this bayeswire
         working-directory: jaxstanv5
-        run: uv run pytest tests/integration/test_consume_conformance.py -q
+        run: uv run --no-sync pytest tests/integration/test_consume_conformance.py -q
 
   bayescycle-nojax:
     runs-on: ubuntu-latest
@@ -52,7 +52,7 @@ jobs:
           uv pip install --reinstall ../bayeswire
       - name: Workflow test subset with bayeswire HEAD
         working-directory: bayescycle
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q
 
   normative-prose-audit:
     runs-on: ubuntu-latest
@@ -112,4 +112,4 @@ jobs:
         working-directory: bayescycle
         run: |
           export BAYESCYCLE_TEST_BAYESITE_BIN="$GITHUB_WORKSPACE/bayesite/target/release/bayesite"
-          uv run pytest -q
+          uv run --no-sync pytest -q
