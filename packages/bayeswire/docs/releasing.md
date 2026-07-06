@@ -20,7 +20,9 @@ consumer is the compatibility review.
 1. `main` CI green: no-JAX walk, produce-conformance, spec-doc generation.
 2. The nightly cross-repo alignment run is green. **A red nightly blocks
    tagging, not merging** — it means a consumer breaks against HEAD and the
-   release must wait for the fix or a coordinated plan.
+   release must wait for the fix or a coordinated plan. The `bayesite-head-vs-bayescycle`
+   job within that run exercises bayesite HEAD against consumers; per-PR CI in
+   bayescycle intentionally tests only the pinned released engine.
 3. If the corpus changed: the diff was reviewed byte-by-byte, and the
    evaluation fixtures were regenerated with the JAX oracle
    (`jaxstanv5/scripts/generate_ir_fixtures.py --bayeswire-path .`). If the
@@ -61,6 +63,17 @@ consumer whose *own tree* already pins the same bayeswire ref. In practice:
    green.
 
 Steps 3 and 4 are order-independent; steps 1 → 2 are not.
+
+bayescycle also carries two other pins that move on their own schedule,
+independent of a bayeswire release, and are **not** part of step 2 above:
+`PINNED_ENGINE_RELEASE` (the bayesite engine version and per-target
+sha256s, in `src/bayescycle/backends/bayesite/provisioning.py`), bumped
+whenever a new bayesite tag ships via
+`scripts/bump_engine_release.py --tag vX.Y.Z`; and `BAYESITE_VIZ_SOURCE`
+(the bayesite-viz uvx pin, in
+`src/bayescycle/backends/bayesite_viz/uvx_runner.py`), bumped by hand
+whenever the pinned bayesite-viz commit changes. Neither needs touching
+when only bayeswire's pin moves.
 
 ## After the bump
 

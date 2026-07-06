@@ -4,6 +4,56 @@
 engine, a fast engine that must agree with it, and a harness that refuses to
 let either you or the agent skip a step.**
 
+## Quickstart
+
+You write a model; `bayescycle` provisions the sampling engine and the
+plotting tool for you.
+
+Install the workflow harness (it pins `bayeswire`, so nothing else to
+install yet):
+
+```bash
+uv tool install git+https://github.com/StefanSko/bayescycle.git
+```
+
+Write `model.py`:
+
+```python
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal, Truncated
+
+@model
+class LinearRegression:
+    alpha = Param(Normal(0.0, 1.0))
+    beta = Param(Normal(0.0, 1.0))
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
+
+    x = Data.vector()
+    mu = alpha + beta * x
+    y = Observed(Normal(mu, sigma))
+```
+
+and `data.json`:
+
+```json
+{"x": [-1.0, -0.5, 0.0, 0.5, 1.0], "y": [-1.6, -0.3, 0.4, 1.1, 2.2]}
+```
+
+Sample, then plot:
+
+```bash
+bayescycle sample model.py --data data.json -o run/
+bayescycle plot trace run/
+```
+
+`sample` downloads and sha256-verifies the pinned Bayesite engine release
+into a local cache the first time it runs; later runs reuse it. `plot`
+reaches `bayesite-viz` through `uvx` against a pinned commit, so there is
+nothing else to `pip install`. See
+[bayescycle](https://github.com/StefanSko/bayescycle) for the rest of the
+CLI: prior-predictive checks, simulation/recovery, SBC, and diagnostics.
+
 ## The toolchain
 
 | Repository | Role |
