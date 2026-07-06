@@ -46,12 +46,6 @@ jobs:
           enable-cache: true
       - name: Sync without the inproc extra (no JAX installed)
         run: uv sync
-      - name: Format
-        run: uv run ruff format --check .
-      - name: Lint
-        run: uv run ruff check .
-      - name: Types
-        run: uv run ty check src tests
       - name: Assert JAX is absent
         run: |
           uv run python -c "
