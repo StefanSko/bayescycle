@@ -372,6 +372,7 @@
       <!-- bayescycle -> bayesite (invokes) -->
       <path d="M 592 68 C 750 80 810 100 810 156" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arr)"></path>
       <text x="748" y="98" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">invokes binary (default)</text>
+      <text x="748" y="112" text-anchor="middle" font-size="9.5" fill="var(--ink-soft)">pinned release, auto-provisioned + cached</text>
       <!-- jaxstanv5 -> bayeswire -->
       <line x1="264" y1="210" x2="356" y2="210" stroke="var(--wire)" stroke-width="2" marker-end="url(#arrw)"></line>
       <text x="310" y="200" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">pinned dep</text>
@@ -500,13 +501,18 @@
   </div>
 
   <div class="phase">
-    <div class="phase-key"><span class="who">bayesite-viz</span></div>
+    <div class="phase-key"><span class="who">bayescycle</span></div>
     <div class="phase-body">
       <h3>6 · Export &amp; look</h3>
-      <p><span class="m">bayesite-idata run/</span> assembles the run directory
-      into an ArviZ DataTree — the dims sidecar becomes named dimensions and
-      coordinates — and writes NetCDF; <span class="m">bayesite-viz</span>
-      renders trace, rank, energy, forest, and PPC plots from the fit file.</p>
+      <p><span class="m">bayescycle idata run/</span> assembles the run
+      directory into an ArviZ DataTree — the dims sidecar becomes named
+      dimensions and coordinates — and writes NetCDF
+      (<span class="m">run/fit.nc</span>); <span class="m">bayescycle plot
+      &lt;verb&gt; run/</span> renders trace, rank, energy, forest, and PPC
+      plots from that fit file, auto-running <span class="m">idata</span>
+      first if <span class="m">fit.nc</span> is missing. Both reach
+      <span class="m">bayesite-viz</span> through <span class="m">uvx</span>
+      against a pinned commit — nothing to <span class="m">pip install</span>.</p>
       <div class="files"><span class="file">run/fit.nc</span><span class="file">viz/*.png</span></div>
     </div>
   </div>
@@ -664,8 +670,11 @@
     entire Python environment is <span class="m">bayescycle</span> +
     <span class="m">bayeswire</span> (stdlib-only), plus one auditable,
     zero-dependency Rust binary (<span class="m">cargo tree</span> shows a
-    single crate, by CI gate). Every input and output is a file you can hash,
-    diff, and replay.</p>
+    single crate, by CI gate). That binary is the pinned release: bayescycle
+    downloads and sha256-verifies it into
+    <span class="m">~/.cache/bayescycle/engines/…</span> the first time it
+    runs, then reuses the cache. Every input and output is a file you can
+    hash, diff, and replay.</p>
   </div>
 </section>
 
@@ -725,8 +734,10 @@
       <h3><span class="repo">bayescycle</span> <span class="kind">every push</span></h3>
       <ul>
         <li><strong>no-JAX job</strong> — installs only bayescycle + bayeswire,
-        asserts JAX is absent, builds a release bayesite, and runs the
-        end-to-end test: bayeswire model → run directory → sample → diagnose</li>
+        asserts JAX is absent, downloads the <em>pinned released</em> bayesite
+        engine binary (sha256-verified, via the shared provisioning code — no
+        source build), and runs the end-to-end test: bayeswire model → run
+        directory → sample → diagnose</li>
         <li>full loop with the <code>[inproc]</code> extra (real jaxstanv5 runs)</li>
       </ul>
     </div>
@@ -739,6 +750,11 @@
         <em>before</em> a tag is cut. A red nightly blocks tagging, not merging</li>
         <li><strong>prose audit</strong> — greps consumers so normative
         wire-format prose (and the retired envelope key) can live only here</li>
+        <li><strong>bayesite-head-vs-bayescycle</strong> — builds bayesite
+        <em>HEAD</em> from source and runs bayescycle's suite against it; per-PR
+        CI in bayescycle only ever exercises the pinned release, so this
+        nightly job is the only place bayesite HEAD is exercised against a
+        consumer</li>
       </ul>
     </div>
   </div>
