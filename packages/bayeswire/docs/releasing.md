@@ -62,6 +62,17 @@ consumer whose *own tree* already pins the same bayeswire ref. In practice:
 
 Steps 3 and 4 are order-independent; steps 1 → 2 are not.
 
+bayescycle also carries two other pins that move on their own schedule,
+independent of a bayeswire release, and are **not** part of step 2 above:
+`PINNED_ENGINE_RELEASE` (the bayesite engine version and per-target
+sha256s, in `src/bayescycle/backends/bayesite/provisioning.py`), bumped
+whenever a new bayesite tag ships via
+`scripts/bump_engine_release.py --tag vX.Y.Z`; and `BAYESITE_VIZ_SOURCE`
+(the bayesite-viz uvx pin, in
+`src/bayescycle/backends/bayesite_viz/uvx_runner.py`), bumped by hand
+whenever the pinned bayesite-viz commit changes. Neither needs touching
+when only bayeswire's pin moves.
+
 ## After the bump
 
 - All four consumers should record the same ref: two `pyproject.toml` pins,
