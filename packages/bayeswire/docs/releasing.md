@@ -20,7 +20,9 @@ consumer is the compatibility review.
 1. `main` CI green: no-JAX walk, produce-conformance, spec-doc generation.
 2. The nightly cross-repo alignment run is green. **A red nightly blocks
    tagging, not merging** — it means a consumer breaks against HEAD and the
-   release must wait for the fix or a coordinated plan.
+   release must wait for the fix or a coordinated plan. The `bayesite-head-vs-bayescycle`
+   job within that run exercises bayesite HEAD against consumers; per-PR CI in
+   bayescycle intentionally tests only the pinned released engine.
 3. If the corpus changed: the diff was reviewed byte-by-byte, and the
    evaluation fixtures were regenerated with the JAX oracle
    (`jaxstanv5/scripts/generate_ir_fixtures.py --bayeswire-path .`). If the
