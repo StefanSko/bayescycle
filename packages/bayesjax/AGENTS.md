@@ -3,7 +3,7 @@
 ## Project identity
 
 `bayesjax` is the **JAX/BlackJAX sampling backend for
-[bayeswire](https://github.com/StefanSko/bayeswire) models**.
+[bayeswire](../bayeswire/) models**.
 
 It exists to help users:
 - bind concrete data to bayeswire model declarations (`bind_model`)

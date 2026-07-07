@@ -1,7 +1,7 @@
 # bayesjax
 
 `bayesjax` is the JAX/BlackJAX sampling backend for
-[bayeswire](https://github.com/StefanSko/bayeswire) models.
+[bayeswire](../bayeswire/) models.
 
 It focuses on one workflow:
 
@@ -89,7 +89,7 @@ dimension names. See [`docs/inferencedata-compatibility.md`](docs/inferencedata-
 Model declarations (`@model`, `Param`, `Data`, `Observed`,
 `PartiallyObserved`, `Dim`), the distributions and constraints metadata, the
 symbolic math namespace, IR serialization (`bayeswire.ir`), and the dimension
-sidecar all belong to [bayeswire](https://github.com/StefanSko/bayeswire) —
+sidecar all belong to [bayeswire](../bayeswire/) —
 see its README and `spec/` for the declaration language and the
 `bayeswire_ir` v1 wire format. bayesjax pins bayeswire by exact version;
 the pin bump diff is the compatibility review.
