@@ -1,0 +1,116 @@
+# Distribution coverage goal and invariants
+
+This document records the target end-state for growing `bayesjax` from a
+Normal/Uniform core into a small but real Bayesian distribution library, and the
+invariants that must stay true while we get there.
+
+The work is driven outside-in: one aspirational integration test
+(`tests/integration/test_distribution_coverage.py`) declares the target models
+and stays red until each model family is implemented through staged red->green
+TDD.
+
+## Goal
+
+Each target model family can be:
+
+1. declared with `@model`, `Param`, `Data`, `Observed`,
+2. compiled to a NUTS log-density,
+3. sampled with the public `sample(...)` API, and
+4. validated through the staged harness in `tests/integration/_validation.py`
+   (reference -> draws -> summaries -> standardized discrepancy; SBC and Stan
+   where applicable).
+
+Target model families:
+
+- **Non-centered hierarchical** (eight-schools style reparameterization).
+- **Hierarchical with learned scales** (positive-scale hyperpriors).
+- **Robust regression** (Student-t likelihood).
+- **Exponential likelihood** (positive-support observations).
+- **Poisson count likelihood** with symbolic log-rate construction.
+- **Hierarchical Poisson varying slopes** (non-centered group effects with a
+  symbolic exponential link).
+- **Hierarchical Binomial logistic varying slopes** (bounded counts with a
+  symbolic sigmoid link).
+- **Hierarchical Beta-binomial logistic varying slopes** (overdispersed bounded
+  counts with symbolic sigmoid and concentration construction).
+- **Hierarchical Beta regression logistic varying slopes** (continuous
+  proportions with symbolic sigmoid and precision construction).
+- **Hierarchical Negative-binomial varying slopes** (overdispersed unbounded
+  counts with a symbolic log-rate link and log-overdispersion parameter).
+- **Ordinal logistic regression** (ordered cutpoints with zero-based ordinal
+  category labels).
+- **Multivariate** (vector-valued likelihood).
+- **Gaussian process** (multivariate-normal latent with a fixed-kernel
+  Cholesky factor supplied as data).
+- **Measurement error** (already shipped; kept green).
+
+## Distribution invariants
+
+- Built-in distribution classes are declaration metadata and must remain
+  importable without JAX. Their tag and field structure is part of IR; numerical
+  behavior is a backend capability.
+- The JAX backend provides log-probability evaluation for every built-in
+  distribution. Element-wise distributions return one log-density/log-mass per
+  element; `MultivariateNormal` is event-wise and returns one log-density per
+  event vector.
+- The JAX compiler aggregates every site as a sum of backend log probabilities.
+  This holds for element-wise distributions and for a single event-wise vector.
+- A distribution used as a prior for an unconstrained parameter must have JAX
+  backend support for sampling, batch shape, and event shape. Prior simulation
+  distinguishes iid sample dimensions, distribution batch dimensions, and event
+  dimensions; event-wise priors such as `MultivariateNormal` are supported.
+- The JAX backend implements finite open-interval logit transforms for
+  `Interval(lower, upper)` and `UnitInterval()` and includes the inverse-transform
+  Jacobian in compiled log densities. Bounds are static finite floats;
+  data-dependent bounds are not part of the current public API.
+- The JAX backend implements the `Ordered()` transform from same-length
+  unconstrained vectors to strictly increasing constrained vectors along the last
+  axis and includes the inverse-transform Jacobian in compiled log densities.
+  `OrderedLogistic` uses Python-native zero-based observed category labels
+  `0..n_cutpoints`; Stan references must add one to observed labels at the
+  reference boundary.
+- A distribution used as a prior for an interval-constrained parameter must also
+  have JAX backend support for `cdf` and `icdf`, because prior simulation uses
+  inverse-CDF restricted sampling.
+- A distribution used only as a likelihood, or only as an unconstrained prior,
+  is not required to have backend `cdf`/`icdf` support.
+- Discrete distributions are valid for `Observed(...)` likelihoods and
+  prior-predictive observed simulation, but not for latent `Param(...)` priors
+  because NUTS samples continuous parameters only.
+
+## Sampling vs. simulation
+
+- NUTS sampling depends only on the compiled log-density and a zero
+  initialization; it does not require prior sampling. Multivariate, GP, and
+  observed-count models therefore sample without changes to latent prior
+  simulation.
+- Prior simulation (`simulation/core.py`) treats a model parameter's resolved
+  shape as the full constrained value shape. It derives the iid sample shape by
+  removing the distribution's `batch_shape + event_shape` suffix before calling
+  `sample`. This keeps vector scalar-event priors and single vector-event priors
+  distinct even when their final value shapes are identical.
+
+## Validation invariants
+
+- Each model family is validated against a reference: analytic (conjugate),
+  numerical (1-D grid), or simulation-based calibration where prior sampling is
+  available.
+- Always-on tests use fast analytic or numerical references. Stan and SBC remain
+  out-of-band (slow), consistent with the existing validation plan.
+- Standardized discrepancies (signed z / k_min) compare posterior summaries to
+  references within Monte Carlo standard error.
+- Vector-valued GP validation uses fixed linear projections (`f[0]`,
+  `f[n // 2]`, `mean(f)`, and `f[-1] - f[0]`) for script-based Stan posterior
+  comparison and projected SBC. Each projection is a scalar posterior functional
+  and is compared with the same MCSE-calibrated machinery as scalar parameters.
+- Hierarchical count/proportion validation follows the same ladder for Poisson,
+  Binomial, Beta-binomial, Negative-binomial, and Beta-regression families: an
+  always-on scalar grid reference, a workflow smoke test for the varying-slopes
+  model, Stan log-density/posterior scripts, and optional SBC scripts over
+  scalar hyperparameters.
+- Ordinal logistic validation compares Stan log-density differences and fixed-data
+  posterior summaries with Stan-native one-based labels at the fixture boundary,
+  while jaxstan's public `OrderedLogistic` API remains zero-based. Optional SBC
+  uses public prior-predictive simulation; ordered cutpoint truths are drawn by
+  sorting iid scalar prior draws, matching the normalized prior on Stan's ordered
+  constrained space.

@@ -145,7 +145,7 @@ def normalize_data_doc(document: JsonValue, *, label: str = "data document") -> 
 def data_doc_to_plain_json(doc: DataDoc) -> dict[str, JsonValue]:
     """Materialize a canonical data document as plain Python JSON values.
 
-    This is the jaxstanv5 adapter boundary: scalars become Python scalars and
+    This is the bayesjax adapter boundary: scalars become Python scalars and
     arrays become rectangular nested lists in row-major order.
     """
     return {

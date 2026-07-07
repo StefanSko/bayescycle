@@ -64,7 +64,7 @@ def write_prior_predictive_ndjson(
     sites = _site_specs(result)
     if not sites:
         raise PriorPredictiveArtifactError(
-            "jaxstanv5 backend cannot write prior_predictive.ndjson without generated sites"
+            "bayesjax backend cannot write prior_predictive.ndjson without generated sites"
         )
     _validate_site_arrays(result, sites, settings)
     documents = _documents(result, sites, settings)

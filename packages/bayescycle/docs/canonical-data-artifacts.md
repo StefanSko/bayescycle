@@ -28,7 +28,7 @@ Legacy plain JSON inputs such as `{"x": [0.1, 0.2], "y": 1}` are still accepted
 at CLI boundaries and normalized into the canonical document in `run/data.json`.
 Both backends consume that canonical file directly: the Bayesite adapter passes
 `run/data.json` to the engine unchanged (the engine parses the
-`bayescycle.data.json.v1` wrapper natively), and the jaxstanv5 adapter converts
+`bayescycle.data.json.v1` wrapper natively), and the bayesjax adapter converts
 it to a plain in-memory mapping for `bind_model(...)` without writing a
 transient file. This is also why both backends fingerprint identical bytes; see
 `docs/posterior-draws-v0.md`.
@@ -65,18 +65,18 @@ uv run bayescycle sample model.py \
 
 ## Walkthrough: explicit mixed-backend interop boundary
 
-The same canonical simulated data can be consumed by the in-process jaxstanv5
-adapter without exposing Bayesite-native data to jaxstanv5:
+The same canonical simulated data can be consumed by the in-process bayesjax
+adapter without exposing Bayesite-native data to bayesjax:
 
 ```bash
 uv run bayescycle sample model.py \
   --data run-sim/simulated_data.json \
   -o run-recover-fit-jax/ \
-  --backend jaxstanv5 \
+  --backend bayesjax \
   --seed 2 --chains 4 --warmup 400 --draws 500
 ```
 
-The jaxstanv5 adapter materializes `bayescycle.data.json.v1` as the plain
+The bayesjax adapter materializes `bayescycle.data.json.v1` as the plain
 array-like mapping expected by `model.bind(...)`. No Bayesite-native
 `dtype`/`shape`/`values` file is passed across the workflow-stage boundary.
 

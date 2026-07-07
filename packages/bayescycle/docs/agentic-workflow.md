@@ -74,12 +74,12 @@ warn against bad controls and Table 2 interpretations.
 
 ## Toolchain profiles
 
-The current concrete adapters are `jaxstanv5-bayesite-v1` and
-`jaxstanv5-inproc-v1`:
+The current concrete adapters are `bayesjax-bayesite-v1` and
+`bayesjax-inproc-v1`:
 
 ```text
 bayeswire model.py -> bayescycle CLI -> Bayesite engine -> run directory
-bayeswire model.py -> bayescycle CLI -> jaxstanv5 in-process backend -> run directory
+bayeswire model.py -> bayescycle CLI -> bayesjax in-process backend -> run directory
 ```
 
 The simulation gate should use first-class `bayescycle` commands rather than

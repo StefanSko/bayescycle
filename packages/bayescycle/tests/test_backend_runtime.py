@@ -22,7 +22,7 @@ from bayescycle._backend_runtime import (
 from bayescycle._errors import WorkflowError
 from bayescycle._run_artifacts.run_metadata import RunMetadataEngine
 from bayescycle.backends.bayesite import BayesiteBackend
-from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
+from bayescycle.backends.bayesjax import BayesjaxBackend
 
 
 def _write_fake_bayesite(tmp_path: Path, *commands: str) -> Path:
@@ -73,11 +73,11 @@ def test_sample_backend_runtime_skips_bayesite_preflight_for_plan_only(
     assert backend.engine == str(missing_engine)
 
 
-def test_sample_backend_runtime_rejects_bayesite_options_for_jaxstanv5() -> None:
+def test_sample_backend_runtime_rejects_bayesite_options_for_bayesjax() -> None:
     with pytest.raises(WorkflowError, match="--engine configures the bayesite backend"):
         resolve_sample_backend(
             BackendRuntimeOptions(
-                backend="jaxstanv5",
+                backend="bayesjax",
                 engine="/tmp/bayesite",
                 extra_args=(),
                 preflight=False,
@@ -87,7 +87,7 @@ def test_sample_backend_runtime_rejects_bayesite_options_for_jaxstanv5() -> None
     with pytest.raises(WorkflowError, match="passthrough"):
         resolve_sample_backend(
             BackendRuntimeOptions(
-                backend="jaxstanv5",
+                backend="bayesjax",
                 engine=None,
                 extra_args=("--debug",),
                 preflight=False,
@@ -147,17 +147,17 @@ def test_sample_backend_runtime_does_not_auto_provision_when_disabled(
         )
 
 
-def test_prior_predictive_backend_runtime_resolves_jaxstanv5_backend() -> None:
+def test_prior_predictive_backend_runtime_resolves_bayesjax_backend() -> None:
     backend = resolve_prior_predictive_backend(
         BackendRuntimeOptions(
-            backend="jaxstanv5",
+            backend="bayesjax",
             engine=None,
             extra_args=(),
             preflight=False,
         )
     )
 
-    assert isinstance(backend, Jaxstanv5Backend)
+    assert isinstance(backend, BayesjaxBackend)
 
 
 @pytest.mark.parametrize(
@@ -192,11 +192,11 @@ def test_model_command_runtime_preflights_and_builds_bayesite_backend(
 def test_simulate_backend_runtime_rejects_unsupported_backend() -> None:
     with pytest.raises(
         WorkflowError,
-        match="backend jaxstanv5 does not support bayescycle capability simulate",
+        match="backend bayesjax does not support bayescycle capability simulate",
     ):
         resolve_simulate_backend(
             BackendRuntimeOptions(
-                backend="jaxstanv5",
+                backend="bayesjax",
                 engine=None,
                 extra_args=(),
                 preflight=False,
@@ -236,11 +236,11 @@ def test_existing_run_command_runtime_preflights_and_builds_bayesite_backend(
 def test_posterior_check_backend_runtime_rejects_unsupported_backend() -> None:
     with pytest.raises(
         WorkflowError,
-        match="backend jaxstanv5 does not support bayescycle capability posterior-check",
+        match="backend bayesjax does not support bayescycle capability posterior-check",
     ):
         resolve_posterior_check_backend(
             BackendRuntimeOptions(
-                backend="jaxstanv5",
+                backend="bayesjax",
                 engine=None,
                 extra_args=(),
                 preflight=False,

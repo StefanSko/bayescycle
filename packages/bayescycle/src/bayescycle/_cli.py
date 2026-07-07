@@ -112,7 +112,7 @@ from bayescycle.backends.bayesite_viz.uvx_runner import (
     run_plot,
     run_warmup,
 )
-from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
+from bayescycle.backends.bayesjax.runner import InProcessBackendError
 
 
 @dataclass(frozen=True)

@@ -131,7 +131,7 @@ def build(demo_root: Path, out_path: Path) -> None:
 
     # Derive cross-run edges: an input whose absolute source path is another
     # run's declared output. This recovers the workflow DAG, including the
-    # bayesite-simulate -> jaxstanv5-fit cross-backend handoff in the mixed run.
+    # bayesite-simulate -> bayesjax-fit cross-backend handoff in the mixed run.
     for run_file in run_files:
         run_dir = run_file.parent.resolve()
         consumer_id = run_id_by_dir[run_dir]

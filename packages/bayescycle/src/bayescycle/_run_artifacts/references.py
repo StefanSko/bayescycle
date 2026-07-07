@@ -15,7 +15,7 @@ class CanonicalDataArtifact:
 
 @dataclass(frozen=True)
 class IrArtifact:
-    """Durable serialized jaxstanv5 IR artifact."""
+    """Durable serialized bayesjax IR artifact."""
 
     path: Path
 

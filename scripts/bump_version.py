@@ -4,12 +4,12 @@
 Given ``--version X.Y.Z``, this script rewrites, across the monorepo:
 
 - the ``[project] version`` field in each of the five package
-  ``pyproject.toml`` files (bayeswire, jaxstanv5, bayescycle, bayesite-viz,
+  ``pyproject.toml`` files (bayeswire, bayesjax, bayescycle, bayesite-viz,
   bayesite-idata);
 - the exact sibling-version pins in ``[project.dependencies]`` /
   ``[project.optional-dependencies]`` that reference another workspace
   package (bayescycle -> bayeswire, bayescycle's inproc extra ->
-  jaxstanv5, jaxstanv5 -> bayeswire);
+  bayesjax, bayesjax -> bayeswire);
 - the runtime ``__version__`` constants in the ``__init__.py`` of the
   packages listed in ``VERSION_CONSTANT_MODULES`` (bayescycle,
   bayesite-viz);
@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # All five lockstep-versioned packages.
 PACKAGES: tuple[str, ...] = (
     "bayeswire",
-    "jaxstanv5",
+    "bayesjax",
     "bayescycle",
     "bayesite-viz",
     "bayesite-idata",
@@ -166,8 +166,8 @@ def bump(version: str, *, repo_root: Path = REPO_ROOT, exclude_newer: str | None
         _bump_pyproject_version(packages_dir / package / "pyproject.toml", version)
 
     _bump_dependency_pin(packages_dir / "bayescycle" / "pyproject.toml", "bayeswire", version)
-    _bump_dependency_pin(packages_dir / "bayescycle" / "pyproject.toml", "jaxstanv5", version)
-    _bump_dependency_pin(packages_dir / "jaxstanv5" / "pyproject.toml", "bayeswire", version)
+    _bump_dependency_pin(packages_dir / "bayescycle" / "pyproject.toml", "bayesjax", version)
+    _bump_dependency_pin(packages_dir / "bayesjax" / "pyproject.toml", "bayeswire", version)
 
     for package, module in VERSION_CONSTANT_MODULES:
         _bump_version_constant(packages_dir / package / "src" / module / "__init__.py", version)

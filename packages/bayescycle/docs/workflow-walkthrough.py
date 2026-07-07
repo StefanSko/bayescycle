@@ -836,7 +836,7 @@ parts.append(
 interface. Unsupported combinations fail explicitly during preparation instead
 of falling back silently. This walkthrough runs every stage on Bayesite; the
 mixed-backend walkthrough exercises the cross-backend handoff.</p>
-<table class="data caps"><thead><tr><th>command</th><th>Bayesite</th><th>jaxstanv5 in-process</th></tr></thead><tbody>
+<table class="data caps"><thead><tr><th>command</th><th>Bayesite</th><th>bayesjax in-process</th></tr></thead><tbody>
 <tr><td class="mono">sample</td><td class="ok">yes</td><td class="ok">yes</td></tr>
 <tr><td class="mono">prior-predictive</td><td class="ok">yes</td><td class="ok">yes</td></tr>
 <tr><td class="mono">simulate</td><td class="ok">yes</td><td class="bad">unsupported</td></tr>
@@ -850,7 +850,7 @@ mixed-backend walkthrough exercises the cross-backend handoff.</p>
 <p class="small">*Bayesite <span class="mono">posterior-predictive</span> and
 <span class="mono">posterior-check</span> verify the fit's model/data fingerprint
 against the canonical <span class="mono">run/data.json</span>; since both backends
-fingerprint the same bytes, a jaxstanv5-produced fit passes too (difficulties #2,
+fingerprint the same bytes, a bayesjax-produced fit passes too (difficulties #2,
 resolved). All workflow reports are v0-provisional: machine-readable and tested,
 but consumers must check the format marker before depending on field
 stability.</p>

@@ -215,21 +215,21 @@ def test_backend_plan_description_is_closed_adt_lowered_by_workflow(
     }
     assert backend_plan_description_fields(
         InProcessSamplePlanDescription(
-            backend="jaxstanv5",
+            backend="bayesjax",
             sampler={"seed": 1, "target_accept": 0.9},
         )
     ) == {
-        "backend": "jaxstanv5",
+        "backend": "bayesjax",
         "integration_mode": "in-process-python",
         "sampler": {"seed": 1, "target_accept": 0.9},
     }
     assert backend_plan_description_fields(
         InProcessSettingsPlanDescription(
-            backend="jaxstanv5",
+            backend="bayesjax",
             settings={"seed": 2, "draws": 4},
         )
     ) == {
-        "backend": "jaxstanv5",
+        "backend": "bayesjax",
         "integration_mode": "in-process-python",
         "settings": {"seed": 2, "draws": 4},
     }
@@ -471,9 +471,9 @@ def test_materialization_preserves_output_dir_guard(tmp_path: Path) -> None:
 def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> None:
     import bayescycle._integrations.external_command as external_command
     from bayescycle._integrations.external_command import ExternalCommand
-    from bayescycle.backends.jaxstanv5.commands import (
-        Jaxstanv5PriorPredictiveCommand,
-        Jaxstanv5SampleCommand,
+    from bayescycle.backends.bayesjax.commands import (
+        BayesjaxPriorPredictiveCommand,
+        BayesjaxSampleCommand,
     )
 
     assert not hasattr(external_command, "DryRunCommand")
@@ -481,8 +481,8 @@ def test_command_values_do_not_own_dry_run_projection_or_bayesite_adapters() -> 
     assert not hasattr(external_command, "EngineCommand")
     assert not hasattr(external_command, "run_engine")
     assert not hasattr(ExternalCommand(argv=("bayesite", "sample")), "dry_run_fields")
-    assert not hasattr(Jaxstanv5SampleCommand, "dry_run_fields")
-    assert not hasattr(Jaxstanv5PriorPredictiveCommand, "dry_run_fields")
+    assert not hasattr(BayesjaxSampleCommand, "dry_run_fields")
+    assert not hasattr(BayesjaxPriorPredictiveCommand, "dry_run_fields")
 
 
 def test_bayesite_action_owns_postprocess(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -563,9 +563,9 @@ def test_run_directory_commands_execute_through_bayesite_backend(tmp_path: Path)
 
 
 def test_first_party_backends_do_not_expose_operation_specific_runners() -> None:
-    from bayescycle.backends import BayesiteBackend, Jaxstanv5Backend
+    from bayescycle.backends import BayesiteBackend, BayesjaxBackend
 
-    for backend in (BayesiteBackend("bayesite"), Jaxstanv5Backend()):
+    for backend in (BayesiteBackend("bayesite"), BayesjaxBackend()):
         assert hasattr(backend, "execute")
         for name in (
             "build_sample_command",

@@ -3,7 +3,7 @@
 Reads pyproject.toml files with stdlib tomllib only (no third-party TOML or
 PEP 508 parsing) and asserts the cross-package dependency shape the
 monorepo migration plan requires: workspace-source sibling deps, JAX
-confined to jaxstanv5, and bayesite-viz/bayesite-idata kept out of the
+confined to bayesjax, and bayesite-viz/bayesite-idata kept out of the
 workspace member list and out of every workspace member's dependencies.
 """
 
@@ -21,7 +21,7 @@ PACKAGES_DIR = ROOT / "packages"
 # workspace members.
 ALL_PACKAGES = (
     "bayeswire",
-    "jaxstanv5",
+    "bayesjax",
     "bayescycle",
     "bayesite-viz",
     "bayesite-idata",
@@ -29,7 +29,7 @@ ALL_PACKAGES = (
 
 WORKSPACE_MEMBERS = (
     "bayeswire",
-    "jaxstanv5",
+    "bayesjax",
     "bayescycle",
 )
 
@@ -114,26 +114,26 @@ def test_bayescycle_depends_on_exact_bayeswire_pin() -> None:
     )
 
 
-def test_bayescycle_inproc_extra_is_exact_jaxstanv5_pin() -> None:
-    version = _package_version("jaxstanv5")
+def test_bayescycle_inproc_extra_is_exact_bayesjax_pin() -> None:
+    version = _package_version("bayesjax")
     data = _load_pyproject("bayescycle")
     extras = _project_optional_dependencies(data)
-    assert extras.get("inproc") == [f"jaxstanv5=={version}"], (
+    assert extras.get("inproc") == [f"bayesjax=={version}"], (
         f"expected bayescycle's inproc optional-dependency to be exactly "
-        f"['jaxstanv5=={version}'], got {extras.get('inproc')!r}"
+        f"['bayesjax=={version}'], got {extras.get('inproc')!r}"
     )
 
 
-def test_jaxstanv5_depends_on_exact_bayeswire_pin() -> None:
+def test_bayesjax_depends_on_exact_bayeswire_pin() -> None:
     version = _package_version("bayeswire")
-    data = _load_pyproject("jaxstanv5")
+    data = _load_pyproject("bayesjax")
     deps = _project_dependencies(data)
     bayeswire_specs = [d for d in deps if _dependency_name(d) == "bayeswire"]
     assert len(bayeswire_specs) == 1, (
-        f"expected exactly one bayeswire dependency in jaxstanv5, got {bayeswire_specs!r}"
+        f"expected exactly one bayeswire dependency in bayesjax, got {bayeswire_specs!r}"
     )
     assert bayeswire_specs[0] == f"bayeswire=={version}", (
-        f"expected jaxstanv5's bayeswire dependency to be pinned to "
+        f"expected bayesjax's bayeswire dependency to be pinned to "
         f"'bayeswire=={version}', got {bayeswire_specs[0]!r}"
     )
 
@@ -149,18 +149,18 @@ def test_root_workspace_members_are_exactly_three() -> None:
     assert "packages/bayesite-idata" not in members
 
 
-def test_jax_confined_to_jaxstanv5() -> None:
+def test_jax_confined_to_bayesjax() -> None:
     for package in ALL_PACKAGES:
         data = _load_pyproject(package)
         deps = _project_dependencies(data)
         names = {_dependency_name(d) for d in deps}
-        if package == "jaxstanv5":
+        if package == "bayesjax":
             continue
         assert "jax" not in names, f"{package} must not depend on jax directly"
         assert "jaxlib" not in names, f"{package} must not depend on jaxlib directly"
 
     # bayescycle may only reach JAX transitively via its inproc extra's
-    # jaxstanv5 dependency, never a direct jax/jaxlib dependency.
+    # bayesjax dependency, never a direct jax/jaxlib dependency.
     bayescycle = _load_pyproject("bayescycle")
     extras = _project_optional_dependencies(bayescycle)
     inproc_names = {_dependency_name(d) for d in extras.get("inproc", [])}

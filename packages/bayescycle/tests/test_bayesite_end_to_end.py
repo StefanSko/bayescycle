@@ -1,7 +1,7 @@
 """End-to-end workflow against a real bayesite release binary.
 
 This is the default agent path: model.py executes with bayeswire only (no
-JAX, no jaxstanv5), the run directory is prepared by bayescycle, and a real
+JAX, no bayesjax), the run directory is prepared by bayescycle, and a real
 bayesite binary samples and diagnoses. Point
 ``BAYESCYCLE_TEST_BAYESITE_BIN`` at a bayesite executable to enable it; the
 no-JAX CI job always does.
@@ -93,15 +93,15 @@ def test_sample_and_diagnose_with_real_engine(tmp_path: Path) -> None:
     assert diagnostics, "diagnostics.json must be a non-empty document"
 
 
-def test_jaxstanv5_fit_passes_bayesite_posterior_predictive_and_check(tmp_path: Path) -> None:
-    """A jaxstanv5-produced fit must pass the real engine's fingerprint check.
+def test_bayesjax_fit_passes_bayesite_posterior_predictive_and_check(tmp_path: Path) -> None:
+    """A bayesjax-produced fit must pass the real engine's fingerprint check.
 
-    ``sample`` runs on the in-process jaxstanv5 backend (fingerprinting the
+    ``sample`` runs on the in-process bayesjax backend (fingerprinting the
     canonical ``run/data.json`` it was handed); ``posterior-predictive`` and
     ``posterior-check`` then run against the real Bayesite engine, which must
     fingerprint the same bytes for the same run directory.
     """
-    pytest.importorskip("jaxstanv5")
+    pytest.importorskip("bayesjax")
     model_path, data_path = _write_inputs(tmp_path)
     run_dir = tmp_path / "run"
 
@@ -115,7 +115,7 @@ def test_jaxstanv5_fit_passes_bayesite_posterior_predictive_and_check(tmp_path: 
             "-o",
             str(run_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--seed",
             "20260702",
             "--chains",

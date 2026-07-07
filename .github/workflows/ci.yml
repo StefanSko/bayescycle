@@ -1,12 +1,12 @@
 # Workspace CI (monorepo migration step 2, see docs/monorepo-migration.md).
 #
 # Replaces the four inert per-package workflows imported with history under
-# packages/{bayeswire,jaxstanv5}/.github/workflows/ (deleted in the same
+# packages/{bayeswire,bayesjax}/.github/workflows/ (deleted in the same
 # commit that added this file) and bayescycle's own pre-monorepo workflow
 # (this file's direct ancestor).
 #
 # Retired, not ported:
-#   - bayeswire's nightly "Cross-repo alignment" workflow (jaxstanv5-consume,
+#   - bayeswire's nightly "Cross-repo alignment" workflow (bayesjax-consume,
 #     bayescycle-nojax, normative-prose-audit): HEAD-vs-HEAD across the
 #     Python packages is now every PR's CI, below, since they share one
 #     workspace lock.
@@ -73,9 +73,9 @@ jobs:
       - name: Assert no drift (corpus + spec/ir-v1-tags.md at the repo root)
         run: git diff --exit-code -- packages/bayeswire/src/bayeswire/corpus spec/ir-v1-tags.md
 
-  # jaxstanv5: the real JAX/BlackJAX backend, consume-conformance against
+  # bayesjax: the real JAX/BlackJAX backend, consume-conformance against
   # the bayeswire corpus.
-  jaxstanv5:
+  bayesjax:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -83,21 +83,21 @@ jobs:
         with:
           enable-cache: true
       - name: Sync (installs the workspace bayeswire)
-        run: uv sync --package jaxstanv5
+        run: uv sync --package bayesjax
       - name: Format
-        working-directory: packages/jaxstanv5
+        working-directory: packages/bayesjax
         run: uv run --no-sync ruff format --check .
       - name: Lint
-        working-directory: packages/jaxstanv5
+        working-directory: packages/bayesjax
         run: uv run --no-sync ruff check .
       - name: Types
-        working-directory: packages/jaxstanv5
+        working-directory: packages/bayesjax
         run: uv run --no-sync ty check
       - name: Tests (includes consume-conformance against the bayeswire corpus)
-        working-directory: packages/jaxstanv5
+        working-directory: packages/bayesjax
         run: uv run --no-sync pytest -q
 
-  # bayescycle with the inproc extra (jaxstanv5 installed): the full
+  # bayescycle with the inproc extra (bayesjax installed): the full
   # workflow-harness suite, including in-process JAX-backed paths, against a
   # real pinned bayesite engine binary.
   bayescycle:
@@ -107,7 +107,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Sync (bayeswire + jaxstanv5 inproc extra)
+      - name: Sync (bayeswire + bayesjax inproc extra)
         run: uv sync --package bayescycle --extra inproc
       - name: Format
         working-directory: packages/bayescycle
@@ -136,7 +136,7 @@ jobs:
 
   # The default agent path executes model.py with bayeswire only — no JAX,
   # ever. `uv sync` without the inproc extra is exact, so this job proves
-  # the no-JAX path end-to-end with a real bayesite binary and jaxstanv5
+  # the no-JAX path end-to-end with a real bayesite binary and bayesjax
   # genuinely absent from the environment (not merely unused).
   bayescycle-no-jax:
     runs-on: ubuntu-latest
@@ -152,7 +152,7 @@ jobs:
           uv run --no-sync python -c "
           import importlib.util
           assert importlib.util.find_spec('jax') is None, 'JAX leaked onto the default path'
-          assert importlib.util.find_spec('jaxstanv5') is None, 'jaxstanv5 leaked onto the default path'
+          assert importlib.util.find_spec('bayesjax') is None, 'bayesjax leaked onto the default path'
           import bayeswire
           "
       - name: Fetch pinned bayesite engine

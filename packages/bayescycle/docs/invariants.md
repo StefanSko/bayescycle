@@ -14,7 +14,7 @@
   provenance, artifact paths and hashes, or metadata explicitly exposed by
   `bayeswire`; `bayescycle` must not invent model semantics such as dimension
   labels. Authoring semantics belong to bayeswire; sampler facts belong to the
-  selected backend (jaxstanv5 or Bayesite).
+  selected backend (bayesjax or Bayesite).
 
 ## Boundaries
 
@@ -107,9 +107,9 @@ layout keeps matching the architecture.
   validate Bayesite passthrough flags, materialize Bayesite-private files under
   `.bayesite/`, preflight the selected binary, and canonicalize generated data;
   it must not expose Bayesite-private files as workflow-stage artifacts.
-- `bayescycle.backends.jaxstanv5` is a first-party in-process Python adapter. It
-  may call public jaxstanv5 runtime APIs (`bind_model`, `sample`,
+- `bayescycle.backends.bayesjax` is a first-party in-process Python adapter. It
+  may call public bayesjax runtime APIs (`bind_model`, `sample`,
   `simulate_prior_predictive`) and serialize their explicitly exposed results;
   it must not make BlackJAX or JAX implementation details part of the workflow
-  contract. It is the only module allowed to import the `jaxstanv5` package,
+  contract. It is the only module allowed to import the `bayesjax` package,
   which is an optional dependency installed via the `[inproc]` extra.

@@ -1,7 +1,7 @@
 [tool.uv.workspace]
 members = [
     "packages/bayeswire",
-    "packages/jaxstanv5",
+    "packages/bayesjax",
     "packages/bayescycle",
 ]
 

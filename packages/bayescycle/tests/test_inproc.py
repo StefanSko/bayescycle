@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bayescycle.backends.jaxstanv5.runner import (
+from bayescycle.backends.bayesjax.runner import (
     InProcessBackendError,
     _load_data,
     _load_sample_function,
@@ -29,14 +29,14 @@ def test_inprocess_backend_missing_extra_error_is_repair_oriented(
 ) -> None:
     original_import = builtins.__import__
 
-    def fail_jaxstanv5_inference(
+    def fail_bayesjax_inference(
         name: str,
         globals_: dict[str, object] | None = None,
         locals_: dict[str, object] | None = None,
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:
-        if name == "jaxstanv5.inference":
+        if name == "bayesjax.inference":
             raise ImportError("simulated missing BlackJAX")
         importer = original_import
         return importer(name, globals_, locals_, fromlist, level)
@@ -44,7 +44,7 @@ def test_inprocess_backend_missing_extra_error_is_repair_oriented(
     monkeypatch.setattr(
         builtins,
         "__import__",
-        fail_jaxstanv5_inference,
+        fail_bayesjax_inference,
     )
 
     with pytest.raises(InProcessBackendError, match=r"bayescycle\[inproc\]"):

@@ -363,7 +363,7 @@ def test_sample_dry_run_accepts_promoted_sampler_options_and_explicit_out(
     ]
 
 
-def test_sample_dry_run_supports_jaxstanv5_backend(
+def test_sample_dry_run_supports_bayesjax_backend(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -380,7 +380,7 @@ def test_sample_dry_run_supports_jaxstanv5_backend(
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--seed",
             "3",
             "--chains",
@@ -401,7 +401,7 @@ def test_sample_dry_run_supports_jaxstanv5_backend(
     printed = json.loads(capsys.readouterr().out)
     printed.pop("dims", None)
     assert printed == {
-        "backend": "jaxstanv5",
+        "backend": "bayesjax",
         "integration_mode": "in-process-python",
         "data": str(output_dir / "data.json"),
         "draws": str(output_dir / "posterior.ndjson"),
@@ -420,7 +420,7 @@ def test_sample_dry_run_supports_jaxstanv5_backend(
     assert not (output_dir / "posterior.ndjson").exists()
 
 
-def test_sample_jaxstanv5_backend_rejects_bayesite_engine_option(
+def test_sample_bayesjax_backend_rejects_bayesite_engine_option(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -437,7 +437,7 @@ def test_sample_jaxstanv5_backend_rejects_bayesite_engine_option(
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--engine",
             "/tmp/bayesite",
             "--dry-run",
@@ -449,7 +449,7 @@ def test_sample_jaxstanv5_backend_rejects_bayesite_engine_option(
     assert not output_dir.exists()
 
 
-def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
+def test_sample_bayesjax_backend_rejects_engine_passthrough(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -466,7 +466,7 @@ def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--dry-run",
             "--",
             "--experimental-engine-flag",
@@ -478,7 +478,7 @@ def test_sample_jaxstanv5_backend_rejects_engine_passthrough(
     assert not output_dir.exists()
 
 
-def test_sample_jaxstanv5_backend_writes_energy_posterior(
+def test_sample_bayesjax_backend_writes_energy_posterior(
     tmp_path: Path,
 ) -> None:
     pytest.importorskip("blackjax")
@@ -496,7 +496,7 @@ def test_sample_jaxstanv5_backend_writes_energy_posterior(
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--seed",
             "3",
             "--chains",
@@ -912,7 +912,7 @@ def test_prior_predictive_dry_run_prints_plan_without_materializing_run(
     assert not output_dir.exists()
 
 
-def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
+def test_prior_predictive_dry_run_supports_bayesjax_backend(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -929,7 +929,7 @@ def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--seed",
             "3",
             "--draws",
@@ -942,7 +942,7 @@ def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
     printed = json.loads(capsys.readouterr().out)
     printed.pop("dims", None)
     assert printed == {
-        "backend": "jaxstanv5",
+        "backend": "bayesjax",
         "integration_mode": "in-process-python",
         "data": str(output_dir / "data.json"),
         "ir": str(output_dir / "model.ir.json"),
@@ -954,7 +954,7 @@ def test_prior_predictive_dry_run_supports_jaxstanv5_backend(
     assert not output_dir.exists()
 
 
-def test_prior_predictive_jaxstanv5_backend_rejects_engine_passthrough_before_writes(
+def test_prior_predictive_bayesjax_backend_rejects_engine_passthrough_before_writes(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -971,7 +971,7 @@ def test_prior_predictive_jaxstanv5_backend_rejects_engine_passthrough_before_wr
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--dry-run",
             "--",
             "--experimental-engine-flag",
@@ -983,7 +983,7 @@ def test_prior_predictive_jaxstanv5_backend_rejects_engine_passthrough_before_wr
     assert not output_dir.exists()
 
 
-def test_prior_predictive_jaxstanv5_backend_writes_v0_stream(tmp_path: Path) -> None:
+def test_prior_predictive_bayesjax_backend_writes_v0_stream(tmp_path: Path) -> None:
     pytest.importorskip("jax")
     model_file = _write_normal_mean_model(tmp_path)
     data_file = _write_empty_data(tmp_path)
@@ -998,7 +998,7 @@ def test_prior_predictive_jaxstanv5_backend_writes_v0_stream(tmp_path: Path) -> 
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
             "--seed",
             "3",
             "--draws",
@@ -1051,7 +1051,7 @@ def test_prior_predictive_rejects_forwarded_out_engine_arg(
     assert "prior_predictive.ndjson" in err
 
 
-def test_simulate_jaxstanv5_backend_reports_unsupported_without_engine_preflight(
+def test_simulate_bayesjax_backend_reports_unsupported_without_engine_preflight(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1071,13 +1071,13 @@ def test_simulate_jaxstanv5_backend_reports_unsupported_without_engine_preflight
             "-o",
             str(output_dir),
             "--backend",
-            "jaxstanv5",
+            "bayesjax",
         ]
     )
 
     assert code == 2
     assert (
-        "backend jaxstanv5 does not support bayescycle capability simulate"
+        "backend bayesjax does not support bayescycle capability simulate"
         in capsys.readouterr().err
     )
     assert not output_dir.exists()
@@ -1404,7 +1404,7 @@ def test_workflow_plan_rejects_partial_mixed_plan(
 def test_workflow_plan_rejects_engine_without_bayesite(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    code = main(["workflow-plan", "--backend", "jaxstanv5", "--engine", "/tmp/bayesite"])
+    code = main(["workflow-plan", "--backend", "bayesjax", "--engine", "/tmp/bayesite"])
 
     assert code == 2
     assert "no bayesite backend stage was selected" in capsys.readouterr().err
@@ -1418,7 +1418,7 @@ def test_workflow_plan_loads_mixed_toml_config(
     config.write_text(
         '[workflow]\nmode = "mixed"\n\n'
         '[stages.simulate]\nbackend = "bayesite"\n\n'
-        '[stages.recover]\nbackend = "jaxstanv5"\n',
+        '[stages.recover]\nbackend = "bayesjax"\n',
         encoding="utf-8",
     )
 
@@ -1427,7 +1427,7 @@ def test_workflow_plan_loads_mixed_toml_config(
     assert code == 0
     assert json.loads(capsys.readouterr().out) == {
         "mode": "mixed",
-        "stages": {"recover": "jaxstanv5", "simulate": "bayesite"},
+        "stages": {"recover": "bayesjax", "simulate": "bayesite"},
         "backends": {},
     }
 
@@ -1613,18 +1613,18 @@ def test_posterior_check_reports_missing_required_artifacts(
     assert "posterior.ndjson" in err
 
 
-def test_posterior_check_jaxstanv5_backend_reports_unsupported(
+def test_posterior_check_bayesjax_backend_reports_unsupported(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     run_dir = tmp_path / "run"
     _write_run_artifacts(run_dir)
 
-    code = main(["posterior-check", str(run_dir), "--backend", "jaxstanv5", "--dry-run"])
+    code = main(["posterior-check", str(run_dir), "--backend", "bayesjax", "--dry-run"])
 
     assert code == 2
     assert (
-        "backend jaxstanv5 does not support bayescycle capability posterior-check"
+        "backend bayesjax does not support bayescycle capability posterior-check"
         in capsys.readouterr().err
     )
 

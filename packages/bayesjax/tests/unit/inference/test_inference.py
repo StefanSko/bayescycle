@@ -1,0 +1,241 @@
+"""Unit tests for inference helpers."""
+
+from __future__ import annotations
+
+import jax.numpy as jnp
+import pytest
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal
+from bayeswire.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
+from bayeswire.model.expr import ConstNode
+
+from bayesjax.inference.core import (
+    NutsDiagnosticTrace,
+    SamplerAdaptation,
+    SamplerDiagnostics,
+    SamplerResult,
+    SamplerSettings,
+    _constrain_sample_values,
+    _draw_initial_position,
+    _unflatten_samples,
+    compile_sampler,
+    sample,
+)
+from bayesjax.model.bound import BoundModel
+
+
+def test_unflatten_scalar_params() -> None:
+    """Flat (N, 2) with two scalar params → dict of (1, N) each."""
+    flat = jnp.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    shapes: dict[str, tuple[int, ...]] = {"a": (), "b": ()}
+    result = _unflatten_samples(flat, shapes)
+
+    assert set(result.keys()) == {"a", "b"}
+    assert result["a"].shape == (1, 3)
+    assert result["b"].shape == (1, 3)
+    assert jnp.allclose(result["a"][0], jnp.array([1.0, 3.0, 5.0]))
+    assert jnp.allclose(result["b"][0], jnp.array([2.0, 4.0, 6.0]))
+
+
+def test_unflatten_mixed_shapes() -> None:
+    """Scalar + 1D vector param → correct shapes with chain dim."""
+    # scalar alpha (1 element), vector beta (2 elements) → 3 total
+    flat = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+    shapes: dict[str, tuple[int, ...]] = {"alpha": (), "beta": (2,)}
+    result = _unflatten_samples(flat, shapes)
+
+    assert result["alpha"].shape == (1, 2)
+    assert result["beta"].shape == (1, 2, 2)
+    assert jnp.allclose(result["alpha"][0], jnp.array([0.1, 0.4]))
+    assert jnp.allclose(result["beta"][0, 0], jnp.array([0.2, 0.3]))
+    assert jnp.allclose(result["beta"][0, 1], jnp.array([0.5, 0.6]))
+
+
+def test_unflatten_single_sample() -> None:
+    """Single draw with one scalar param."""
+    flat = jnp.array([[7.0]])
+    shapes: dict[str, tuple[int, ...]] = {"mu": ()}
+    result = _unflatten_samples(flat, shapes)
+
+    assert result["mu"].shape == (1, 1)
+    assert jnp.allclose(result["mu"][0, 0], jnp.array(7.0))
+
+
+def test_unflatten_zero_sized_parameter_does_not_advance_offset() -> None:
+    """Zero-sized parameters consume no sampled-vector entries."""
+    flat = jnp.array([[10.0, 20.0], [30.0, 40.0]])
+    shapes: dict[str, tuple[int, ...]] = {"empty": (0,), "first": (), "second": ()}
+
+    result = _unflatten_samples(flat, shapes)
+
+    assert result["empty"].shape == (1, 2, 0)
+    assert jnp.allclose(result["first"][0], jnp.array([10.0, 30.0]))
+    assert jnp.allclose(result["second"][0], jnp.array([20.0, 40.0]))
+
+
+def test_constrain_sample_values_applies_parameter_constraints() -> None:
+    meta = ModelMeta(
+        params={"sigma": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), Positive(), None)},
+        data={},
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
+        expressions={},
+    )
+    samples = {"sigma": jnp.array([[0.0, jnp.log(2.0)]])}
+
+    constrained = _constrain_sample_values(samples, meta)
+
+    assert jnp.allclose(constrained["sigma"], jnp.array([[1.0, 2.0]]))
+
+
+def test_draw_initial_position_jitters_on_unconstrained_scale() -> None:
+    position = _draw_initial_position(jnp.asarray([0, 1], dtype=jnp.uint32), 128)
+
+    assert position.shape == (128,)
+    assert jnp.all(position >= -2.0)
+    assert jnp.all(position <= 2.0)
+    assert not jnp.allclose(position, jnp.zeros_like(position))
+
+
+def test_sampler_result_dataclass() -> None:
+    """SamplerResult is a frozen dataclass with samples, diagnostics, and metadata."""
+    samples = {"mu": jnp.array([[1.0, 2.0, 3.0]])}
+    trace = NutsDiagnosticTrace(
+        is_divergent=jnp.array([[False, False, False]]),
+        acceptance_rate=jnp.array([[0.8, 0.9, 1.0]]),
+        num_integration_steps=jnp.array([[1, 3, 7]]),
+        num_trajectory_expansions=jnp.array([[1, 2, 3]]),
+        energy=jnp.array([[1.0, 1.5, 2.0]]),
+    )
+    diagnostics = SamplerDiagnostics(warmup=trace, sampling=trace)
+    adaptation = SamplerAdaptation(step_size=jnp.array([0.25]))
+    settings = SamplerSettings(max_tree_depth=10)
+    r = SamplerResult(
+        samples=samples,
+        diagnostics=diagnostics,
+        adaptation=adaptation,
+        settings=settings,
+    )
+
+    assert r.samples is samples
+    assert r.samples["mu"].shape == (1, 3)
+    assert r.diagnostics is diagnostics
+    assert r.adaptation is adaptation
+    assert r.adaptation.step_size.shape == (1,)
+    assert r.settings is settings
+    assert r.settings.max_tree_depth == 10
+
+
+def parameterless_bound() -> BoundModel:
+    meta = ModelMeta(
+        params={},
+        data={},
+        observed_nodes=(ResolvedObserved("y", Normal(ConstNode(0.0), ConstNode(1.0))),),
+        expressions={},
+    )
+    return BoundModel(
+        meta=meta,
+        data={"y": jnp.array(0.0)},
+        param_shapes={},
+        n_params=0,
+    )
+
+
+def test_compile_sampler_rejects_invalid_target_acceptance_rate() -> None:
+    with pytest.raises(ValueError, match="target_acceptance_rate"):
+        compile_sampler(parameterless_bound(), target_acceptance_rate=1.0)
+
+
+@pytest.mark.parametrize("max_tree_depth", [0, -1])
+def test_compile_sampler_rejects_non_positive_max_tree_depth(max_tree_depth: int) -> None:
+    with pytest.raises(ValueError, match="max_tree_depth must be at least 1"):
+        compile_sampler(parameterless_bound(), max_tree_depth=max_tree_depth)
+
+
+@pytest.mark.parametrize("max_tree_depth", [0, -1])
+def test_sample_rejects_non_positive_max_tree_depth(max_tree_depth: int) -> None:
+    with pytest.raises(ValueError, match="max_tree_depth must be at least 1"):
+        sample(
+            parameterless_bound(),
+            seed=0,
+            num_warmup=10,
+            num_samples=10,
+            max_tree_depth=max_tree_depth,
+        )
+
+
+def test_sample_rejects_non_positive_chain_count() -> None:
+    compiled = compile_sampler(parameterless_bound())
+
+    with pytest.raises(ValueError, match="num_chains"):
+        compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=0)
+
+
+@pytest.mark.parametrize("num_warmup", [0, -1])
+def test_compiled_sampler_rejects_non_positive_warmup_count(num_warmup: int) -> None:
+    compiled = compile_sampler(parameterless_bound())
+
+    with pytest.raises(ValueError, match="num_warmup must be at least 1"):
+        compiled.sample(seed=0, num_warmup=num_warmup, num_samples=10)
+
+
+@pytest.mark.parametrize("num_samples", [0, -1])
+def test_compiled_sampler_rejects_non_positive_sample_count(num_samples: int) -> None:
+    compiled = compile_sampler(parameterless_bound())
+
+    with pytest.raises(ValueError, match="num_samples must be at least 1"):
+        compiled.sample(seed=0, num_warmup=10, num_samples=num_samples)
+
+
+@pytest.mark.parametrize("num_warmup", [0, -1])
+def test_sample_rejects_non_positive_warmup_count(num_warmup: int) -> None:
+    with pytest.raises(ValueError, match="num_warmup must be at least 1"):
+        sample(parameterless_bound(), seed=0, num_warmup=num_warmup, num_samples=10)
+
+
+@pytest.mark.parametrize("num_samples", [0, -1])
+def test_sample_rejects_non_positive_sample_count(num_samples: int) -> None:
+    with pytest.raises(ValueError, match="num_samples must be at least 1"):
+        sample(parameterless_bound(), seed=0, num_warmup=10, num_samples=num_samples)
+
+
+def test_compiled_sampler_returns_empty_result_for_parameterless_model() -> None:
+    compiled = compile_sampler(parameterless_bound())
+
+    result = compiled.sample(seed=0, num_warmup=10, num_samples=10, num_chains=4)
+
+    assert result.samples == {}
+    assert result.diagnostics.warmup.is_divergent.shape == (4, 10)
+    assert result.diagnostics.sampling.is_divergent.shape == (4, 10)
+    assert result.adaptation.step_size.shape == (4,)
+    assert jnp.all(jnp.isfinite(result.adaptation.step_size))
+    assert result.settings.max_tree_depth == 10
+    assert not jnp.any(result.diagnostics.warmup.is_divergent)
+    assert not jnp.any(result.diagnostics.sampling.is_divergent)
+    assert jnp.all(jnp.isnan(result.diagnostics.warmup.acceptance_rate))
+    assert jnp.all(jnp.isnan(result.diagnostics.sampling.acceptance_rate))
+
+
+def test_compiled_sampler_preserves_zero_sized_parameter_results() -> None:
+    meta = ModelMeta(
+        params={"theta": ResolvedParam(Normal(ConstNode(0.0), ConstNode(1.0)), None, 0)},
+        data={},
+        observed_nodes=(),
+        expressions={},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={},
+        param_shapes={"theta": (0,)},
+        n_params=0,
+    )
+
+    compiled = compile_sampler(bound)
+
+    result = compiled.sample(seed=0, num_warmup=2, num_samples=3, num_chains=4)
+
+    assert set(result.samples) == {"theta"}
+    assert result.samples["theta"].shape == (4, 3, 0)
+    assert result.diagnostics.warmup.is_divergent.shape == (4, 2)
+    assert result.diagnostics.sampling.is_divergent.shape == (4, 3)
+    assert result.adaptation.step_size.shape == (4,)
+    assert jnp.all(jnp.isfinite(result.adaptation.step_size))

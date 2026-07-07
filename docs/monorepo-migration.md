@@ -1,7 +1,7 @@
 # Monorepo migration plan
 
 Decided direction (interview, 2026-07-07): merge the Python packages —
-bayeswire, jaxstanv5, bayescycle, bayesite-viz, bayesite-idata — into one
+bayeswire, bayesjax, bayescycle, bayesite-viz, bayesite-idata — into one
 uv-workspace monorepo publishing lockstep versions to PyPI. **bayesite
 (Rust) stays a separate repo**: it keeps vendoring spec + fixtures by
 byte-reviewed file copy and keeps shipping the engine as a released binary.
@@ -56,16 +56,16 @@ change on our side — the one nondeterministic resolution in the toolchain.
 **Decision (user, 2026-07-07): the bayescycle repo becomes the monorepo
 and keeps its name** — the repo is named after the user-facing entry
 point (`uv tool install bayescycle`). bayescycle's own tree moves to
-`packages/bayescycle` by `git mv`; bayeswire, jaxstanv5, and bayesite-viz
+`packages/bayescycle` by `git mv`; bayeswire, bayesjax, and bayesite-viz
 histories import via `git filter-repo`. bayeswire's `spec/` and the
 toolchain-level docs (releasing.md, this plan, toolchain.html) move to
 the monorepo root in a follow-up commit; package-level docs (e.g.
 bayeswire's invariants.md) stay with their package. The bayeswire,
-jaxstanv5, and bayesite-viz repos archive at cutover (step 4); archived
+bayesjax, and bayesite-viz repos archive at cutover (step 4); archived
 repos stay readable, so historical git-URL pins keep resolving.
 
 **Refinement — bayesite-viz stays out of the root workspace.** The root
-uv workspace contains bayeswire, jaxstanv5, bayescycle only.
+uv workspace contains bayeswire, bayesjax, bayescycle only.
 `packages/bayesite-viz` and `packages/bayesite-idata` live in the repo
 and version lockstep, but are standalone uv projects (own dev groups,
 bayeswire test fixture as a path source), NOT workspace members —
@@ -73,11 +73,11 @@ otherwise the workspace lock would force JAX and the arviz stack to
 co-resolve in dev, recreating the exact coupling the uvx boundary
 exists to prevent.
 
-- Layout: `packages/{bayeswire,jaxstanv5,bayescycle,bayesite-viz,bayesite-idata}`,
+- Layout: `packages/{bayeswire,bayesjax,bayescycle,bayesite-viz,bayesite-idata}`,
   root `pyproject.toml` declaring the uv workspace with
   `{ workspace = true }` sources; `spec/` and `docs/` stay at the root
   (the spec is toolchain-normative, not package-internal).
-- Import jaxstanv5, bayescycle, bayesite-viz histories with
+- Import bayesjax, bayescycle, bayesite-viz histories with
   `git filter-repo --to-subdirectory-filter` merges; bayesite-viz's own
   two-package workspace flattens into the root workspace.
 - Replace all cross-package git-URL pins with workspace path deps;
@@ -86,7 +86,7 @@ exists to prevent.
 - **Red→green**: the merged test suites are the green bar; new red tests
   only where behavior is new — a workspace-level guard that bayescycle's
   built metadata depends on bayeswire alone, and that no package other
-  than jaxstanv5 (and bayescycle's `[inproc]` extra) can import JAX.
+  than bayesjax (and bayescycle's `[inproc]` extra) can import JAX.
 - `projects/` sibling checkouts shrink to `projects/bayesite` only.
 - **Docs**: root AGENTS.md/CLAUDE.md rewritten for the workspace (identity
   per package, one validation command block); per-package AGENTS.md where
@@ -113,7 +113,7 @@ exists to prevent.
 ## Step 3 — lockstep versioning and PyPI publishing
 
 - **Precondition**: confirm PyPI name availability for all five
-  distributions (`bayeswire`, `jaxstanv5`, `bayescycle`, `bayesite-viz`,
+  distributions (`bayeswire`, `bayesjax`, `bayescycle`, `bayesite-viz`,
   `bayesite-idata`); reserve immediately. A taken name is a naming
   decision, not a blocker — flag it.
 - One version for all five packages, starting at **0.3.0** (above every

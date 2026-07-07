@@ -5,8 +5,8 @@ import pytest
 from bayescycle._errors import WorkflowError
 from bayescycle._workflow.capabilities import (
     BAYESITE,
+    BAYESJAX,
     FIRST_PARTY_BACKENDS,
-    JAXSTANV5,
     BackendCapability,
     BackendId,
 )
@@ -31,27 +31,27 @@ def test_backend_ids_are_open_values_resolved_by_catalog() -> None:
 
     assert str(custom) == "custom-backend"
     assert custom != BAYESITE
-    assert custom != JAXSTANV5
+    assert custom != BAYESJAX
     assert FIRST_PARTY_BACKENDS.resolve("bayesite") == BAYESITE
-    assert FIRST_PARTY_BACKENDS.resolve("jaxstanv5") == JAXSTANV5
+    assert FIRST_PARTY_BACKENDS.resolve("bayesjax") == BAYESJAX
 
-    with pytest.raises(WorkflowError, match="--backend must be one of: bayesite, jaxstanv5"):
+    with pytest.raises(WorkflowError, match="--backend must be one of: bayesite, bayesjax"):
         FIRST_PARTY_BACKENDS.resolve("missing")
 
 
 def test_first_party_catalog_declares_capability_support() -> None:
-    assert FIRST_PARTY_BACKENDS.choices() == ("bayesite", "jaxstanv5")
+    assert FIRST_PARTY_BACKENDS.choices() == ("bayesite", "bayesjax")
     assert FIRST_PARTY_BACKENDS.choices_for(BackendCapability.SIMULATE) == ("bayesite",)
     assert FIRST_PARTY_BACKENDS.choices_for(BackendCapability.SAMPLE) == (
         "bayesite",
-        "jaxstanv5",
+        "bayesjax",
     )
 
     FIRST_PARTY_BACKENDS.require(BAYESITE, BackendCapability.SIMULATE)
-    FIRST_PARTY_BACKENDS.require(JAXSTANV5, BackendCapability.SAMPLE)
+    FIRST_PARTY_BACKENDS.require(BAYESJAX, BackendCapability.SAMPLE)
 
     with pytest.raises(
         WorkflowError,
-        match="backend jaxstanv5 does not support bayescycle capability simulate",
+        match="backend bayesjax does not support bayescycle capability simulate",
     ):
-        FIRST_PARTY_BACKENDS.require(JAXSTANV5, BackendCapability.SIMULATE)
+        FIRST_PARTY_BACKENDS.require(BAYESJAX, BackendCapability.SIMULATE)

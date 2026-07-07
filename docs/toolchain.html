@@ -264,7 +264,7 @@
     Deterministic, replayable, and auditable. The customer is an agent — and the
     human auditing it — so the product is trustworthy <em>process</em>, not a
     sampler. This page explains the philosophy, walks a model from Python class
-    to plots through <span class="m">jaxstanv5</span> and
+    to plots through <span class="m">bayesjax</span> and
     <span class="m">bayesite</span>, and shows how CI holds the contract together.
   </p>
 </header>
@@ -321,7 +321,7 @@
     bytes, never packages.</p>
   </div>
   <div class="diagram">
-    <svg viewBox="0 0 960 420" role="img" aria-label="Repository map: bayescycle depends on bayeswire and optionally jaxstanv5; jaxstanv5 depends on bayeswire; bayesite vendors files from bayeswire; bayesite-viz consumes the artifact corpus.">
+    <svg viewBox="0 0 960 420" role="img" aria-label="Repository map: bayescycle depends on bayeswire and optionally bayesjax; bayesjax depends on bayeswire; bayesite vendors files from bayeswire; bayesite-viz consumes the artifact corpus.">
       <defs>
         <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-soft)"></path>
@@ -343,9 +343,9 @@
       <text x="480" y="48" text-anchor="middle" font-size="15" font-weight="700">bayescycle</text>
       <text x="480" y="68" text-anchor="middle" font-size="11" fill="var(--ink-soft)">workflow harness · run directories</text>
 
-      <!-- jaxstanv5 (left) -->
+      <!-- bayesjax (left) -->
       <rect x="40" y="160" width="220" height="100" rx="6" fill="var(--oracle-soft)" stroke="var(--oracle)" stroke-width="1.5"></rect>
-      <text x="150" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="var(--oracle)">jaxstanv5</text>
+      <text x="150" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="var(--oracle)">bayesjax</text>
       <text x="150" y="210" text-anchor="middle" font-size="11" fill="var(--ink-soft)">JAX / BlackJAX backend</text>
       <text x="150" y="227" text-anchor="middle" font-size="11" fill="var(--ink-soft)">bind · NUTS · diagnostics</text>
       <text x="150" y="244" text-anchor="middle" font-size="11" fill="var(--ink-soft)">float64 oracle for the corpus</text>
@@ -366,14 +366,14 @@
       <!-- bayescycle -> bayeswire -->
       <line x1="455" y1="90" x2="455" y2="146" stroke="var(--wire)" stroke-width="2" marker-end="url(#arrw)"></line>
       <text x="447" y="122" text-anchor="end" font-size="10.5" fill="var(--ink-soft)">pinned dep</text>
-      <!-- bayescycle -> jaxstanv5 (optional) -->
+      <!-- bayescycle -> bayesjax (optional) -->
       <path d="M 368 68 C 210 80 150 100 150 156" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arr)"></path>
       <text x="215" y="98" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">[inproc] extra, pinned</text>
       <!-- bayescycle -> bayesite (invokes) -->
       <path d="M 592 68 C 750 80 810 100 810 156" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#arr)"></path>
       <text x="748" y="98" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">invokes binary (default)</text>
       <text x="748" y="112" text-anchor="middle" font-size="9.5" fill="var(--ink-soft)">pinned release, auto-provisioned + cached</text>
-      <!-- jaxstanv5 -> bayeswire -->
+      <!-- bayesjax -> bayeswire -->
       <line x1="264" y1="210" x2="356" y2="210" stroke="var(--wire)" stroke-width="2" marker-end="url(#arrw)"></line>
       <text x="310" y="200" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)">pinned dep</text>
       <!-- bayeswire -> bayesite (vendored, dashed; drawn from bayesite pulling bytes) -->
@@ -476,7 +476,7 @@
           is ever installed</strong>.</p>
         </div>
         <div class="lane inproc">
-          <h3>jaxstanv5 <span class="tag">[inproc] extra</span></h3>
+          <h3>bayesjax <span class="tag">[inproc] extra</span></h3>
           <p><span class="m">bind_model(model_cls, values)</span> is the one
           explicit transition from metadata to bound arrays; BlackJAX NUTS runs
           in-process. Also the float64 oracle that produced the corpus's
@@ -587,7 +587,7 @@
       <rect x="20" y="20" width="240" height="70" rx="6" fill="var(--panel)" stroke="var(--panel-line)" stroke-width="1.5"></rect>
       <text x="140" y="48" text-anchor="middle" font-size="13" font-weight="700">producer</text>
       <text x="140" y="66" text-anchor="middle" font-size="11" fill="var(--ink-soft)">bayescycle + backend</text>
-      <text x="140" y="80" text-anchor="middle" font-size="10" fill="var(--ink-soft)">bayesite or jaxstanv5 [inproc]</text>
+      <text x="140" y="80" text-anchor="middle" font-size="10" fill="var(--ink-soft)">bayesite or bayesjax [inproc]</text>
 
       <rect x="340" y="20" width="300" height="70" rx="6" fill="var(--rust-soft)" stroke="var(--rust)" stroke-width="1.5"></rect>
       <text x="490" y="48" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rust)">run/posterior.ndjson</text>
@@ -616,7 +616,7 @@
     </svg>
     <p class="caption">Both backends write the same artifact shape into the
     same canonical <span class="m">run/data.json</span> — so a fit sampled on
-    jaxstanv5 recomputes to the fingerprint the Rust engine expects.</p>
+    bayesjax recomputes to the fingerprint the Rust engine expects.</p>
   </div>
 
   <div class="fp-outcomes">
@@ -656,7 +656,7 @@
     </div>
     <div class="fp-pin">
       <h3>bayescycle end-to-end</h3>
-      <p>Samples on jaxstanv5, then passes bayesite's posterior checks against
+      <p>Samples on bayesjax, then passes bayesite's posterior checks against
       the real engine — cross-backend, not just cross-language.</p>
     </div>
   </div>
@@ -705,7 +705,7 @@
       </ul>
     </div>
     <div class="gate">
-      <h3><span class="repo">jaxstanv5</span> <span class="kind">every push</span></h3>
+      <h3><span class="repo">bayesjax</span> <span class="kind">every push</span></h3>
       <ul>
         <li><strong>consume-conformance</strong> — decode every corpus fixture
         from the <em>installed pin</em>, bind from the fixture's own data,
@@ -738,7 +738,7 @@
         engine binary (sha256-verified, via the shared provisioning code — no
         source build), and runs the end-to-end test: bayeswire model → run
         directory → sample → diagnose</li>
-        <li>full loop with the <code>[inproc]</code> extra (real jaxstanv5 runs)</li>
+        <li>full loop with the <code>[inproc]</code> extra (real bayesjax runs)</li>
       </ul>
     </div>
     <div class="gate">
@@ -772,7 +772,7 @@
       version decision — <code>bayeswire_ir</code> stays at 1 until a real
       format change; package versions move freely underneath as long as
       produce-conformance bytes are stable.</li>
-      <li><strong>Bump the pins, one PR per consumer.</strong> jaxstanv5 and
+      <li><strong>Bump the pins, one PR per consumer.</strong> bayesjax and
       bayescycle move their exact-commit dependency; bayesite re-runs
       <code>scripts/vendor_bayeswire.py</code>. <em>The pin-bump diff is the
       compatibility review</em> — a consumer upgrades by reading exactly what

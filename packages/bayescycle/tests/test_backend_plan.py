@@ -50,13 +50,13 @@ def test_complete_stage_plan_can_be_mixed() -> None:
         BackendPlanRequest(
             backend=None,
             simulate_backend="bayesite",
-            recover_backend="jaxstanv5",
+            recover_backend="bayesjax",
             engine="/tmp/bayesite",
         )
     )
 
     assert isinstance(resolved.plan, ExplicitMixedBackendPlan)
-    assert resolved.as_json()["stages"] == {"simulate": "bayesite", "recover": "jaxstanv5"}
+    assert resolved.as_json()["stages"] == {"simulate": "bayesite", "recover": "bayesjax"}
 
 
 def test_partial_stage_override_fails() -> None:
@@ -75,7 +75,7 @@ def test_engine_does_not_select_bayesite_implicitly() -> None:
     with pytest.raises(WorkflowError, match="no bayesite backend stage was selected"):
         resolve_backend_plan(
             BackendPlanRequest(
-                backend="jaxstanv5",
+                backend="bayesjax",
                 simulate_backend=None,
                 recover_backend=None,
                 engine="/tmp/bayesite",
@@ -87,7 +87,7 @@ def test_backend_stage_support_is_validated() -> None:
     with pytest.raises(WorkflowError, match="does not support required stage simulate"):
         resolve_backend_plan(
             BackendPlanRequest(
-                backend="jaxstanv5",
+                backend="bayesjax",
                 simulate_backend=None,
                 recover_backend=None,
                 engine=None,
@@ -111,7 +111,7 @@ def test_mixed_toml_plan_resolves(tmp_path: Path) -> None:
     config.write_text(
         '[workflow]\nmode = "mixed"\n\n'
         '[stages.simulate]\nbackend = "bayesite"\n\n'
-        '[stages.recover]\nbackend = "jaxstanv5"\n\n'
+        '[stages.recover]\nbackend = "bayesjax"\n\n'
         '[backends.bayesite]\nengine = "/tmp/bayesite"\n',
         encoding="utf-8",
     )
@@ -120,7 +120,7 @@ def test_mixed_toml_plan_resolves(tmp_path: Path) -> None:
 
     assert resolved.as_json() == {
         "mode": "mixed",
-        "stages": {"simulate": "bayesite", "recover": "jaxstanv5"},
+        "stages": {"simulate": "bayesite", "recover": "bayesjax"},
         "backends": {"bayesite": {"engine": "/tmp/bayesite"}},
     }
 

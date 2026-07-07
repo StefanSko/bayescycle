@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, SupportsFloat, cast
 
+from bayesjax.diagnostics import ess, rhat
+from bayesjax.model.bound import BoundModel
 from bayeswire.ir import model_data_fingerprint as model_data_fingerprint
 from jax import Array
-from jaxstanv5.diagnostics import ess, rhat
-from jaxstanv5.model.bound import BoundModel
 
 
 class PosteriorArtifactError(RuntimeError):
@@ -100,7 +100,7 @@ def write_posterior_ndjson(
     """Write a v0 posterior draw stream for an in-process sampler result."""
     if not bound.param_shapes:
         raise PosteriorArtifactError(
-            "jaxstanv5 backend cannot write posterior.ndjson for a parameterless model; "
+            "bayesjax backend cannot write posterior.ndjson for a parameterless model; "
             "the v0 posterior artifact requires at least one free value"
         )
     _validate_result_shapes(bound, result, settings)
@@ -266,7 +266,7 @@ def _chain_stats(
     for depth in depths:
         if depth < 0 or depth > settings.max_tree_depth:
             raise PosteriorArtifactError(
-                f"jaxstanv5 reported tree depth {depth} outside configured max_tree_depth "
+                f"bayesjax reported tree depth {depth} outside configured max_tree_depth "
                 f"{settings.max_tree_depth}"
             )
         histogram[depth] += 1
@@ -296,7 +296,7 @@ def _validate_result_shapes(
 ) -> None:
     if result.settings.max_tree_depth != settings.max_tree_depth:
         raise PosteriorArtifactError(
-            "jaxstanv5 result max_tree_depth does not match requested artifact settings"
+            "bayesjax result max_tree_depth does not match requested artifact settings"
         )
     for name, shape in bound.param_shapes.items():
         expected = (settings.chains, settings.draws, *shape)

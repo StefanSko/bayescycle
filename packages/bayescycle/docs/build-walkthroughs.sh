@@ -10,7 +10,7 @@
 #              workflow goes back to square one with a respecified model before
 #              the simulation gate and real fit.
 #   mixed/     cross-backend loop. Same wide-prior rejection, then a Bayesite
-#              `simulate` hands a canonical data artifact to a jaxstanv5
+#              `simulate` hands a canonical data artifact to a bayesjax
 #              in-process recovery fit, checked back against truth by Bayesite.
 #
 # Difficulties hit while wiring this up are written up in
@@ -221,7 +221,7 @@ build_complete() {
 }
 
 # =========================================================================
-# MIXED workflow: Bayesite simulate -> jaxstanv5 in-process recovery fit.
+# MIXED workflow: Bayesite simulate -> bayesjax in-process recovery fit.
 # =========================================================================
 build_mixed() {
   local M="$DEMO/mixed"
@@ -238,27 +238,27 @@ mode = "mixed"
 backend = "bayesite"
 
 [stages.recover]
-backend = "jaxstanv5"
+backend = "bayesjax"
 TOML
   ( cd "$PROJECT" && uv run bayescycle workflow-plan --config "$M/workflow.toml" ) > "$M/plan.json"
 
-  echo "[mixed] iteration 1: wide priors -> prior-predictive gate (jaxstanv5 in-process)"
+  echo "[mixed] iteration 1: wide priors -> prior-predictive gate (bayesjax in-process)"
   bc prior-predictive "$M/model_v1.py" --data "$M/inputs.json" \
-    -o "$M/run-prior-rejected" --backend jaxstanv5 --seed 123 --draws 400
+    -o "$M/run-prior-rejected" --backend bayesjax --seed 123 --draws 400
   prior_plot "$M/run-prior-rejected/prior_predictive.ndjson" \
     "$M/viz/prior_predictive_rejected.png" "Iteration 1 (wide priors): prior predictive is absurd"
 
-  echo "[mixed] iteration 2: respecified priors (jaxstanv5 in-process)"
+  echo "[mixed] iteration 2: respecified priors (bayesjax in-process)"
   bc prior-predictive "$M/model.py" --data "$M/inputs.json" \
-    -o "$M/run-prior" --backend jaxstanv5 --seed 123 --draws 400
+    -o "$M/run-prior" --backend bayesjax --seed 123 --draws 400
   prior_plot "$M/run-prior/prior_predictive.ndjson" \
     "$M/viz/prior_predictive.png" "Iteration 2 (respecified priors): prior predictive is plausible"
 
-  echo "[mixed] cross-backend handoff: bayesite simulate -> jaxstanv5 fit"
+  echo "[mixed] cross-backend handoff: bayesite simulate -> bayesjax fit"
   bc simulate "$M/model.py" --data "$M/inputs.json" --truth "$M/truth.json" \
     -o "$M/run-sim" --backend bayesite --engine "$ENG" --seed 1
   bc sample "$M/model.py" --data "$M/run-sim/simulated_data.json" \
-    -o "$M/run-recover-fit" --backend jaxstanv5 \
+    -o "$M/run-recover-fit" --backend bayesjax \
     --seed 2 --chains 4 --warmup 400 --draws 500 --max-treedepth 8 --target-accept 0.9
   bc recover-check "$M/run-recover-fit" --truth "$M/truth.json" \
     --targets "$M/targets.json" --interval 0.8 --engine "$ENG"

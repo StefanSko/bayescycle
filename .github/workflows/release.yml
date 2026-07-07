@@ -1,11 +1,11 @@
 # Lockstep release: publishing all five distributions (bayeswire,
-# jaxstanv5, bayescycle, bayesite-viz, bayesite-idata) to PyPI on a tag
+# bayesjax, bayescycle, bayesite-viz, bayesite-idata) to PyPI on a tag
 # (monorepo migration step 3, see docs/monorepo-migration.md).
 #
 # Publishing requires the five pending trusted publishers to be registered
 # on pypi.org before the first tag: owner StefanSko, repo bayescycle,
 # workflow release.yml, environment pypi -- one trusted publisher per
-# distribution name (bayeswire, jaxstanv5, bayescycle, bayesite-viz,
+# distribution name (bayeswire, bayesjax, bayescycle, bayesite-viz,
 # bayesite-idata). Without that registration, `uv publish`'s OIDC exchange
 # is rejected by PyPI.
 
@@ -50,10 +50,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Build workspace distributions (bayeswire, jaxstanv5, bayescycle)
+      - name: Build workspace distributions (bayeswire, bayesjax, bayescycle)
         run: |
           uv build --package bayeswire --out-dir dist
-          uv build --package jaxstanv5 --out-dir dist
+          uv build --package bayesjax --out-dir dist
           uv build --package bayescycle --out-dir dist
       - name: Build bayesite-viz and bayesite-idata (standalone uv projects)
         run: |

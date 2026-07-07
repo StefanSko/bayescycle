@@ -89,7 +89,7 @@ class BackendCatalog:
 
 
 BAYESITE = BackendId("bayesite")
-JAXSTANV5 = BackendId("jaxstanv5")
+BAYESJAX = BackendId("bayesjax")
 
 FIRST_PARTY_BACKENDS = BackendCatalog(
     providers=(
@@ -110,7 +110,7 @@ FIRST_PARTY_BACKENDS = BackendCatalog(
             ),
         ),
         BackendProvider(
-            id=JAXSTANV5,
+            id=BAYESJAX,
             capabilities=frozenset(
                 {
                     BackendCapability.SAMPLE,

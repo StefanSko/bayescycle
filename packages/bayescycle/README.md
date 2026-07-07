@@ -33,7 +33,7 @@ time they fetch something; subsequent runs are cache hits.
   its normative spec, and the conformance corpus. Stdlib only.
 - **bayesite**: Rust engine and IR-level CLI. It accepts IR plus data and writes
   draws. It stays dependency-free and WASM-clean.
-- **jaxstanv5**: JAX/BlackJAX sampling backend for bayeswire models. Optional
+- **bayesjax**: JAX/BlackJAX sampling backend for bayeswire models. Optional
   here; installed via the `[inproc]` extra.
 - **bayescycle**: Python workflow harness. It executes a Python model file,
   serializes IR, invokes a backend, and owns run-directory ergonomics and the
@@ -81,7 +81,7 @@ run/posterior.ndjson
 
 Use `--show-plan` to print the planned backend action without creating or rewriting
 run-directory artifacts. Plan output records both the selected backend and the
-integration mode: Bayesite is an `external-command` adapter, while jaxstanv5 is
+integration mode: Bayesite is an `external-command` adapter, while bayesjax is
 an `in-process-python` adapter.
 
 If a Python file declares more than one model, choose one explicitly:
@@ -100,7 +100,7 @@ The default backend invokes the Bayesite executable. An in-process JAX backend i
 available when the optional dependencies are installed:
 
 ```bash
-bayescycle sample model.py --data data.json -o run/ --backend jaxstanv5 \
+bayescycle sample model.py --data data.json -o run/ --backend bayesjax \
   --seed 123 --chains 2 --warmup 100 --draws 100 --max-treedepth 10 --target-accept 0.8
 ```
 
@@ -140,7 +140,7 @@ An executed mixed-backend walkthrough is available as
 generated from a real, intentionally non-linear run: a wide-prior model is
 rejected at the prior-predictive gate and respecified, then an explicit mixed
 TOML plan drives the canonical data artifact handoff from a Bayesite simulation
-to a jaxstanv5 in-process recovery fit checked back against truth by Bayesite.
+to a bayesjax in-process recovery fit checked back against truth by Bayesite.
 
 A fully worked end-to-end walkthrough of the complete workflow is available as a
 self-contained page:
@@ -189,12 +189,12 @@ if sources drifted, and prints a per-artifact byte comparison. Use `--engine` on
 `replay` when replaying a Bayesite run with a non-default executable.
 
 `prior-predictive` supports both backends. `simulate`, `recover`, and `sbc` are
-currently Bayesite-backed; selecting `--backend jaxstanv5` returns a clear
+currently Bayesite-backed; selecting `--backend bayesjax` returns a clear
 unsupported-profile error rather than falling back silently.
 
 `simulate` writes `runs/sim-0001/simulated_data.json` as canonical
 `bayescycle.data.json.v1`, so a downstream sample command can use it with the
-same backend or with `--backend jaxstanv5` through the adapter boundary. For
+same backend or with `--backend bayesjax` through the adapter boundary. For
 multi-stage intent, validate the backend plan before creating run directories:
 
 ```bash
@@ -326,4 +326,4 @@ optional dimension labels in `dims.json`, and sampler facts explicitly exposed
 by the selected backend. It must not invent model semantics, infer labels from
 shapes/names, contain inference algorithms, distribution math, IR evaluation,
 or sampler logic. Authoring semantics belong to `bayeswire`; sampler facts
-belong to `jaxstanv5` or Bayesite.
+belong to `bayesjax` or Bayesite.

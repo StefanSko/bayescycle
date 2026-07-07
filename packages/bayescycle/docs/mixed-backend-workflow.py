@@ -5,10 +5,10 @@ Unlike the older static planning page, this regenerates
 ``mixed-backend-workflow.html`` from a *real* non-linear mixed-backend run:
 
   1. Iteration 1 -- a model with deliberately wide priors fails the
-     prior-predictive gate (run in-process on jaxstanv5), so the workflow goes
+     prior-predictive gate (run in-process on bayesjax), so the workflow goes
      back to square one and the model is respecified.
   2. Iteration 2 -- Bayesite ``simulate`` produces a canonical
-     ``bayescycle.data.json.v1`` artifact, which a jaxstanv5 in-process recovery
+     ``bayescycle.data.json.v1`` artifact, which a bayesjax in-process recovery
      fit consumes through the adapter boundary, and Bayesite ``recover-check``
      compares the fit back to truth.
 
@@ -136,13 +136,13 @@ plan is resolved before any run directory is created, and stages exchange
 canonical <code>bayescycle.data.json.v1</code> artifacts. This page is generated
 from a <strong>real executed run</strong>: a wide-prior model is rejected at the
 prior-predictive gate, the model is respecified, then a Bayesite simulation hands
-off to an in-process jaxstanv5 recovery fit.</p>
+off to an in-process bayesjax recovery fit.</p>
 <div class="pipeline">
   <span>model v1<br><small>wide priors</small></span><span class="arr">&rarr;</span>
-  <span>prior predictive<br><small>jaxstanv5</small></span><span class="arr stop">&#10007;</span>
+  <span>prior predictive<br><small>bayesjax</small></span><span class="arr stop">&#10007;</span>
   <span class="redo">respecify<br><small>back to square one</small></span><span class="arr">&rarr;</span>
   <span>simulate<br><small>bayesite</small></span><span class="arr">&rarr;</span>
-  <span>recover fit<br><small>jaxstanv5</small></span><span class="arr">&rarr;</span>
+  <span>recover fit<br><small>bayesjax</small></span><span class="arr">&rarr;</span>
   <span>recover-check<br><small>bayesite</small></span>
 </div>
 </section>
@@ -154,7 +154,7 @@ off to an in-process jaxstanv5 recovery fit.</p>
 {code("uv run bayescycle workflow-plan --config workflow.toml", "bash")}
 {json_block(plan)}
 <p class="note">Partial assignments (<code>--simulate-backend</code> alone) and backend-specific
-options that select no stage (<code>--engine</code> with <code>--backend jaxstanv5</code>) still
+options that select no stage (<code>--engine</code> with <code>--backend bayesjax</code>) still
 fail before any writes &mdash; see the run-directory contract docs.</p>
 </section>
 
@@ -163,7 +163,7 @@ fail before any writes &mdash; see the run-directory contract docs.</p>
 <section>
 <h2>A wide-prior model fails prior predictive</h2>
 {code(model_v1, "python")}
-{code("bayescycle prior-predictive model_v1.py --data inputs.json -o run-prior-rejected/ --backend jaxstanv5 --seed 123 --draws 400", "bash")}
+{code("bayescycle prior-predictive model_v1.py --data inputs.json -o run-prior-rejected/ --backend bayesjax --seed 123 --draws 400", "bash")}
 <p>The prior predictive distribution of <code>y</code> is wildly implausible:
 prior-implied <code>y &isin; [{rej_lo:.0f}, {rej_hi:.0f}]</code> while the observed
 data sits in <code>[{obs_lo:.1f}, {obs_hi:.1f}]</code>.</p>
@@ -179,37 +179,37 @@ is a gate, not a formality.</p>
 <section>
 <h2>Tightened priors pass the gate</h2>
 {code(model_v2, "python")}
-{code("bayescycle prior-predictive model.py --data inputs.json -o run-prior/ --backend jaxstanv5 --seed 123 --draws 400", "bash")}
+{code("bayescycle prior-predictive model.py --data inputs.json -o run-prior/ --backend bayesjax --seed 123 --draws 400", "bash")}
 <p>Prior-implied <code>y &isin; [{ok_lo:.0f}, {ok_hi:.0f}]</code> now brackets the
 observed range without dwarfing it.</p>
 <figure>{img(VIZ / "prior_predictive.png", "respecified prior predictive")}</figure>
 </section>
 
 <section>
-<h2>Canonical artifact handoff: Bayesite simulate &rarr; jaxstanv5 fit</h2>
+<h2>Canonical artifact handoff: Bayesite simulate &rarr; bayesjax fit</h2>
 <p>Bayesite simulates fake data from a known truth and writes a canonical data document:</p>
 {code("bayescycle simulate model.py --data inputs.json --truth truth.json -o run-sim/ --backend bayesite --engine $BAYESITE", "bash")}
 <p><code>run-sim/simulated_data.json</code> is <code>{esc(sim_doc.get("format", "?"))}</code>;
 its declared inputs ({", ".join(r for r, _ in sim_input_roles)}) and generated
 observed <code>y</code> are backend-neutral.</p>
-<p>The recovery fit then runs <strong>in-process on jaxstanv5</strong>, consuming the
+<p>The recovery fit then runs <strong>in-process on bayesjax</strong>, consuming the
 canonical artifact through the adapter without ever reading Bayesite-native JSON:</p>
-{code("bayescycle sample model.py --data run-sim/simulated_data.json -o run-recover-fit/ --backend jaxstanv5 --seed 2 --chains 4 --warmup 400 --draws 500", "bash")}
+{code("bayescycle sample model.py --data run-sim/simulated_data.json -o run-recover-fit/ --backend bayesjax --seed 2 --chains 4 --warmup 400 --draws 500", "bash")}
 <p>The append-only provenance makes the cross-backend edge explicit. The fit's
 <code>data</code> input is exactly the simulator's output:</p>
-{json_block({"simulate (bayesite) output": "run-sim/simulated_data.json", "fit (jaxstanv5) input.source_path": fit_input["source_path"].split("/")[-2] + "/" + fit_input["source_path"].split("/")[-1], "input.format": fit_input.get("format"), "input.sha256": fit_input["sha256"][:23] + "..."})}
+{json_block({"simulate (bayesite) output": "run-sim/simulated_data.json", "fit (bayesjax) input.source_path": fit_input["source_path"].split("/")[-2] + "/" + fit_input["source_path"].split("/")[-1], "input.format": fit_input.get("format"), "input.sha256": fit_input["sha256"][:23] + "..."})}
 </section>
 
 <section>
-<h2>Recover-check: jaxstanv5 fit vs Bayesite-supplied truth</h2>
-<p>Bayesite <code>recover-check</code> reads the jaxstanv5 posterior stream
+<h2>Recover-check: bayesjax fit vs Bayesite-supplied truth</h2>
+<p>Bayesite <code>recover-check</code> reads the bayesjax posterior stream
 (<code>{fit_header["chain_count"]}</code> chains &times; <code>{fit_header["draw_count"] // fit_header["chain_count"]}</code> draws)
 and compares it back to truth &mdash; no fingerprint barrier because the check
 consumes only the fit and the truth:</p>
 {code("bayescycle recover-check run-recover-fit/ --truth truth.json --targets targets.json --interval 0.8 --engine $BAYESITE", "bash")}
 {recovery_table()}
 <p class="note">Factual report: equal-tailed interval containment and ranks, no pass/fail verdict.
-R-hat / ESS are from the in-process jaxstanv5 fit;
+R-hat / ESS are from the in-process bayesjax fit;
 <code>bayescycle diagnose</code> (Bayesite) recomputes them cross-backend without issue.</p>
 </section>
 
@@ -221,7 +221,7 @@ R-hat / ESS are from the in-process jaxstanv5 fit;
 <p>These flat records serialize directly into <code>docs/walkthrough-runs.sqlite</code>
 (see <code>docs/run-provenance-db.py</code>), where the cross-backend handoff above
 appears as a row in <code>workflow_edges</code>:</p>
-{code("SELECT p.run_dir, e.producer_role, c.run_dir, e.consumer_role,\n       p.backend || ' -> ' || c.backend AS handoff\nFROM workflow_edges e\nJOIN runs p ON p.id = e.producer_run_id\nJOIN runs c ON c.id = e.consumer_run_id;\n-- mixed/run-sim  simulated_data  mixed/run-recover-fit  data  bayesite -> jaxstanv5", "sql")}
+{code("SELECT p.run_dir, e.producer_role, c.run_dir, e.consumer_role,\n       p.backend || ' -> ' || c.backend AS handoff\nFROM workflow_edges e\nJOIN runs p ON p.id = e.producer_run_id\nJOIN runs c ON c.id = e.consumer_run_id;\n-- mixed/run-sim  simulated_data  mixed/run-recover-fit  data  bayesite -> bayesjax", "sql")}
 </section>
 """
 
@@ -252,7 +252,7 @@ figure img{{width:100%;height:auto;display:block}}
 .divider{{text-align:center;color:#0969da;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px;margin:30px 0 0;border-top:1px solid #e3e6ea;padding-top:14px}}
 .redo-box{{background:#fff3cd;border:1px solid #e0c869;border-radius:8px;padding:10px 14px}}
 .bk{{font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600}}
-.bk-bayesite{{background:#dde7ff;color:#0a3069}} .bk-jaxstanv5{{background:#d7f5dd;color:#0a5128}}
+.bk-bayesite{{background:#dde7ff;color:#0a3069}} .bk-bayesjax{{background:#d7f5dd;color:#0a5128}}
 </style></head>
 <body>
 {body}

@@ -3,7 +3,7 @@
 ## Project identity
 
 `bayescycle` is the Python workflow CLI that connects `bayeswire` model files
-to the Bayesite Rust engine (default) or the jaxstanv5 in-process backend
+to the Bayesite Rust engine (default) or the bayesjax in-process backend
 (optional, via the `[inproc]` extra).
 
 It owns:

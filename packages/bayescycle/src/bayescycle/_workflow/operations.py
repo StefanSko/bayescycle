@@ -85,7 +85,7 @@ def _bayesite_engine_metadata(backend: object) -> RunMetadataEngine | None:
     """Return recorded engine provenance for a Bayesite-backed run, else None.
 
     Narrow, explicit isinstance check rather than a generic protocol member:
-    engine provenance is Bayesite-specific and other backends (jaxstanv5,
+    engine provenance is Bayesite-specific and other backends (bayesjax,
     test fakes) have no notion of an external engine executable to record.
     """
     if isinstance(backend, BayesiteBackend):

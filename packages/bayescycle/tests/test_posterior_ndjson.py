@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("jaxstanv5", reason="posterior artifact writer is inproc-backend code")
+pytest.importorskip("bayesjax", reason="posterior artifact writer is inproc-backend code")
 
 from bayescycle._run_artifacts.posterior_ndjson import (  # noqa: E402
     PosteriorArtifactError,

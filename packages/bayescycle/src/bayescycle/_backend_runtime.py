@@ -31,7 +31,7 @@ from bayescycle.backends.bayesite.preflight import (
     preflight_bayesite_engine,
 )
 from bayescycle.backends.bayesite.provisioning import ensure_engine
-from bayescycle.backends.jaxstanv5 import Jaxstanv5Backend
+from bayescycle.backends.bayesjax import BayesjaxBackend
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def resolve_sample_backend(options: BackendRuntimeOptions) -> OpaqueSampleBacken
     if backend == BAYESITE:
         return _bayesite_backend(options, command="sample", stage="sample")
     _reject_bayesite_options_for_non_bayesite(backend, options)
-    return Jaxstanv5Backend()
+    return BayesjaxBackend()
 
 
 def resolve_prior_predictive_backend(
@@ -77,7 +77,7 @@ def resolve_prior_predictive_backend(
             stage="prior-predictive",
         )
     _reject_bayesite_options_for_non_bayesite(backend, options)
-    return Jaxstanv5Backend()
+    return BayesjaxBackend()
 
 
 def resolve_simulate_backend(options: BackendRuntimeOptions) -> OpaqueSimulateBackend:

@@ -8,7 +8,7 @@ Corpus files pin the wire format. Review every diff this produces, add a
 spec changelog entry, and decide whether the change requires a format
 version bump before committing it. The evaluation fixtures under
 ``corpus/fixtures/`` carry JAX-oracle values and are regenerated from a
-jaxstanv5 checkout (see ``corpus/README.md``), not by this script; the
+bayesjax checkout (see ``corpus/README.md``), not by this script; the
 canonical data documents under ``corpus/data/`` and the fingerprint test
 vectors in ``fingerprints.json`` are derived from those fixtures here.
 """

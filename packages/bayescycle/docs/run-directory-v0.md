@@ -75,7 +75,7 @@ completed replay differs.
 Bayesite currently emits the initial posterior and workflow report shapes used
 by this contract. That does not make the artifact contract sampler-specific:
 Bayesite is one producer/consumer of the bayescycle run-directory v0 contract.
-The in-process jaxstanv5 backend currently writes compatible posterior and
+The in-process bayesjax backend currently writes compatible posterior and
 prior-predictive streams where it has public runtime support; unsupported
 workflow reports fail explicitly during preparation.
 

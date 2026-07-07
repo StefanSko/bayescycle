@@ -47,7 +47,7 @@ def test_engine_as_json_includes_version_and_sha256_when_set() -> None:
 def test_run_metadata_as_json_omits_engine_key_when_unset(tmp_path: Path) -> None:
     metadata = RunMetadata(
         kind="sample",
-        backend="jaxstanv5",
+        backend="bayesjax",
         model=_model(tmp_path),
         inputs=(),
         outputs=(),
@@ -102,7 +102,7 @@ def test_run_metadata_without_engine_round_trips_as_none(tmp_path: Path) -> None
     run_dir.mkdir()
     metadata = RunMetadata(
         kind="sample",
-        backend="jaxstanv5",
+        backend="bayesjax",
         model=_model(run_dir),
         inputs=(),
         outputs=(),

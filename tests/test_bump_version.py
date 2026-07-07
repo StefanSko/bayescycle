@@ -24,9 +24,9 @@ version = "0.2.0"
 dependencies = []
 """
 
-_JAXSTANV5_PYPROJECT = """\
+_BAYESJAX_PYPROJECT = """\
 [project]
-name = "jaxstanv5"
+name = "bayesjax"
 version = "0.1.0"
 dependencies = [
     "bayeswire",
@@ -45,7 +45,7 @@ dependencies = [
 
 [project.optional-dependencies]
 inproc = [
-    "jaxstanv5",
+    "bayesjax",
 ]
 """
 
@@ -72,7 +72,7 @@ FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION = "2100-01-01T00:00:00Z"
 def _write_fixture_repo(root: Path) -> None:
     layout = {
         "bayeswire": _BAYESWIRE_PYPROJECT,
-        "jaxstanv5": _JAXSTANV5_PYPROJECT,
+        "bayesjax": _BAYESJAX_PYPROJECT,
         "bayescycle": _BAYESCYCLE_PYPROJECT,
         "bayesite-viz": _BAYESITE_VIZ_PYPROJECT,
         "bayesite-idata": _BAYESITE_IDATA_PYPROJECT,
@@ -106,17 +106,17 @@ def test_bump_rewrites_all_versions_and_sibling_pins(tmp_path: Path) -> None:
 
     bump("0.3.0", repo_root=tmp_path, exclude_newer="2030-05-01T12:00:00Z")
 
-    for package in ("bayeswire", "jaxstanv5", "bayescycle", "bayesite-viz", "bayesite-idata"):
+    for package in ("bayeswire", "bayesjax", "bayescycle", "bayesite-viz", "bayesite-idata"):
         assert 'version = "0.3.0"' in _read(tmp_path, package, "pyproject.toml")
 
     bayescycle_text = _read(tmp_path, "bayescycle", "pyproject.toml")
     assert '"bayeswire==0.3.0"' in bayescycle_text
-    assert '"jaxstanv5==0.3.0"' in bayescycle_text
+    assert '"bayesjax==0.3.0"' in bayescycle_text
 
-    jaxstanv5_text = _read(tmp_path, "jaxstanv5", "pyproject.toml")
-    assert '"bayeswire==0.3.0"' in jaxstanv5_text
-    assert '"jax>=0.6.0"' in jaxstanv5_text
-    assert '"blackjax>=1.2.0"' in jaxstanv5_text
+    bayesjax_text = _read(tmp_path, "bayesjax", "pyproject.toml")
+    assert '"bayeswire==0.3.0"' in bayesjax_text
+    assert '"jax>=0.6.0"' in bayesjax_text
+    assert '"blackjax>=1.2.0"' in bayesjax_text
 
     uvx_runner_text = _read(
         tmp_path, "bayescycle", "src", "bayescycle", "backends", "bayesite_viz", "uvx_runner.py"
