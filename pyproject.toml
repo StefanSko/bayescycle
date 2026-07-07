@@ -15,15 +15,15 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["tests"]
+src = ["tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ty.src]
-include = ["tests"]
+include = ["tests", "scripts"]
 
 [tool.ty.environment]
 python = "./.venv"
 python-version = "3.12"
-root = ["./tests"]
+root = ["./tests", "./scripts"]

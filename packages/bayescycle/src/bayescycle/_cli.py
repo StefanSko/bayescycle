@@ -102,6 +102,7 @@ from bayescycle.backends.bayesite.provisioning import (
     ensure_engine,
 )
 from bayescycle.backends.bayesite_viz.uvx_runner import (
+    BAYESITE_IDATA_SOURCE,
     BAYESITE_VIZ_SOURCE,
     VIZ_VERBS,
     IdataOptions,
@@ -470,7 +471,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--engine", help="Bayesite executable forwarded as --bayesite (default: bayesite)"
     )
     _add_no_auto_provision_argument(idata)
-    idata.add_argument("--viz-source", help=argparse.SUPPRESS)
+    idata.add_argument("--idata-source", help=argparse.SUPPRESS)
 
     plot = subparsers.add_parser(
         "plot",
@@ -504,6 +505,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_no_auto_provision_argument(plot)
     plot.add_argument("--viz-source", help=argparse.SUPPRESS)
+    plot.add_argument("--idata-source", help=argparse.SUPPRESS)
 
     warmup = subparsers.add_parser(
         "warmup",
@@ -513,6 +515,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     warmup.add_argument("--viz-source", help=argparse.SUPPRESS)
+    warmup.add_argument("--idata-source", help=argparse.SUPPRESS)
 
     return parser
 
@@ -1259,6 +1262,11 @@ def _resolve_viz_source(namespace: argparse.Namespace) -> str:
     return override if override is not None else BAYESITE_VIZ_SOURCE
 
 
+def _resolve_idata_source(namespace: argparse.Namespace) -> str:
+    override = cast(str | None, getattr(namespace, "idata_source", None))
+    return override if override is not None else BAYESITE_IDATA_SOURCE
+
+
 def _parse_coords(values: list[str] | None) -> tuple[tuple[str, str], ...]:
     if not values:
         return ()
@@ -1305,7 +1313,7 @@ def _idata(namespace: argparse.Namespace) -> int:
             validate=validate,
             bayesite=_resolve_idata_engine(namespace, validate=validate),
         )
-        return run_idata(options, source=_resolve_viz_source(namespace))
+        return run_idata(options, source=_resolve_idata_source(namespace))
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -1320,7 +1328,7 @@ def _plot(namespace: argparse.Namespace) -> int:
         fit_path = cast(Path | None, namespace.fit_path)
         resolved_fit_path = fit_path if fit_path is not None else default_fit_path(run_dir)
         no_auto_idata = bool(cast(bool, namespace.no_auto_idata))
-        source = _resolve_viz_source(namespace)
+        viz_source = _resolve_viz_source(namespace)
 
         if not resolved_fit_path.is_file():
             if no_auto_idata:
@@ -1336,7 +1344,7 @@ def _plot(namespace: argparse.Namespace) -> int:
             engine = _resolve_idata_engine(namespace, validate=None)
             idata_code = run_idata(
                 IdataOptions(run_dir=run_dir, output=resolved_fit_path, bayesite=engine),
-                source=source,
+                source=_resolve_idata_source(namespace),
             )
             if idata_code != 0:
                 return idata_code
@@ -1352,7 +1360,7 @@ def _plot(namespace: argparse.Namespace) -> int:
             backend=cast(str | None, namespace.viz_backend),
             svg=bool(cast(bool, namespace.svg)),
         )
-        return run_plot(options, source=source)
+        return run_plot(options, source=viz_source)
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
@@ -1360,7 +1368,10 @@ def _plot(namespace: argparse.Namespace) -> int:
 
 def _warmup(namespace: argparse.Namespace) -> int:
     try:
-        return run_warmup(source=_resolve_viz_source(namespace))
+        return run_warmup(
+            idata_source=_resolve_idata_source(namespace),
+            viz_source=_resolve_viz_source(namespace),
+        )
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2

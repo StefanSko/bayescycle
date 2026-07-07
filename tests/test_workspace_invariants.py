@@ -68,34 +68,53 @@ def _project_optional_dependencies(data: dict[str, Any]) -> dict[str, list[str]]
     return extras
 
 
-def test_bayescycle_depends_on_bare_bayeswire_only() -> None:
+def _package_version(package: str) -> str:
+    data = _load_pyproject(package)
+    project = data.get("project", {})
+    version = project.get("version")
+    assert isinstance(version, str), f"{package} has no [project] version string"
+    return version
+
+
+def test_all_five_package_versions_agree() -> None:
+    versions = {package: _package_version(package) for package in ALL_PACKAGES}
+    distinct = set(versions.values())
+    assert len(distinct) == 1, (
+        f"expected one lockstep version across all packages, got {versions!r}"
+    )
+
+
+def test_bayescycle_depends_on_exact_bayeswire_pin() -> None:
+    version = _package_version("bayeswire")
     data = _load_pyproject("bayescycle")
     deps = _project_dependencies(data)
-    assert deps == ["bayeswire"], (
+    assert deps == [f"bayeswire=={version}"], (
         f"expected bayescycle's [project.dependencies] to be exactly "
-        f"['bayeswire'] with no URL/git specifier, got {deps!r}"
+        f"['bayeswire=={version}'], got {deps!r}"
     )
 
 
-def test_bayescycle_inproc_extra_is_bare_jaxstanv5_only() -> None:
+def test_bayescycle_inproc_extra_is_exact_jaxstanv5_pin() -> None:
+    version = _package_version("jaxstanv5")
     data = _load_pyproject("bayescycle")
     extras = _project_optional_dependencies(data)
-    assert extras.get("inproc") == ["jaxstanv5"], (
+    assert extras.get("inproc") == [f"jaxstanv5=={version}"], (
         f"expected bayescycle's inproc optional-dependency to be exactly "
-        f"['jaxstanv5'] with no URL specifier, got {extras.get('inproc')!r}"
+        f"['jaxstanv5=={version}'], got {extras.get('inproc')!r}"
     )
 
 
-def test_jaxstanv5_depends_on_bare_bayeswire() -> None:
+def test_jaxstanv5_depends_on_exact_bayeswire_pin() -> None:
+    version = _package_version("bayeswire")
     data = _load_pyproject("jaxstanv5")
     deps = _project_dependencies(data)
     bayeswire_specs = [d for d in deps if _dependency_name(d) == "bayeswire"]
     assert len(bayeswire_specs) == 1, (
         f"expected exactly one bayeswire dependency in jaxstanv5, got {bayeswire_specs!r}"
     )
-    assert bayeswire_specs[0] == "bayeswire", (
-        f"expected jaxstanv5's bayeswire dependency to be a bare name with no "
-        f"URL/git specifier, got {bayeswire_specs[0]!r}"
+    assert bayeswire_specs[0] == f"bayeswire=={version}", (
+        f"expected jaxstanv5's bayeswire dependency to be pinned to "
+        f"'bayeswire=={version}', got {bayeswire_specs[0]!r}"
     )
 
 

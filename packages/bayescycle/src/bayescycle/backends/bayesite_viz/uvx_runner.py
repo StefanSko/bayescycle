@@ -1,14 +1,21 @@
 """uvx-mediated invocation of the bayesite-viz CLIs (bayesite-idata, bayesite-viz).
 
-`bayesite-viz` ships only as an installable Python package (no platform
-binary), so bayescycle reaches it the same way an agent would from the
-command line: `uvx --from <source> <entry-point> ...`. This module owns the
-two consumer pins (`BAYESITE_VIZ_SOURCE`, `BAYESITE_VIZ_EXCLUDE_NEWER`) and
-builds the argv for both entry points as pure, testable functions before any
-subprocess runs. It also builds the argv for a "warmup" invocation of each
-entry point (`--help`, which is enough for `uvx` to resolve and cache the
-environment) so offline users can pre-materialize both uvx environments and
-fail early instead of mid-workflow.
+`bayesite-viz` and `bayesite-idata` ship as installable PyPI packages, so
+bayescycle reaches them the same way an agent would from the command line:
+`uvx --from <source> <entry-point> ...`. This module owns the pins
+(`BAYESITE_VIZ_SOURCE`, `BAYESITE_IDATA_SOURCE`, `BAYESITE_VIZ_EXCLUDE_NEWER`)
+and builds the argv for both entry points as pure, testable functions before
+any subprocess runs. It also builds the argv for a "warmup" invocation of
+each entry point (`--help`, which is enough for `uvx` to resolve and cache
+the environment) so offline users can pre-materialize both uvx environments
+and fail early instead of mid-workflow.
+
+Two pins move together on every lockstep release, both stamped only by
+scripts/bump_version.py: the version pin (duplicated here as
+`BAYESITE_VIZ_SOURCE` and `BAYESITE_IDATA_SOURCE`, one per PyPI
+distribution) and the timestamp pin (`BAYESITE_VIZ_EXCLUDE_NEWER`).
+`FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION` is not one of the moving pins -- it is
+a fixed far-future constant explained where it is defined below.
 """
 
 from __future__ import annotations
@@ -20,49 +27,52 @@ from pathlib import Path
 from bayescycle._errors import WorkflowError
 from bayescycle._integrations.external_command import ExternalCommand, run_external_command
 
-# Consumer pin: exact bayesite-viz commit. Bump deliberately via the
-# bayeswire repo's docs/releasing.md consumer pin checklist, alongside a
-# coordinated compatibility review -- this is the single place the pin
-# lives. bayesite-viz is a uv workspace with two
-# separate distributions (packages/bayesite-idata, packages/bayesite-viz);
-# `uvx --from <source> <entry-point>` needs a `#subdirectory=` fragment to
-# find either entry point's own pyproject.toml, so BAYESITE_VIZ_SOURCE is the
-# *base* repo@commit and each uvx invocation derives its own package source
-# from it via `_package_source`.
-BAYESITE_VIZ_SOURCE = (
-    "git+https://github.com/StefanSko/bayesite-viz.git@beb0b4c7fe60715bd4548c05f648c47a928b526b"
-)
+# Consumer pin: exact bayesite-viz PyPI version. Bump deliberately via
+# scripts/bump_version.py alongside a coordinated compatibility review --
+# this is the single place the pin lives (see module docstring: "two pins").
+BAYESITE_VIZ_SOURCE = "bayesite-viz==0.3.0"
 
-# Determinism pin: the transitive-dependency half of BAYESITE_VIZ_SOURCE.
-# `uvx` resolves bayesite-viz's own dependencies (arviz, matplotlib,
-# netcdf4, xarray, ...) as `>=`-range requirements at invocation time, so
-# without a resolution cutoff an upstream release can change what gets
-# installed -- and can break `bayescycle idata`/`plot` -- with no change on
-# our side. `--exclude-newer` freezes resolution to package versions
-# published on or before this timestamp, making the plot/idata environments
-# a pure function of the two pins together. Bump alongside
-# BAYESITE_VIZ_SOURCE whenever that pin moves: this value is the following
-# midnight UTC after the pinned commit's date (pinned commit: 2026-07-06).
-BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-07T00:00:00Z"
+# Consumer pin: exact bayesite-idata PyPI version, moved in lockstep with
+# BAYESITE_VIZ_SOURCE by scripts/bump_version.py.
+BAYESITE_IDATA_SOURCE = "bayesite-idata==0.3.0"
 
-_IDATA_SUBDIRECTORY = "packages/bayesite-idata"
-_VIZ_SUBDIRECTORY = "packages/bayesite-viz"
+# Determinism pin: the transitive-dependency half of the two source pins
+# above. `uvx` resolves bayesite-viz/bayesite-idata's own dependencies
+# (arviz, matplotlib, netcdf4, xarray, ...) as `>=`-range requirements at
+# invocation time, so without a resolution cutoff an upstream release can
+# change what gets installed -- and can break `bayescycle idata`/`plot` --
+# with no change on our side. `--exclude-newer` freezes resolution to
+# package versions published on or before this timestamp, making the
+# plot/idata environments a pure function of the pins together. Stamped by
+# scripts/bump_version.py to the moment of the version bump.
+BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-07T16:31:32Z"
+
+# The first-party packages above are exact version pins (`==X.Y.Z`), so a
+# resolver can only ever pick that one version of them -- the global
+# `--exclude-newer` cutoff cannot cause version drift for them the way it
+# can for `>=`-range transitive dependencies. But `--exclude-newer` is
+# evaluated *before* pins narrow the candidate set, so without this
+# exemption the just-published first-party wheel (dated after
+# BAYESITE_VIZ_EXCLUDE_NEWER was stamped) would itself be invisible to the
+# resolver. `--exclude-newer-package <name>=<this value>` overrides the
+# cutoff for that one package only, so the first-party wheel resolves while
+# every transitive dependency still resolves frozen at the bump-time
+# cutoff. A fixed far-future constant, never rewritten by
+# scripts/bump_version.py.
+FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION = "2100-01-01T00:00:00Z"
 
 
-def _package_source(base_source: str, subdirectory: str) -> str:
-    """Derive a uvx `--from` source for one bayesite-viz workspace package."""
-    return f"{base_source}#subdirectory={subdirectory}"
-
-
-def _base_argv(source: str, subdirectory: str) -> list[str]:
-    """Build the shared uvx flags/`--from` prefix for one workspace package."""
+def _base_argv(source: str, package_name: str) -> list[str]:
+    """Build the shared uvx flags/`--from` prefix for one bayesite-viz entry point."""
     return [
         "uvx",
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"{package_name}={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _package_source(source, subdirectory),
+        source,
     ]
 
 
@@ -113,9 +123,9 @@ def default_fit_path(run_dir: Path) -> Path:
     return run_dir / "fit.nc"
 
 
-def idata_command(options: IdataOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
+def idata_command(options: IdataOptions, *, source: str = BAYESITE_IDATA_SOURCE) -> ExternalCommand:
     """Build the argv for `bayesite-idata` without running anything."""
-    argv: list[str] = _base_argv(source, _IDATA_SUBDIRECTORY)
+    argv: list[str] = _base_argv(source, "bayesite-idata")
     argv.extend(
         (
             "bayesite-idata",
@@ -142,7 +152,7 @@ def plot_command(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> 
         raise WorkflowError(
             f"--kind is only supported for the posterior and ppc verbs, not {options.verb!r}"
         )
-    argv: list[str] = _base_argv(source, _VIZ_SUBDIRECTORY)
+    argv: list[str] = _base_argv(source, "bayesite-viz")
     argv.extend(("bayesite-viz", options.verb, str(options.fit_path)))
     if options.output is not None:
         argv.extend(("-o", str(options.output)))
@@ -162,14 +172,14 @@ def plot_command(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> 
     return ExternalCommand(argv=tuple(argv), output_paths=output_paths)
 
 
-def idata_warmup_command(*, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
+def idata_warmup_command(*, source: str = BAYESITE_IDATA_SOURCE) -> ExternalCommand:
     """Build the argv that pre-materializes the `bayesite-idata` uvx environment.
 
     `--help` runs no real work but is enough for `uvx` to resolve and cache
     the environment against the same `--from` source and `--exclude-newer`
     cutoff `idata_command` would use.
     """
-    argv = _base_argv(source, _IDATA_SUBDIRECTORY)
+    argv = _base_argv(source, "bayesite-idata")
     argv.extend(("bayesite-idata", "--help"))
     return ExternalCommand(argv=tuple(argv))
 
@@ -181,19 +191,24 @@ def plot_warmup_command(*, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand
     the environment against the same `--from` source and `--exclude-newer`
     cutoff `plot_command` would use.
     """
-    argv = _base_argv(source, _VIZ_SUBDIRECTORY)
+    argv = _base_argv(source, "bayesite-viz")
     argv.extend(("bayesite-viz", "--help"))
     return ExternalCommand(argv=tuple(argv))
 
 
 def warmup_commands(
-    *, source: str = BAYESITE_VIZ_SOURCE
+    *,
+    idata_source: str = BAYESITE_IDATA_SOURCE,
+    viz_source: str = BAYESITE_VIZ_SOURCE,
 ) -> tuple[ExternalCommand, ExternalCommand]:
     """Return both entry points' warmup commands, idata first then viz."""
-    return (idata_warmup_command(source=source), plot_warmup_command(source=source))
+    return (
+        idata_warmup_command(source=idata_source),
+        plot_warmup_command(source=viz_source),
+    )
 
 
-def run_idata(options: IdataOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> int:
+def run_idata(options: IdataOptions, *, source: str = BAYESITE_IDATA_SOURCE) -> int:
     """Run `bayesite-idata` under uvx, inheriting stdio."""
     _require_uvx()
     return run_external_command(idata_command(options, source=source))
@@ -205,7 +220,7 @@ def run_plot(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> int:
     return run_external_command(plot_command(options, source=source))
 
 
-def run_idata_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
+def run_idata_warmup(*, source: str = BAYESITE_IDATA_SOURCE) -> int:
     """Pre-materialize the `bayesite-idata` uvx environment, inheriting stdio."""
     _require_uvx()
     return run_external_command(idata_warmup_command(source=source))
@@ -217,7 +232,11 @@ def run_plot_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
     return run_external_command(plot_warmup_command(source=source))
 
 
-def run_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
+def run_warmup(
+    *,
+    idata_source: str = BAYESITE_IDATA_SOURCE,
+    viz_source: str = BAYESITE_VIZ_SOURCE,
+) -> int:
     """Pre-materialize both bayesite-viz uvx environments, inheriting stdio.
 
     Runs the idata warmup first and only proceeds to the viz warmup if it
@@ -225,10 +244,10 @@ def run_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
     stdio rather than interleaving both.
     """
     _require_uvx()
-    idata_code = run_external_command(idata_warmup_command(source=source))
+    idata_code = run_external_command(idata_warmup_command(source=idata_source))
     if idata_code != 0:
         return idata_code
-    return run_external_command(plot_warmup_command(source=source))
+    return run_external_command(plot_warmup_command(source=viz_source))
 
 
 def _require_uvx() -> None:

@@ -13,8 +13,10 @@ import pytest
 
 from bayescycle._errors import WorkflowError
 from bayescycle.backends.bayesite_viz.uvx_runner import (
+    BAYESITE_IDATA_SOURCE,
     BAYESITE_VIZ_EXCLUDE_NEWER,
     BAYESITE_VIZ_SOURCE,
+    FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION,
     VIZ_VERBS,
     IdataOptions,
     PlotOptions,
@@ -27,11 +29,11 @@ from bayescycle.backends.bayesite_viz.uvx_runner import (
 )
 
 
-def test_pinned_source_derives_distinct_workspace_package_sources() -> None:
-    """bayesite-viz is a uv workspace; idata and viz need their own subdirectory."""
-    assert f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-idata" == _IDATA_SOURCE
-    assert f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-viz" == _VIZ_SOURCE
-    assert _IDATA_SOURCE != _VIZ_SOURCE
+def test_pinned_sources_are_exact_pypi_version_pins() -> None:
+    """bayesite-viz and bayesite-idata are separate PyPI distributions now."""
+    assert BAYESITE_VIZ_SOURCE.startswith("bayesite-viz==")
+    assert BAYESITE_IDATA_SOURCE.startswith("bayesite-idata==")
+    assert BAYESITE_VIZ_SOURCE != BAYESITE_IDATA_SOURCE
 
 
 def test_default_fit_path_is_run_dir_slash_fit_nc() -> None:
@@ -53,10 +55,6 @@ def test_viz_verbs_match_the_bayesite_viz_contract() -> None:
     )
 
 
-_IDATA_SOURCE = f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-idata"
-_VIZ_SOURCE = f"{BAYESITE_VIZ_SOURCE}#subdirectory=packages/bayesite-viz"
-
-
 def test_idata_command_minimal() -> None:
     options = IdataOptions(run_dir=Path("run"), output=Path("run/fit.nc"))
 
@@ -67,8 +65,10 @@ def test_idata_command_minimal() -> None:
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"bayesite-idata={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _IDATA_SOURCE,
+        BAYESITE_IDATA_SOURCE,
         "bayesite-idata",
         "run",
         "-o",
@@ -92,8 +92,10 @@ def test_idata_command_forwards_validate_and_bayesite() -> None:
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"bayesite-idata={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _IDATA_SOURCE,
+        BAYESITE_IDATA_SOURCE,
         "bayesite-idata",
         "run",
         "-o",
@@ -108,11 +110,9 @@ def test_idata_command_forwards_validate_and_bayesite() -> None:
 def test_idata_command_honors_source_override() -> None:
     options = IdataOptions(run_dir=Path("run"), output=Path("run/fit.nc"))
 
-    command = idata_command(options, source="git+https://example.invalid/mirror.git@deadbeef")
+    command = idata_command(options, source="bayesite-idata==9.9.9")
 
-    assert command.argv[5] == (
-        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-idata"
-    )
+    assert command.argv[7] == "bayesite-idata==9.9.9"
 
 
 def test_plot_command_minimal() -> None:
@@ -125,8 +125,10 @@ def test_plot_command_minimal() -> None:
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"bayesite-viz={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _VIZ_SOURCE,
+        BAYESITE_VIZ_SOURCE,
         "bayesite-viz",
         "trace",
         "run/fit.nc",
@@ -154,8 +156,10 @@ def test_plot_command_forwards_all_set_options() -> None:
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"bayesite-viz={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _VIZ_SOURCE,
+        BAYESITE_VIZ_SOURCE,
         "bayesite-viz",
         "posterior",
         "run/fit.nc",
@@ -181,11 +185,9 @@ def test_plot_command_forwards_all_set_options() -> None:
 def test_plot_command_honors_source_override() -> None:
     options = PlotOptions(verb="trace", fit_path=Path("run/fit.nc"))
 
-    command = plot_command(options, source="git+https://example.invalid/mirror.git@deadbeef")
+    command = plot_command(options, source="bayesite-viz==9.9.9")
 
-    assert command.argv[5] == (
-        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-viz"
-    )
+    assert command.argv[7] == "bayesite-viz==9.9.9"
 
 
 def test_plot_command_rejects_unknown_verb() -> None:
@@ -219,8 +221,10 @@ def test_idata_warmup_command_materializes_the_idata_environment_via_help() -> N
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"bayesite-idata={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _IDATA_SOURCE,
+        BAYESITE_IDATA_SOURCE,
         "bayesite-idata",
         "--help",
     )
@@ -235,8 +239,10 @@ def test_plot_warmup_command_materializes_the_viz_environment_via_help() -> None
         "--quiet",
         "--exclude-newer",
         BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--exclude-newer-package",
+        f"bayesite-viz={FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION}",
         "--from",
-        _VIZ_SOURCE,
+        BAYESITE_VIZ_SOURCE,
         "bayesite-viz",
         "--help",
     )
@@ -244,19 +250,15 @@ def test_plot_warmup_command_materializes_the_viz_environment_via_help() -> None
 
 
 def test_idata_warmup_command_honors_source_override() -> None:
-    command = idata_warmup_command(source="git+https://example.invalid/mirror.git@deadbeef")
+    command = idata_warmup_command(source="bayesite-idata==9.9.9")
 
-    assert command.argv[5] == (
-        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-idata"
-    )
+    assert command.argv[7] == "bayesite-idata==9.9.9"
 
 
 def test_plot_warmup_command_honors_source_override() -> None:
-    command = plot_warmup_command(source="git+https://example.invalid/mirror.git@deadbeef")
+    command = plot_warmup_command(source="bayesite-viz==9.9.9")
 
-    assert command.argv[5] == (
-        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-viz"
-    )
+    assert command.argv[7] == "bayesite-viz==9.9.9"
 
 
 def test_warmup_commands_returns_both_entry_point_warmups_in_order() -> None:

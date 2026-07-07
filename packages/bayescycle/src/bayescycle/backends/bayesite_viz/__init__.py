@@ -1,6 +1,7 @@
 """bayesite-viz uvx runner (fit export + plot verbs)."""
 
 from bayescycle.backends.bayesite_viz.uvx_runner import (
+    BAYESITE_IDATA_SOURCE,
     BAYESITE_VIZ_SOURCE,
     VIZ_VERBS,
     IdataOptions,
@@ -13,6 +14,7 @@ from bayescycle.backends.bayesite_viz.uvx_runner import (
 )
 
 __all__ = [
+    "BAYESITE_IDATA_SOURCE",
     "BAYESITE_VIZ_SOURCE",
     "VIZ_VERBS",
     "IdataOptions",
