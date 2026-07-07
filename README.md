@@ -276,6 +276,25 @@ Both commands accept `--engine` and `--no-auto-provision` /
 commands do (see "Auto-provisioning" above), since an auto-run `idata` step
 still needs a Bayesite engine.
 
+### Deterministic uvx environments and offline pre-warming
+
+`idata` and `plot` pin bayesite-viz to an exact commit
+(`BAYESITE_VIZ_SOURCE`), but that alone doesn't pin *its* dependencies
+(arviz, matplotlib, netcdf4, xarray, ...): `uvx` resolves those as `>=`
+ranges at invocation time, so an upstream release could otherwise change
+what gets installed with no change on our side. Every `uvx` invocation also
+passes `--exclude-newer` (`BAYESITE_VIZ_EXCLUDE_NEWER` in the same module),
+so dependency resolution is a pure function of the two pins together and the
+plot/idata environments are reproducible.
+
+```bash
+bayescycle warmup   # pre-materializes both uvx environments (bayesite-idata, bayesite-viz)
+```
+
+Run `bayescycle warmup` once while online to populate `uvx`'s cache; `idata`
+and `plot` then work offline and fail fast at warmup time instead of
+mid-workflow if the environments can't be resolved.
+
 ## Agentic study workflow
 
 The optional `.agents/skills/bayescycle-study/` skill defines a lightweight,

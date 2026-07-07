@@ -13,13 +13,17 @@ import pytest
 
 from bayescycle._errors import WorkflowError
 from bayescycle.backends.bayesite_viz.uvx_runner import (
+    BAYESITE_VIZ_EXCLUDE_NEWER,
     BAYESITE_VIZ_SOURCE,
     VIZ_VERBS,
     IdataOptions,
     PlotOptions,
     default_fit_path,
     idata_command,
+    idata_warmup_command,
     plot_command,
+    plot_warmup_command,
+    warmup_commands,
 )
 
 
@@ -61,6 +65,8 @@ def test_idata_command_minimal() -> None:
     assert command.argv == (
         "uvx",
         "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
         "--from",
         _IDATA_SOURCE,
         "bayesite-idata",
@@ -84,6 +90,8 @@ def test_idata_command_forwards_validate_and_bayesite() -> None:
     assert command.argv == (
         "uvx",
         "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
         "--from",
         _IDATA_SOURCE,
         "bayesite-idata",
@@ -102,7 +110,7 @@ def test_idata_command_honors_source_override() -> None:
 
     command = idata_command(options, source="git+https://example.invalid/mirror.git@deadbeef")
 
-    assert command.argv[3] == (
+    assert command.argv[5] == (
         "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-idata"
     )
 
@@ -115,6 +123,8 @@ def test_plot_command_minimal() -> None:
     assert command.argv == (
         "uvx",
         "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
         "--from",
         _VIZ_SOURCE,
         "bayesite-viz",
@@ -142,6 +152,8 @@ def test_plot_command_forwards_all_set_options() -> None:
     assert command.argv == (
         "uvx",
         "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
         "--from",
         _VIZ_SOURCE,
         "bayesite-viz",
@@ -171,7 +183,7 @@ def test_plot_command_honors_source_override() -> None:
 
     command = plot_command(options, source="git+https://example.invalid/mirror.git@deadbeef")
 
-    assert command.argv[3] == (
+    assert command.argv[5] == (
         "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-viz"
     )
 
@@ -197,3 +209,57 @@ def test_plot_command_accepts_kind_for_ppc_verb() -> None:
 
     assert "--kind" in command.argv
     assert "dist" in command.argv
+
+
+def test_idata_warmup_command_materializes_the_idata_environment_via_help() -> None:
+    command = idata_warmup_command()
+
+    assert command.argv == (
+        "uvx",
+        "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--from",
+        _IDATA_SOURCE,
+        "bayesite-idata",
+        "--help",
+    )
+    assert command.output_paths == ()
+
+
+def test_plot_warmup_command_materializes_the_viz_environment_via_help() -> None:
+    command = plot_warmup_command()
+
+    assert command.argv == (
+        "uvx",
+        "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--from",
+        _VIZ_SOURCE,
+        "bayesite-viz",
+        "--help",
+    )
+    assert command.output_paths == ()
+
+
+def test_idata_warmup_command_honors_source_override() -> None:
+    command = idata_warmup_command(source="git+https://example.invalid/mirror.git@deadbeef")
+
+    assert command.argv[5] == (
+        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-idata"
+    )
+
+
+def test_plot_warmup_command_honors_source_override() -> None:
+    command = plot_warmup_command(source="git+https://example.invalid/mirror.git@deadbeef")
+
+    assert command.argv[5] == (
+        "git+https://example.invalid/mirror.git@deadbeef#subdirectory=packages/bayesite-viz"
+    )
+
+
+def test_warmup_commands_returns_both_entry_point_warmups_in_order() -> None:
+    commands = warmup_commands()
+
+    assert commands == (idata_warmup_command(), plot_warmup_command())

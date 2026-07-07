@@ -109,6 +109,7 @@ from bayescycle.backends.bayesite_viz.uvx_runner import (
     default_fit_path,
     run_idata,
     run_plot,
+    run_warmup,
 )
 from bayescycle.backends.jaxstanv5.runner import InProcessBackendError
 
@@ -161,6 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _idata(namespace)
     if command == "plot":
         return _plot(namespace)
+    if command == "warmup":
+        return _warmup(namespace)
     parser.print_help(sys.stderr)
     return 2
 
@@ -501,6 +504,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_no_auto_provision_argument(plot)
     plot.add_argument("--viz-source", help=argparse.SUPPRESS)
+
+    warmup = subparsers.add_parser(
+        "warmup",
+        description=(
+            "Pre-materialize the bayesite-viz uvx environments (bayesite-idata, "
+            "bayesite-viz) so `idata`/`plot` can run offline afterward."
+        ),
+    )
+    warmup.add_argument("--viz-source", help=argparse.SUPPRESS)
 
     return parser
 
@@ -1341,6 +1353,14 @@ def _plot(namespace: argparse.Namespace) -> int:
             svg=bool(cast(bool, namespace.svg)),
         )
         return run_plot(options, source=source)
+    except (WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _warmup(namespace: argparse.Namespace) -> int:
+    try:
+        return run_warmup(source=_resolve_viz_source(namespace))
     except (WorkflowError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2

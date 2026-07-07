@@ -3,8 +3,12 @@
 `bayesite-viz` ships only as an installable Python package (no platform
 binary), so bayescycle reaches it the same way an agent would from the
 command line: `uvx --from <source> <entry-point> ...`. This module owns the
-one consumer pin (`BAYESITE_VIZ_SOURCE`) and builds the argv for both
-entry points as pure, testable functions before any subprocess runs.
+two consumer pins (`BAYESITE_VIZ_SOURCE`, `BAYESITE_VIZ_EXCLUDE_NEWER`) and
+builds the argv for both entry points as pure, testable functions before any
+subprocess runs. It also builds the argv for a "warmup" invocation of each
+entry point (`--help`, which is enough for `uvx` to resolve and cache the
+environment) so offline users can pre-materialize both uvx environments and
+fail early instead of mid-workflow.
 """
 
 from __future__ import annotations
@@ -29,6 +33,18 @@ BAYESITE_VIZ_SOURCE = (
     "git+https://github.com/StefanSko/bayesite-viz.git@beb0b4c7fe60715bd4548c05f648c47a928b526b"
 )
 
+# Determinism pin: the transitive-dependency half of BAYESITE_VIZ_SOURCE.
+# `uvx` resolves bayesite-viz's own dependencies (arviz, matplotlib,
+# netcdf4, xarray, ...) as `>=`-range requirements at invocation time, so
+# without a resolution cutoff an upstream release can change what gets
+# installed -- and can break `bayescycle idata`/`plot` -- with no change on
+# our side. `--exclude-newer` freezes resolution to package versions
+# published on or before this timestamp, making the plot/idata environments
+# a pure function of the two pins together. Bump alongside
+# BAYESITE_VIZ_SOURCE whenever that pin moves: this value is the following
+# midnight UTC after the pinned commit's date (pinned commit: 2026-07-06).
+BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-07T00:00:00Z"
+
 _IDATA_SUBDIRECTORY = "packages/bayesite-idata"
 _VIZ_SUBDIRECTORY = "packages/bayesite-viz"
 
@@ -36,6 +52,18 @@ _VIZ_SUBDIRECTORY = "packages/bayesite-viz"
 def _package_source(base_source: str, subdirectory: str) -> str:
     """Derive a uvx `--from` source for one bayesite-viz workspace package."""
     return f"{base_source}#subdirectory={subdirectory}"
+
+
+def _base_argv(source: str, subdirectory: str) -> list[str]:
+    """Build the shared uvx flags/`--from` prefix for one workspace package."""
+    return [
+        "uvx",
+        "--quiet",
+        "--exclude-newer",
+        BAYESITE_VIZ_EXCLUDE_NEWER,
+        "--from",
+        _package_source(source, subdirectory),
+    ]
 
 
 # The nine bayesite-viz plot verbs, in the order the bayesite-viz CLI group
@@ -87,16 +115,15 @@ def default_fit_path(run_dir: Path) -> Path:
 
 def idata_command(options: IdataOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
     """Build the argv for `bayesite-idata` without running anything."""
-    argv: list[str] = [
-        "uvx",
-        "--quiet",
-        "--from",
-        _package_source(source, _IDATA_SUBDIRECTORY),
-        "bayesite-idata",
-        str(options.run_dir),
-        "-o",
-        str(options.output),
-    ]
+    argv: list[str] = _base_argv(source, _IDATA_SUBDIRECTORY)
+    argv.extend(
+        (
+            "bayesite-idata",
+            str(options.run_dir),
+            "-o",
+            str(options.output),
+        )
+    )
     if options.validate is not None:
         argv.extend(("--validate", options.validate))
     if options.bayesite is not None:
@@ -115,15 +142,8 @@ def plot_command(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> 
         raise WorkflowError(
             f"--kind is only supported for the posterior and ppc verbs, not {options.verb!r}"
         )
-    argv: list[str] = [
-        "uvx",
-        "--quiet",
-        "--from",
-        _package_source(source, _VIZ_SUBDIRECTORY),
-        "bayesite-viz",
-        options.verb,
-        str(options.fit_path),
-    ]
+    argv: list[str] = _base_argv(source, _VIZ_SUBDIRECTORY)
+    argv.extend(("bayesite-viz", options.verb, str(options.fit_path)))
     if options.output is not None:
         argv.extend(("-o", str(options.output)))
     if options.kind is not None:
@@ -142,6 +162,37 @@ def plot_command(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> 
     return ExternalCommand(argv=tuple(argv), output_paths=output_paths)
 
 
+def idata_warmup_command(*, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
+    """Build the argv that pre-materializes the `bayesite-idata` uvx environment.
+
+    `--help` runs no real work but is enough for `uvx` to resolve and cache
+    the environment against the same `--from` source and `--exclude-newer`
+    cutoff `idata_command` would use.
+    """
+    argv = _base_argv(source, _IDATA_SUBDIRECTORY)
+    argv.extend(("bayesite-idata", "--help"))
+    return ExternalCommand(argv=tuple(argv))
+
+
+def plot_warmup_command(*, source: str = BAYESITE_VIZ_SOURCE) -> ExternalCommand:
+    """Build the argv that pre-materializes the `bayesite-viz` uvx environment.
+
+    `--help` runs no real work but is enough for `uvx` to resolve and cache
+    the environment against the same `--from` source and `--exclude-newer`
+    cutoff `plot_command` would use.
+    """
+    argv = _base_argv(source, _VIZ_SUBDIRECTORY)
+    argv.extend(("bayesite-viz", "--help"))
+    return ExternalCommand(argv=tuple(argv))
+
+
+def warmup_commands(
+    *, source: str = BAYESITE_VIZ_SOURCE
+) -> tuple[ExternalCommand, ExternalCommand]:
+    """Return both entry points' warmup commands, idata first then viz."""
+    return (idata_warmup_command(source=source), plot_warmup_command(source=source))
+
+
 def run_idata(options: IdataOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> int:
     """Run `bayesite-idata` under uvx, inheriting stdio."""
     _require_uvx()
@@ -152,6 +203,32 @@ def run_plot(options: PlotOptions, *, source: str = BAYESITE_VIZ_SOURCE) -> int:
     """Run one `bayesite-viz` verb under uvx, inheriting stdio."""
     _require_uvx()
     return run_external_command(plot_command(options, source=source))
+
+
+def run_idata_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
+    """Pre-materialize the `bayesite-idata` uvx environment, inheriting stdio."""
+    _require_uvx()
+    return run_external_command(idata_warmup_command(source=source))
+
+
+def run_plot_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
+    """Pre-materialize the `bayesite-viz` uvx environment, inheriting stdio."""
+    _require_uvx()
+    return run_external_command(plot_warmup_command(source=source))
+
+
+def run_warmup(*, source: str = BAYESITE_VIZ_SOURCE) -> int:
+    """Pre-materialize both bayesite-viz uvx environments, inheriting stdio.
+
+    Runs the idata warmup first and only proceeds to the viz warmup if it
+    succeeds, so a broken/offline cache fails fast with one clear command's
+    stdio rather than interleaving both.
+    """
+    _require_uvx()
+    idata_code = run_external_command(idata_warmup_command(source=source))
+    if idata_code != 0:
+        return idata_code
+    return run_external_command(plot_warmup_command(source=source))
 
 
 def _require_uvx() -> None:
