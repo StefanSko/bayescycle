@@ -23,6 +23,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
+# spec/ lives at the monorepo root, two levels above the bayeswire package
+# root (REPO_ROOT here is the package root: packages/bayeswire).
+MONOREPO_ROOT = REPO_ROOT.parent.parent
+
 from bayeswire.ir import (  # noqa: E402
     canonical_bytes,
     meta_to_dict,
@@ -32,7 +36,7 @@ from bayeswire.ir import (  # noqa: E402
 from conformance.reference_models import reference_model_cases  # noqa: E402
 
 CORPUS_DIR = REPO_ROOT / "src" / "bayeswire" / "corpus"
-TAG_SPEC_PATH = REPO_ROOT / "spec" / "ir-v1-tags.md"
+TAG_SPEC_PATH = MONOREPO_ROOT / "spec" / "ir-v1-tags.md"
 DATA_DOCUMENT_FORMAT = "bayescycle.data.json.v1"
 
 
@@ -86,7 +90,7 @@ def main() -> None:
     print(f"wrote {fingerprints_path.relative_to(REPO_ROOT)}")
 
     TAG_SPEC_PATH.write_text(render_ir_v1_tag_spec(), encoding="utf-8")
-    print(f"wrote {TAG_SPEC_PATH.relative_to(REPO_ROOT)}")
+    print(f"wrote {TAG_SPEC_PATH.relative_to(MONOREPO_ROOT)}")
 
 
 if __name__ == "__main__":
