@@ -53,12 +53,25 @@ change on our side — the one nondeterministic resolution in the toolchain.
 
 ## Step 1 — monorepo scaffold with history
 
-**Decision point (needs sign-off before executing): the monorepo home.**
-Recommended: transform this repo (bayeswire) into the monorepo and rename
-it (GitHub redirects old URLs, so existing git-tag pins keep resolving);
-the alternative is a fresh sixth repo. Recommendation rationale: this repo
-already owns the spec, the corpus, and the toolchain docs, and its history
-moves by `git mv` instead of import.
+**Decision (user, 2026-07-07): the bayescycle repo becomes the monorepo
+and keeps its name** — the repo is named after the user-facing entry
+point (`uv tool install bayescycle`). bayescycle's own tree moves to
+`packages/bayescycle` by `git mv`; bayeswire, jaxstanv5, and bayesite-viz
+histories import via `git filter-repo`. bayeswire's `spec/` and the
+toolchain-level docs (releasing.md, this plan, toolchain.html) move to
+the monorepo root in a follow-up commit; package-level docs (e.g.
+bayeswire's invariants.md) stay with their package. The bayeswire,
+jaxstanv5, and bayesite-viz repos archive at cutover (step 4); archived
+repos stay readable, so historical git-URL pins keep resolving.
+
+**Refinement — bayesite-viz stays out of the root workspace.** The root
+uv workspace contains bayeswire, jaxstanv5, bayescycle only.
+`packages/bayesite-viz` and `packages/bayesite-idata` live in the repo
+and version lockstep, but are standalone uv projects (own dev groups,
+bayeswire test fixture as a path source), NOT workspace members —
+otherwise the workspace lock would force JAX and the arviz stack to
+co-resolve in dev, recreating the exact coupling the uvx boundary
+exists to prevent.
 
 - Layout: `packages/{bayeswire,jaxstanv5,bayescycle,bayesite-viz,bayesite-idata}`,
   root `pyproject.toml` declaring the uv workspace with
