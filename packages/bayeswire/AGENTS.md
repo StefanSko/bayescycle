@@ -30,6 +30,13 @@ engine; vendors spec and fixtures by file, never by package dependency), and
 Consumers pin bayeswire by exact version; bumping the pin is a PR whose diff
 is the compatibility review.
 
+Local sibling checkouts for compatibility work live under `projects/`:
+
+- [jaxstanv5](projects/jaxstanv5/)
+- [bayescycle](projects/bayescycle/)
+- [bayesite](projects/bayesite/)
+- [bayesite-viz](projects/bayesite-viz/)
+
 ## Communication
 
 Be precise and brief. Do not pad responses. State assumptions, uncertainty,
