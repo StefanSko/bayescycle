@@ -75,10 +75,7 @@ def auto_alt(
     and for an agent embedding the image in a report.
     """
     vars_desc = ", ".join(var_names) if var_names else "all variables"
-    if verb == "ppc" and kind:
-        head = f"{verb} ({kind}) plot"
-    else:
-        head = f"{verb} plot"
+    head = f"{verb} ({kind}) plot" if verb == "ppc" and kind else f"{verb} plot"
     return f"{head} of {vars_desc} from {fit.name}"
 
 

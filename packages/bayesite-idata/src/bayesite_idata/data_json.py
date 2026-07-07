@@ -110,10 +110,11 @@ def _validate_typed_data_values(
                 msg = f"{field}.values for unsigned dtype {dtype!r} must be non-negative"
                 raise AssemblyError(msg)
         return
-    if dtype in {"float32", "float64"}:
-        if any(not isinstance(value, int | float) or isinstance(value, bool) for value in values):
-            msg = f"{field}.values for float dtype {dtype!r} must contain only JSON numbers"
-            raise AssemblyError(msg)
+    if dtype in {"float32", "float64"} and any(
+        not isinstance(value, int | float) or isinstance(value, bool) for value in values
+    ):
+        msg = f"{field}.values for float dtype {dtype!r} must contain only JSON numbers"
+        raise AssemblyError(msg)
 
 
 def _data_dtype(

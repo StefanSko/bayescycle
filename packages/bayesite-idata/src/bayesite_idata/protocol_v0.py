@@ -550,10 +550,13 @@ def read_posterior_predictive_stream(path: Path) -> PosteriorPredictiveStream:
     trailer_source_fit_seed = _optional_int(
         trailer.get("source_fit_seed"), "trailer.source_fit_seed"
     )
-    if source_fit_seed is not None and trailer_source_fit_seed is not None:
-        if source_fit_seed != trailer_source_fit_seed:
-            msg = f"{path}: source_fit_seed differs between header and trailer"
-            raise ProtocolError(msg)
+    if (
+        source_fit_seed is not None
+        and trailer_source_fit_seed is not None
+        and source_fit_seed != trailer_source_fit_seed
+    ):
+        msg = f"{path}: source_fit_seed differs between header and trailer"
+        raise ProtocolError(msg)
     return PosteriorPredictiveStream(
         sites=sites,
         records=tuple(records),

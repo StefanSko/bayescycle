@@ -1,4 +1,20 @@
-name: CI
+# Workspace CI (monorepo migration step 2, see docs/monorepo-migration.md).
+#
+# Replaces the four inert per-package workflows imported with history under
+# packages/{bayeswire,jaxstanv5}/.github/workflows/ (deleted in the same
+# commit that added this file) and bayescycle's own pre-monorepo workflow
+# (this file's direct ancestor).
+#
+# Retired, not ported:
+#   - bayeswire's nightly "Cross-repo alignment" workflow (jaxstanv5-consume,
+#     bayescycle-nojax, normative-prose-audit): HEAD-vs-HEAD across the
+#     Python packages is now every PR's CI, below, since they share one
+#     workspace lock.
+#   - bayeswire's cut-tag.yml: tagging is a monorepo-wide concern revisited
+#     in a later migration step, not a per-package action.
+#   - The `bayesite-head-vs-bayescycle` nightly job (bayesite HEAD vs this
+#     workspace's HEAD) is NOT ported here; it is deliberately recreated as
+#     its own scheduled workflow in a later migration step.
 
 on:
   push:
@@ -6,7 +22,85 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  # Root-level guard tests: workspace wiring invariants (tests/), no
+  # workspace member installed.
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync (root dev group only)
+        run: uv sync --only-dev
+      - name: Format
+        run: uv run --no-sync ruff format --check tests
+      - name: Lint
+        run: uv run --no-sync ruff check tests
+      - name: Types
+        run: uv run --no-sync ty check
+      - name: Tests
+        run: uv run --no-sync pytest tests -q
+
+  # bayeswire: stdlib-only wire format and model language. Its own gates
+  # (no-JAX module walk, produce-conformance) run inside its pytest suite;
+  # spec-doc generation additionally checks the corpus and spec/ir-v1-tags.md
+  # (now at the monorepo root) stay in sync with the registry.
+  bayeswire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync
+        run: uv sync --package bayeswire
+      - name: Format
+        working-directory: packages/bayeswire
+        run: uv run --no-sync ruff format --check .
+      - name: Lint
+        working-directory: packages/bayeswire
+        run: uv run --no-sync ruff check .
+      - name: Types
+        working-directory: packages/bayeswire
+        run: uv run --no-sync ty check
+      - name: Tests (includes no-JAX walk and produce-conformance)
+        working-directory: packages/bayeswire
+        run: uv run --no-sync pytest -q
+      - name: Spec-doc generation check
+        working-directory: packages/bayeswire
+        run: uv run --no-sync scripts/regenerate_corpus.py
+      - name: Assert no drift (corpus + spec/ir-v1-tags.md at the repo root)
+        run: git diff --exit-code -- packages/bayeswire/src/bayeswire/corpus spec/ir-v1-tags.md
+
+  # jaxstanv5: the real JAX/BlackJAX backend, consume-conformance against
+  # the bayeswire corpus.
+  jaxstanv5:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync (installs the workspace bayeswire)
+        run: uv sync --package jaxstanv5
+      - name: Format
+        working-directory: packages/jaxstanv5
+        run: uv run --no-sync ruff format --check .
+      - name: Lint
+        working-directory: packages/jaxstanv5
+        run: uv run --no-sync ruff check .
+      - name: Types
+        working-directory: packages/jaxstanv5
+        run: uv run --no-sync ty check
+      - name: Tests (includes consume-conformance against the bayeswire corpus)
+        working-directory: packages/jaxstanv5
+        run: uv run --no-sync pytest -q
+
+  # bayescycle with the inproc extra (jaxstanv5 installed): the full
+  # workflow-harness suite, including in-process JAX-backed paths, against a
+  # real pinned bayesite engine binary.
+  bayescycle:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,30 +108,37 @@ jobs:
         with:
           enable-cache: true
       - name: Sync (bayeswire + jaxstanv5 inproc extra)
-        run: uv sync --extra inproc
+        run: uv sync --package bayescycle --extra inproc
       - name: Format
-        run: uv run ruff format --check .
+        working-directory: packages/bayescycle
+        run: uv run --no-sync ruff format --check .
       - name: Lint
-        run: uv run ruff check .
+        working-directory: packages/bayescycle
+        run: uv run --no-sync ruff check .
       - name: Types
-        run: uv run ty check src tests
+        working-directory: packages/bayescycle
+        run: uv run --no-sync ty check
       - name: Fetch pinned bayesite engine
         run: |
-          echo "BAYESCYCLE_TEST_BAYESITE_BIN=$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" >> "$GITHUB_ENV"
+          bin="$(uv run --no-sync packages/bayescycle/scripts/fetch_engine_release.py --out "$GITHUB_WORKSPACE/.bayesite-bin")"
+          echo "BAYESCYCLE_TEST_BAYESITE_BIN=$bin" >> "$GITHUB_ENV"
           # Unknown commands answer with a JSON usage error (exit 1); anything
           # above that (bad exec format, segfault, ...) means the binary does
           # not actually run on this runner.
-          "$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" capabilities || status=$?
+          "$bin" capabilities || status=$?
           if [ "${status:-0}" -gt 1 ]; then
             echo "::error::pinned bayesite engine did not launch on this runner (exit ${status})"
             exit 1
           fi
       - name: Tests
-        run: uv run pytest -q
+        working-directory: packages/bayescycle
+        run: uv run --no-sync pytest -q
 
   # The default agent path executes model.py with bayeswire only — no JAX,
-  # ever. This job proves it end-to-end with a real bayesite binary.
-  no-jax:
+  # ever. `uv sync` without the inproc extra is exact, so this job proves
+  # the no-JAX path end-to-end with a real bayesite binary and jaxstanv5
+  # genuinely absent from the environment (not merely unused).
+  bayescycle-no-jax:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +146,10 @@ jobs:
         with:
           enable-cache: true
       - name: Sync without the inproc extra (no JAX installed)
-        run: uv sync
+        run: uv sync --package bayescycle
       - name: Assert JAX is absent
         run: |
-          uv run python -c "
+          uv run --no-sync python -c "
           import importlib.util
           assert importlib.util.find_spec('jax') is None, 'JAX leaked onto the default path'
           assert importlib.util.find_spec('jaxstanv5') is None, 'jaxstanv5 leaked onto the default path'
@@ -56,11 +157,48 @@ jobs:
           "
       - name: Fetch pinned bayesite engine
         run: |
-          echo "BAYESCYCLE_TEST_BAYESITE_BIN=$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" >> "$GITHUB_ENV"
-          "$(uv run scripts/fetch_engine_release.py --out .bayesite-bin)" capabilities || status=$?
+          bin="$(uv run --no-sync packages/bayescycle/scripts/fetch_engine_release.py --out "$GITHUB_WORKSPACE/.bayesite-bin")"
+          echo "BAYESCYCLE_TEST_BAYESITE_BIN=$bin" >> "$GITHUB_ENV"
+          "$bin" capabilities || status=$?
           if [ "${status:-0}" -gt 1 ]; then
             echo "::error::pinned bayesite engine did not launch on this runner (exit ${status})"
             exit 1
           fi
       - name: Bayesite-backend test subset
-        run: uv run pytest -q
+        working-directory: packages/bayescycle
+        run: uv run --no-sync pytest -q
+
+  # bayesite-viz and bayesite-idata are standalone uv projects (own
+  # uv.lock, never workspace members — see docs/monorepo-migration.md step
+  # 1) kept behind the uvx process boundary so the arviz/matplotlib/netcdf4
+  # stack never enters bayescycle's install closure.
+  viz-packages:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: bayesite-viz
+            dir: packages/bayesite-viz
+          - name: bayesite-idata
+            dir: packages/bayesite-idata
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync
+        run: uv sync
+      - name: Format
+        run: uv run --no-sync ruff format --check .
+      - name: Lint
+        run: uv run --no-sync ruff check .
+      - name: CLI smoke
+        run: uv run --no-sync ${{ matrix.name }} --help
+      # No pytest step: zero tests exist in either package yet, and `pytest`
+      # exits 5 (no tests collected) on an empty suite, which would fail
+      # this job. Add `uv run --no-sync pytest -q` here the day either
+      # package gains its first test.

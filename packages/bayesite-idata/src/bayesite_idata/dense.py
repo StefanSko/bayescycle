@@ -141,7 +141,7 @@ def validate_dense_fit(fit: CheckedDenseFit) -> None:
             if len(var.dims) != var.values.ndim:
                 msg = f"{group.name}.{var.name} dims do not match array rank"
                 raise AssemblyError(msg)
-            if group.sample_dims and not var.dims[: len(group.sample_dims)] == group.sample_dims:
+            if group.sample_dims and var.dims[: len(group.sample_dims)] != group.sample_dims:
                 msg = f"{group.name}.{var.name} does not start with sample dims {group.sample_dims}"
                 raise AssemblyError(msg)
             for axis, dim in enumerate(var.dims):
@@ -317,13 +317,16 @@ def _posterior_predictive_group(
     dims_sidecar: DimsSidecar | None,
 ) -> DenseGroup:
     posterior_seed = posterior.attrs.get("seed")
-    if stream.source_fit_seed is not None and posterior_seed is not None:
-        if stream.source_fit_seed != posterior_seed:
-            msg = (
-                "posterior_predictive source_fit_seed does not match posterior seed: "
-                f"{stream.source_fit_seed} != {posterior_seed}"
-            )
-            raise AssemblyError(msg)
+    if (
+        stream.source_fit_seed is not None
+        and posterior_seed is not None
+        and stream.source_fit_seed != posterior_seed
+    ):
+        msg = (
+            "posterior_predictive source_fit_seed does not match posterior seed: "
+            f"{stream.source_fit_seed} != {posterior_seed}"
+        )
+        raise AssemblyError(msg)
     chain_index = {chain: i for i, chain in enumerate(posterior.chains)}
     expected = {
         (chain, draw) for chain in posterior.chains for draw in range(posterior.draws_per_chain)
