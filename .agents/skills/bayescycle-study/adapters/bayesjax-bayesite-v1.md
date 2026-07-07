@@ -1,17 +1,17 @@
-# Adapter: jaxstanv5-bayesite-v1
+# Adapter: bayesjax-bayesite-v1
 
 This adapter describes the current concrete implementation profile for a
 bayescycle study.
 
 ```text
-jaxstanv5 model.py -> bayescycle CLI -> Bayesite engine -> run directory
+bayesjax model.py -> bayescycle CLI -> Bayesite engine -> run directory
 ```
 
 The scientific workflow remains tool-agnostic. This adapter is swappable.
 
 ## Responsibilities
 
-- `jaxstanv5`: model declaration and IR serialization boundary.
+- `bayesjax`: model declaration and IR serialization boundary.
 - `bayescycle`: Python workflow harness that loads model files, writes run
   directories, and invokes Bayesite.
 - `bayesite`: engine that consumes IR/data and emits draws/diagnostics.
@@ -69,7 +69,7 @@ A bayescycle sample run owns:
 runs/fit-0001/
   model.ir.json
   data.json
-  dims.json                 # optional, explicit jaxstanv5 metadata only
+  dims.json                 # optional, explicit bayesjax metadata only
   posterior.ndjson
   diagnostics.json          # after diagnose
   prior_predictive.ndjson
@@ -135,7 +135,7 @@ bayescycle command in the artifact and do not treat the output as approved until
 the human gate accepts it.
 
 `simulate`, `recover`, and `sbc` run on the Bayesite backend only in this
-profile; requesting them with `--backend jaxstanv5` returns an explicit
+profile; requesting them with `--backend bayesjax` returns an explicit
 unsupported-profile error.
 
 ## Scenario and targets file schemas
@@ -202,7 +202,7 @@ parameter, which is the simplest path when names line up.
 
 ## Forbidden assumptions
 
-- Do not inspect `jaxstanv5` private APIs.
+- Do not inspect `bayesjax` private APIs.
 - Do not parse or depend on Bayesite private runtime internals.
 - Do not infer model semantics from file names, shapes, or array labels.
 - Do not treat Bayesite stdout/stderr as posterior semantics unless summarized by

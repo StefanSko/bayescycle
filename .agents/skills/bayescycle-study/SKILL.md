@@ -26,7 +26,7 @@ it instead of acting on it.
 
 This skill is an anti-corruption layer across independent tools. It may compose
 workflows through public contracts, but it must not weaken the invariants of
-`jaxstanv5`, Bayesite, `bayescycle`, or `bayesite-viz`.
+`bayesjax`, Bayesite, `bayescycle`, or `bayesite-viz`.
 
 If this skill conflicts with a tool repository's `AGENTS.md`, documented
 invariants, or public contract, the tool repository wins. Stop and ask before
@@ -116,10 +116,10 @@ For ordinary phase work, produce:
 The scientific workflow is tool-agnostic. Concrete execution is selected by
 `state.toolchain.profile`.
 
-The default profile is `jaxstanv5-bayesite-v1`:
+The default profile is `bayesjax-bayesite-v1`:
 
 ```text
-jaxstanv5 model.py -> bayescycle CLI -> Bayesite engine -> run directory
+bayesjax model.py -> bayescycle CLI -> Bayesite engine -> run directory
 ```
 
 Use `bayescycle` as the stable command boundary. Call `bayesite` directly only

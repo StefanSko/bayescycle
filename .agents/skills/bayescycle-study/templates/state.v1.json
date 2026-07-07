@@ -6,8 +6,8 @@
   "phase": "estimand",
   "gate": "awaiting_human",
   "toolchain": {
-    "profile": "jaxstanv5-bayesite-v1",
-    "model_authoring": "jaxstanv5",
+    "profile": "bayesjax-bayesite-v1",
+    "model_authoring": "bayesjax",
     "engine": "bayesite",
     "visualization": "bayesite-viz"
   },

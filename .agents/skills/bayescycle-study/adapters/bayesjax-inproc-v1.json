@@ -1,8 +1,8 @@
 {
-  "profile": "jaxstanv5-inproc-v1",
-  "model_authoring": "jaxstanv5",
+  "profile": "bayesjax-inproc-v1",
+  "model_authoring": "bayesjax",
   "workflow_cli": "bayescycle",
-  "engine": "jaxstanv5-inprocess",
+  "engine": "bayesjax-inprocess",
   "visualization": "bayesite-viz",
   "idata_exporter": "bayesite-idata",
   "run_directory_files": {
@@ -21,7 +21,7 @@
     "posterior_check": "posterior_check.json"
   },
   "commands": {
-    "sample": "bayescycle sample <model.py> --data <data.json> -o <run-dir> --backend jaxstanv5 --seed <seed> --chains <chains> --warmup <warmup> --draws <draws>",
+    "sample": "bayescycle sample <model.py> --data <data.json> -o <run-dir> --backend bayesjax --seed <seed> --chains <chains> --warmup <warmup> --draws <draws>",
     "diagnose": "bayescycle diagnose <run-dir>",
     "posterior_predictive": "bayescycle posterior-predictive <run-dir> --seed <seed>",
     "idata_export": "bayesite-idata <run-dir> -o <run-dir>/fit.nc --validate require",
@@ -30,10 +30,10 @@
     "viz_energies": "bayesite-viz energies <run-dir>/fit.nc -o <artifact.png>",
     "viz_posterior": "bayesite-viz posterior <run-dir>/fit.nc --kind hist -o <artifact.png>",
     "viz_ppc": "bayesite-viz ppc <run-dir>/fit.nc --kind dist -o <artifact.png>",
-    "prior_predictive": "bayescycle prior-predictive <model.py> --data <data.json> -o <run-dir> --backend jaxstanv5 --seed <seed> --draws <draws>",
-    "unsupported_simulate": "bayescycle simulate ... --backend jaxstanv5  # unsupported today",
-    "unsupported_recover": "bayescycle recover ... --backend jaxstanv5  # unsupported today",
-    "unsupported_sbc": "bayescycle sbc ... --backend jaxstanv5  # unsupported today"
+    "prior_predictive": "bayescycle prior-predictive <model.py> --data <data.json> -o <run-dir> --backend bayesjax --seed <seed> --draws <draws>",
+    "unsupported_simulate": "bayescycle simulate ... --backend bayesjax  # unsupported today",
+    "unsupported_recover": "bayescycle recover ... --backend bayesjax  # unsupported today",
+    "unsupported_sbc": "bayescycle sbc ... --backend bayesjax  # unsupported today"
   },
   "artifact_kinds": [
     "model_spec",

@@ -1,6 +1,6 @@
 {
-  "profile": "jaxstanv5-bayesite-v1",
-  "model_authoring": "jaxstanv5",
+  "profile": "bayesjax-bayesite-v1",
+  "model_authoring": "bayesjax",
   "workflow_cli": "bayescycle",
   "engine": "bayesite",
   "visualization": "bayesite-viz",
