@@ -172,3 +172,37 @@ Steps are strictly ordered; each lands as its own commit series on main
 Stop-and-consult points: the step 1 home/rename decision, any PyPI name
 collision in step 3, and any non-empty vendored byte diff in step 4.
 No wire-format (`bayeswire_ir`) change may ride any migration PR.
+
+## Status (2026-07-07)
+
+Steps 0 through 5 are executed on `main`. `v0.3.0` is tagged and published:
+all five distributions (`bayeswire`, `bayesjax`, `bayescycle`,
+`bayesite-viz`, `bayesite-idata`) are live on PyPI at lockstep `0.3.0`,
+`uv tool install bayescycle` works from real PyPI, and the docs sweep
+(step 5) landed — root `AGENTS.md`, `docs/releasing.md`,
+`packages/bayeswire/AGENTS.md`/`README.md`, `packages/bayescycle/README.md`,
+`docs/toolchain.html`, and the `.agents/skills/bayescycle-study/` adapters
+(renamed `jaxstanv5-*` -> `bayesjax-*`) all describe the monorepo, not the
+old four-repo world.
+
+What remains:
+
+- **Old-repo archival is in flight.** The pre-migration `bayeswire`,
+  `jaxstanv5`, and `bayesite-viz` repositories are not yet archived; they
+  still resolve historical git-URL pins, per the step 1 plan, but the
+  README-pointer-and-archive step itself has not been done yet.
+- **The `bayesite HEAD vs workspace HEAD` scheduled job is a pending
+  re-addition.** `.github/workflows/ci.yml` explicitly notes it was
+  retired, not ported, when the old nightly cross-repo alignment workflow
+  was replaced by per-PR CI across the three workspace members. Until this
+  job exists, `bayesite` compatibility with this workspace's `main` is
+  checked only at vendor-refresh and engine-pin-bump time (see
+  `docs/releasing.md`), not continuously between releases.
+
+Left deliberately untouched (historical, not part of the sweep): dated
+journals, `packages/bayesjax/docs/bayeswire-migration.md`,
+`spec/ir-format-v1.md`'s `jaxstanv5_ir` wire-envelope naming (a
+compatibility constant, never renamed), `examples/black-cats-study`'s
+recorded run state, and the generated walkthrough HTML/SQLite artifacts
+under `packages/bayescycle/docs/` (regenerable from source, not hand-edited
+prose).

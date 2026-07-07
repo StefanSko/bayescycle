@@ -12,20 +12,34 @@ model.py -> bayeswire ModelMeta -> bayeswire IR JSON -> bayesite engine -> run/
 ## Zero-install quickstart
 
 `bayescycle` is the only thing you install by hand; it provisions the rest.
+It is published on PyPI at a lockstep version alongside `bayeswire`,
+`bayesjax`, `bayesite-viz`, and `bayesite-idata`.
 
 ```bash
-uv tool install git+https://github.com/StefanSko/bayescycle.git
+uv tool install bayescycle
 bayescycle sample model.py --data data.json -o run/
 bayescycle plot trace run/
 ```
+
+`uv tool install bayescycle` installs only `bayescycle` and `bayeswire`
+(stdlib-only) — nothing else heavy. In-process JAX sampling is opt-in via
+the `[inproc]` extra, which pulls in `bayesjax` (JAX/BlackJAX):
+
+```bash
+uv tool install 'bayescycle[inproc]'
+```
+
+For joint development across packages, clone this monorepo and use the uv
+workspace (`uv sync --package bayescycle [--extra inproc]`) instead of
+installing from PyPI; see the root [`AGENTS.md`](../../AGENTS.md).
 
 The `sample` command downloads and sha256-verifies the pinned Bayesite engine
 release into `~/.cache/bayescycle/engines/` on first use if it isn't already
 on `PATH` (see "Auto-provisioning" below). The `plot` command reaches
 `bayesite-viz` the same way an agent invoking it from the command line would:
-via `uvx` against a pinned commit, so there is nothing to `pip install` for
-visualization either. Both steps print a one-line notice to stderr the first
-time they fetch something; subsequent runs are cache hits.
+via `uvx` against a pinned PyPI version, so there is nothing to `pip install`
+for visualization either. Both steps print a one-line notice to stderr the
+first time they fetch something; subsequent runs are cache hits.
 
 ## Package split
 
@@ -246,7 +260,7 @@ checksums live in `PINNED_ENGINE_RELEASE` in
 `bayescycle idata` exports a run directory to an ArviZ-compatible NetCDF fit
 file via `bayesite-viz`'s `bayesite-idata`, and `bayescycle plot <verb>`
 renders one of its plots from that fit file. Both run `bayesite-viz` through
-`uvx` against a pinned commit (`BAYESITE_VIZ_SOURCE` in
+`uvx` against a pinned PyPI version (`BAYESITE_VIZ_SOURCE` in
 `src/bayescycle/backends/bayesite_viz/uvx_runner.py`); no separate `pip
 install` of `bayesite-viz` is required, only `uv`/`uvx` on `PATH`.
 
@@ -278,7 +292,7 @@ still needs a Bayesite engine.
 
 ### Deterministic uvx environments and offline pre-warming
 
-`idata` and `plot` pin bayesite-viz to an exact commit
+`idata` and `plot` pin bayesite-viz to an exact PyPI version
 (`BAYESITE_VIZ_SOURCE`), but that alone doesn't pin *its* dependencies
 (arviz, matplotlib, netcdf4, xarray, ...): `uvx` resolves those as `>=`
 ranges at invocation time, so an upstream release could otherwise change

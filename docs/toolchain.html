@@ -315,10 +315,11 @@
   <div class="section-head col" style="padding:0;">
     <span class="eyebrow">the repositories</span>
     <h2>One language, two engines, one harness</h2>
-    <p class="lede">Dependency direction is one-way and explicit. Solid arrows
-    are pinned package dependencies (exact commit — the pin-bump diff is the
-    compatibility review). The dashed arrow is file vendoring: bayesite takes
-    bytes, never packages.</p>
+    <p class="lede">Dependency direction is one-way and explicit. bayeswire,
+    bayesjax, and bayescycle are sibling packages in one monorepo, published
+    lockstep to PyPI; solid arrows are exact-version workspace dependencies.
+    bayesite is the one repository outside this monorepo — the dashed arrow
+    is file vendoring: it takes bytes, never packages.</p>
   </div>
   <div class="diagram">
     <svg viewBox="0 0 960 420" role="img" aria-label="Repository map: bayescycle depends on bayeswire and optionally bayesjax; bayesjax depends on bayeswire; bayesite vendors files from bayeswire; bayesite-viz consumes the artifact corpus.">
@@ -699,21 +700,21 @@
         not assumed</li>
         <li><strong>produce-conformance</strong> — reference declarations must
         reproduce the corpus documents and pinned canonical hashes exactly</li>
-        <li><strong>spec-doc generation</strong> — <code>ir-v1-tags.md</code>
-        regenerated from the registry must match the committed file</li>
-        <li>ruff · ty · pytest</li>
+        <li><strong>spec-doc generation</strong> — <code>spec/ir-v1-tags.md</code>
+        (repo root) regenerated from the registry must match the committed file</li>
+        <li>ruff · ty · pytest, via <code>uv sync --package bayeswire</code></li>
       </ul>
     </div>
     <div class="gate">
       <h3><span class="repo">bayesjax</span> <span class="kind">every push</span></h3>
       <ul>
         <li><strong>consume-conformance</strong> — decode every corpus fixture
-        from the <em>installed pin</em>, bind from the fixture's own data,
+        from the workspace's bayeswire, bind from the fixture's own data,
         reproduce logp/grad within the spec's float32 tier (1e-3)</li>
         <li><strong>statistical oracles</strong> (backend-boundary changes) —
         Stan posterior references and SBC rank-uniformity on real hierarchical
         models</li>
-        <li>validation loop against the pinned bayeswire</li>
+        <li>ruff · ty · pytest, via <code>uv sync --package bayesjax</code></li>
       </ul>
     </div>
     <div class="gate">
@@ -721,8 +722,10 @@
       <ul>
         <li><strong>vendored-bytes rung</strong> — spec docs and corpus under
         <code>tests/golden_ir/</code> must sha256-match
-        <code>bayeswire-vendor.json</code> at the <code>BAYESWIRE_TAG</code> pin;
-        vendored files are generated, never edited</li>
+        <code>bayeswire-vendor.json</code>, regenerated from this monorepo's
+        <code>packages/bayeswire</code> and root <code>spec/</code> by
+        <code>scripts/vendor_bayeswire.py</code>; vendored files are
+        generated, never edited</li>
         <li><strong>fixture evaluation</strong> — logp rtol 1e-12, gradient
         rtol 1e-10 against the float64 JAX-oracle values, plus a bitwise
         compiled-tape replay check</li>
@@ -733,28 +736,39 @@
     <div class="gate">
       <h3><span class="repo">bayescycle</span> <span class="kind">every push</span></h3>
       <ul>
-        <li><strong>no-JAX job</strong> — installs only bayescycle + bayeswire,
-        asserts JAX is absent, downloads the <em>pinned released</em> bayesite
-        engine binary (sha256-verified, via the shared provisioning code — no
+        <li><strong>no-JAX job</strong> — <code>uv sync --package bayescycle</code>
+        without the <code>[inproc]</code> extra, asserts JAX and bayesjax are
+        both absent, downloads the <em>pinned released</em> bayesite engine
+        binary (sha256-verified, via the shared provisioning code — no
         source build), and runs the end-to-end test: bayeswire model → run
         directory → sample → diagnose</li>
-        <li>full loop with the <code>[inproc]</code> extra (real bayesjax runs)</li>
+        <li>full loop with the <code>[inproc]</code> extra (real bayesjax runs,
+        same workspace lock)</li>
+        <li><code>viz-packages</code> job builds/lints <code>bayesite-viz</code>
+        and <code>bayesite-idata</code> as their own standalone uv projects</li>
       </ul>
     </div>
     <div class="gate">
-      <h3><span class="repo">bayeswire</span> <span class="kind">nightly · on tag</span></h3>
+      <h3><span class="repo">workspace</span> <span class="kind">every push · on tag</span></h3>
       <ul>
-        <li><strong>cross-repo alignment</strong> — checks out each consumer,
-        installs bayeswire <em>HEAD</em>, and runs that consumer's conformance
-        subset: early warning that a pending spec change breaks someone,
-        <em>before</em> a tag is cut. A red nightly blocks tagging, not merging</li>
-        <li><strong>prose audit</strong> — greps consumers so normative
-        wire-format prose (and the retired envelope key) can live only here</li>
-        <li><strong>bayesite-head-vs-bayescycle</strong> — builds bayesite
-        <em>HEAD</em> from source and runs bayescycle's suite against it; per-PR
-        CI in bayescycle only ever exercises the pinned release, so this
-        nightly job is the only place bayesite HEAD is exercised against a
-        consumer</li>
+        <li><strong>root guards</strong> — <code>tests/</code> assert the
+        workspace wiring invariants: sibling deps resolve within the
+        workspace, JAX stays confined to bayesjax (and bayescycle's
+        <code>[inproc]</code> extra), and bayesite-viz/bayesite-idata never
+        enter a workspace member's dependency graph</li>
+        <li><strong>every PR is the alignment check</strong> — bayeswire,
+        bayesjax, and bayescycle share one workspace lock, so HEAD-vs-HEAD
+        compatibility across those three is exercised on every push; the old
+        nightly cross-repo alignment run no longer exists because there is no
+        longer a HEAD/pin gap to bridge for these three packages</li>
+        <li><strong>on tag</strong> — <code>release.yml</code>'s
+        <code>check</code> job re-verifies the tag matches the lockstep
+        version and re-runs the root guards before five per-package
+        <code>publish</code> jobs push to PyPI</li>
+        <li><strong>pending</strong> — a scheduled <code>bayesite HEAD vs
+        workspace HEAD</code> job (the one edge that still crosses a repo
+        boundary) was retired with the old nightly workflow and has not been
+        re-added yet; see <code>docs/monorepo-migration.md</code></li>
       </ul>
     </div>
   </div>
@@ -766,20 +780,25 @@
       starts as a corpus reference model and produce-conformance coverage in
       bayeswire; only then does declaration or backend work begin.</li>
       <li><strong>Regenerate the corpus deliberately.</strong>
-      <code>scripts/regenerate_corpus.py</code> rewrites documents, hashes, and
-      the generated tag spec. Review every byte of the diff.</li>
+      <code>packages/bayeswire/scripts/regenerate_corpus.py</code> rewrites
+      documents, hashes, and the generated tag spec. Review every byte of
+      the diff.</li>
       <li><strong>Record it.</strong> A spec changelog entry plus an explicit IR
       version decision — <code>bayeswire_ir</code> stays at 1 until a real
       format change; package versions move freely underneath as long as
       produce-conformance bytes are stable.</li>
-      <li><strong>Bump the pins, one PR per consumer.</strong> bayesjax and
-      bayescycle move their exact-commit dependency; bayesite re-runs
-      <code>scripts/vendor_bayeswire.py</code>. <em>The pin-bump diff is the
-      compatibility review</em> — a consumer upgrades by reading exactly what
-      changed, with its own conformance gates deciding.</li>
-      <li><strong>The nightly stands watch.</strong> Between pins, cross-repo
-      alignment keeps testing consumers against bayeswire HEAD, so surprises
-      surface as red runs instead of at release time.</li>
+      <li><strong>Release lockstep, then refresh the vendor.</strong>
+      <code>scripts/bump_version.py</code> moves bayesjax and bayescycle's
+      sibling pins in the same commit as bayeswire's — they are workspace
+      members, not separate repos, so there is no separate pin-bump PR for
+      them. bayesite, the one repository outside this monorepo, re-runs
+      <code>scripts/vendor_bayeswire.py</code> against the tagged commit;
+      <em>that vendored diff is the compatibility review</em> that survives
+      the migration.</li>
+      <li><strong>Every PR stands watch.</strong> Because bayeswire, bayesjax,
+      and bayescycle share one workspace lock, HEAD-vs-HEAD compatibility
+      across those three is exercised on every push, not just at release
+      time — see the CI board above.</li>
     </ol>
   </div>
 
@@ -800,7 +819,7 @@
 
 <footer class="col">
   bayeswire · normative spec: <span class="m">spec/ir-format-v1.md</span> ·
-  corpus: <span class="m">src/bayeswire/corpus/</span> ·
+  corpus: <span class="m">packages/bayeswire/src/bayeswire/corpus/</span> ·
   this page is self-contained and renders offline
 </footer>
 

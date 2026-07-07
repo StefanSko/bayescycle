@@ -9,11 +9,11 @@ let either you or the agent skip a step.**
 You write a model; `bayescycle` provisions the sampling engine and the
 plotting tool for you.
 
-Install the workflow harness (it pins `bayeswire`, so nothing else to
-install yet):
+Install the workflow harness from PyPI (it pins `bayeswire`, so nothing else
+to install yet):
 
 ```bash
-uv tool install git+https://github.com/StefanSko/bayescycle.git
+uv tool install bayescycle
 ```
 
 Write `model.py`:
@@ -49,29 +49,35 @@ bayescycle plot trace run/
 
 `sample` downloads and sha256-verifies the pinned Bayesite engine release
 into a local cache the first time it runs; later runs reuse it. `plot`
-reaches `bayesite-viz` through `uvx` against a pinned commit, so there is
+reaches `bayesite-viz` through `uvx` at a pinned PyPI version, so there is
 nothing else to `pip install`. See
-[bayescycle](https://github.com/StefanSko/bayescycle) for the rest of the
-CLI: prior-predictive checks, simulation/recovery, SBC, and diagnostics.
+[`packages/bayescycle`](../bayescycle) for the rest of the CLI:
+prior-predictive checks, simulation/recovery, SBC, and diagnostics.
 
 ## The toolchain
 
-| Repository | Role |
+Four of the five packages below are published from this same monorepo at
+lockstep versions; only `bayesite` lives elsewhere.
+
+| Package | Role |
 |---|---|
-| **bayeswire** (here) | One spec: eDSL, resolved IR, wire codec, dimension sidecars, normative docs, and fixture corpus |
-| [jaxstanv5](https://github.com/StefanSko/jaxstanv5) | Reference engine: JAX/BlackJAX backend for binding models, compiling log densities, running NUTS, and emitting diagnostics |
-| [bayesite](https://github.com/StefanSko/bayesite) | Fast engine that must agree with the reference: zero-dependency Rust engine that vendors specs and fixtures by file |
-| [bayescycle](https://github.com/StefanSko/bayescycle) | Harness that refuses skipped steps: file-based workflow runner for agents and humans |
-| [bayesite-viz](https://github.com/StefanSko/bayesite-viz) | Downstream visualization: fit-artifact exporter and dashboards |
+| **bayeswire** (here, `packages/bayeswire`) | One spec: eDSL, resolved IR, wire codec, dimension sidecars, normative docs, and fixture corpus |
+| `bayesjax` (`packages/bayesjax`) | Reference engine: JAX/BlackJAX backend for binding models, compiling log densities, running NUTS, and emitting diagnostics |
+| [bayesite](https://github.com/StefanSko/bayesite) | Fast engine that must agree with the reference: zero-dependency Rust engine, a separate repo that vendors this repo's spec and fixtures by file, never by package dependency |
+| `bayescycle` (`packages/bayescycle`) | Harness that refuses skipped steps: file-based workflow runner for agents and humans |
+| `bayesite-viz` / `bayesite-idata` (`packages/bayesite-viz`, `packages/bayesite-idata`) | Downstream visualization: fit-artifact exporter and ArviZ plots, reached by `bayescycle` through `uvx` |
 
 Every workflow step is a command that reads files and writes files; every run
 is seeded and replayable; run directories are append-only; provenance records
 what was actually done. The customer is an agent and the human auditing it;
 the product is trustworthy process, not a sampler.
 
-Consumers pin bayeswire by exact version and vendor or conformance-test
-against the corpus; the copies of the spec in downstream repositories are
-generated and hash-checked, never edited.
+`bayesjax` and `bayescycle` depend on `bayeswire` as sibling workspace
+members at the exact lockstep version; `bayesite-viz`/`bayesite-idata` pin it
+as a version-matched test fixture. `bayesite` vendors and conformance-tests
+against the corpus; its copy of the spec is generated and hash-checked,
+never edited. See the root [`AGENTS.md`](../../AGENTS.md) and
+[`docs/releasing.md`](../../docs/releasing.md).
 
 ## This repository
 
@@ -117,9 +123,9 @@ backends bind and sample.
 
 - `src/bayeswire/` — the package: `model`, `distributions`, `constraints`,
   `math`, `ir`
-- `spec/` — the normative wire spec: `ir-format-v1.md`, generated
-  `ir-v1-tags.md`, `dimension-sidecar-v1.md`, `data-document-v1.md`,
-  `model-data-fingerprint-v1.md`
+- `../../spec/` (repo root, toolchain-normative) — the normative wire spec:
+  `ir-format-v1.md`, generated `ir-v1-tags.md`, `dimension-sidecar-v1.md`,
+  `data-document-v1.md`, `model-data-fingerprint-v1.md`
 - `src/bayeswire/corpus/` — golden IR documents, canonical hashes, canonical
   data documents, fingerprint test vectors, and JAX-oracle evaluation
   fixtures, shipped as package data so Python consumers conformance-test
@@ -127,8 +133,9 @@ backends bind and sample.
 - `scripts/regenerate_corpus.py` — regenerates corpus documents, hashes,
   data documents, fingerprints, and the generated tag spec after a
   deliberate format change
-- `docs/releasing.md` — the release procedure: when to tag, how to cut the
-  tag, and the consumer pin-bump order
+- `../../docs/releasing.md` (repo root) — the release procedure: lockstep
+  version bump, tag, publish, and the two surviving cross-repo edges with
+  `bayesite`
 
 ## Development
 

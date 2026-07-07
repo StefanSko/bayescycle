@@ -1,86 +1,98 @@
-# Releasing bayeswire
+# Releasing
 
-The wire format is the product: a release is the act of naming a reviewed
-`main` commit with a tag that every consumer pins. The pin-bump diff in each
-consumer is the compatibility review.
+This repository is a **uv workspace monorepo** publishing five lockstep
+Python distributions to PyPI: `bayeswire`, `bayesjax`, `bayescycle`,
+`bayesite-viz`, `bayesite-idata` (see
+[`monorepo-migration.md`](monorepo-migration.md) for how this replaced the
+old four-repo layout). A release tags one `main` commit and publishes all
+five at the same version number in one workflow run.
+
+The wire format is still the product whenever a release carries a
+canonical-bytes change: `bayeswire_ir` is the serialization boundary every
+package, and the separate `bayesite` (Rust engine) repository, agrees on. A
+corpus diff is a compatibility event with its own review, independent of the
+version-bump mechanics below.
 
 ## When to release
 
-- **Any change to canonical bytes, tags, or field lists** (a corpus diff)
-  requires a release and a coordinated pin bump across all consumers —
-  never leave the toolchain split across incompatible baselines. Such a
-  change must already carry a spec changelog entry and an explicit
-  `bayeswire_ir` version decision (see `spec/ir-format-v1.md`).
+- **Any change to canonical bytes, tags, or field lists** (a corpus diff
+  under `packages/bayeswire/src/bayeswire/corpus/`) requires:
+  1. A spec changelog entry and an explicit `bayeswire_ir` version decision
+     in `spec/ir-format-v1.md`.
+  2. A deliberate corpus regeneration, reviewed byte-by-byte:
+     `uv run --package bayeswire packages/bayeswire/scripts/regenerate_corpus.py`.
+  3. Regenerated evaluation fixtures from the JAX oracle:
+     `uv run --package bayesjax packages/bayesjax/scripts/generate_ir_fixtures.py
+     --bayeswire-path packages/bayeswire`.
+  4. If the artifact corpus changed: regenerate with a real `bayesite`
+     binary via `packages/bayeswire/scripts/generate_artifact_corpus.py
+     --bayesite-bin ...`.
 - **Package-only changes** (docs, tooling, additive corpus growth with
   byte-identical existing files) can be released whenever convenient;
   `bayeswire_ir` stays at 1.
 
 ## Preconditions
 
-1. `main` CI green: no-JAX walk, produce-conformance, spec-doc generation.
-2. The nightly cross-repo alignment run is green. **A red nightly blocks
-   tagging, not merging** — it means a consumer breaks against HEAD and the
-   release must wait for the fix or a coordinated plan. The `bayesite-head-vs-bayescycle`
-   job within that run exercises bayesite HEAD against consumers; per-PR CI in
-   bayescycle intentionally tests only the pinned released engine.
-3. If the corpus changed: the diff was reviewed byte-by-byte, and the
-   evaluation fixtures were regenerated with the JAX oracle
-   (`bayesjax/scripts/generate_ir_fixtures.py --bayeswire-path .`). If the
-   artifact corpus changed: regenerated with a release bayesite binary
-   (`scripts/generate_artifact_corpus.py --bayesite-bin ...`).
+1. `main` CI green (`.github/workflows/ci.yml`): the root guard job, and the
+   per-package `bayeswire` / `bayesjax` / `bayescycle` / `bayescycle-no-jax`
+   / `viz-packages` jobs. Because bayeswire, bayesjax, and bayescycle share
+   one workspace lock, HEAD-vs-HEAD compatibility across those three is
+   exercised by every PR — there is no separate nightly cross-repo alignment
+   run to wait on before tagging.
+2. If the corpus changed: the diff was reviewed byte-by-byte, and the
+   evaluation/artifact fixtures were regenerated as described above.
 
-## Cut the tag
+## Cut the release
 
-Tags name `main` history only; both paths below enforce or assume that.
+One version, one commit, one tag, one workflow run:
 
-- **Actions → "Cut release tag"** (`.github/workflows/cut-tag.yml`): run with
-  `tag = vX.Y.Z` and `sha = <the main commit>`. The workflow refuses commits
-  not reachable from `main`.
-- Or locally:
-  `git tag -a vX.Y.Z <main-sha> -m "bayeswire vX.Y.Z" && git push origin vX.Y.Z`
+1. **Bump.** `uv run python scripts/bump_version.py --version X.Y.Z` rewrites
+   all five `pyproject.toml` versions; the exact sibling pins between them
+   (bayescycle -> bayeswire, bayescycle's `[inproc]` extra -> bayesjax,
+   bayesjax -> bayeswire); the runtime `__version__` constants; and the
+   `BAYESITE_VIZ_SOURCE` / `BAYESITE_IDATA_SOURCE` / `BAYESITE_VIZ_EXCLUDE_NEWER`
+   pins in
+   `packages/bayescycle/src/bayescycle/backends/bayesite_viz/uvx_runner.py`.
+2. **Commit.** One commit. `uv run pytest tests -q` (the root guard suite)
+   asserts all five versions and sibling pins agree — run it before tagging.
+3. **Tag.** `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main vX.Y.Z`.
+4. **Publish.** The tag push triggers `.github/workflows/release.yml`:
+   - `check` re-verifies the tag matches the version read from
+     `packages/bayeswire/pyproject.toml` and re-runs the root guard tests.
+   - Five `publish` matrix jobs (one per package, each its own
+     `pypi-<name>` trusted-publishing environment) build and
+     `uv publish --check-url ...` a wheel/sdist. `--check-url` makes a re-run
+     idempotent: artifacts already on PyPI are skipped, not re-uploaded.
+5. **Verify.** `uv tool install bayescycle` from real PyPI and run the
+   quickstart.
 
-## Bump the consumer pins
+## The two surviving cross-repo edges
 
-One PR per consumer; each diff is that consumer's compatibility review, and
-its own conformance gates decide.
+`bayesite` (the Rust engine) stays a separate repository; it vendors the
+spec and fixtures by file, never by package dependency. Two pins move
+independently of the lockstep Python release above:
 
-**Ordering rule (learned the hard way):** uv rejects two different URL specs
-for one package in a single resolution. A repo may therefore only pin a
-consumer whose *own tree* already pins the same bayeswire ref. In practice:
+1. **Wire change -> bayesite vendor refresh.** After any canonical-bytes
+   change, run `scripts/vendor_bayeswire.py` in the `bayesite` repo, pointed
+   at this monorepo (`packages/bayeswire` + root `spec/`). The vendored diff
+   is generated bytes, never hand-edited; review it byte-by-byte the same
+   way the corpus diff here is reviewed. A wire change is not done until the
+   vendor refresh lands in `bayesite`.
+2. **A bayesite release -> engine pin bump.** When `bayesite` ships a new
+   tag, run `uv run python packages/bayescycle/scripts/bump_engine_release.py
+   --tag vX.Y.Z` to rewrite `PINNED_ENGINE_RELEASE` (the version and
+   per-target sha256s) in
+   `packages/bayescycle/src/bayescycle/backends/bayesite/provisioning.py`.
+   This is independent of the lockstep Python version and does not require a
+   new tag on this repo unless one is cut alongside it.
 
-1. **bayesjax** — `pyproject.toml` bayeswire pin → `vX.Y.Z`; `uv sync`;
-   validation loop green (plus the backend-boundary smoke set when the spec
-   changed). **Merge with a merge commit** so the pinned SHA below stays
-   main-reachable.
-2. **bayescycle** — bayeswire pin → `vX.Y.Z` *and* bayesjax pin → a commit
-   whose tree already carries the `vX.Y.Z` pin (after step 1 merges, that is
-   bayesjax `main`); `uv sync`; both install profiles green (no-JAX subset
-   with a real bayesite binary, full loop with `[inproc]`).
-3. **bayesite** — `scripts/vendor_bayeswire.py --bayeswire-path <checkout at
-   vX.Y.Z>`; review the vendored diff (generated bytes, never hand-edited);
-   validation ladder green including the vendored-bytes rung.
-4. **bayesite-viz** — dev-group fixture pin → `vX.Y.Z`; `uv sync`; tests
-   green.
+Neither edge is part of the `bump_version.py` / tag / `release.yml`
+sequence above; both are triggered by an event in the `bayesite` repository.
 
-Steps 3 and 4 are order-independent; steps 1 → 2 are not.
+## Pending
 
-bayescycle also carries two other pins that move on their own schedule,
-independent of a bayeswire release, and are **not** part of step 2 above:
-`PINNED_ENGINE_RELEASE` (the bayesite engine version and per-target
-sha256s, in `src/bayescycle/backends/bayesite/provisioning.py`), bumped
-whenever a new bayesite tag ships via
-`scripts/bump_engine_release.py --tag vX.Y.Z`; and `BAYESITE_VIZ_SOURCE`
-(the bayesite-viz uvx pin, in
-`src/bayescycle/backends/bayesite_viz/uvx_runner.py`), bumped by hand
-whenever the pinned bayesite-viz commit changes — always together with
-its determinism companion `BAYESITE_VIZ_EXCLUDE_NEWER` in the same
-module (the `--exclude-newer` timestamp that freezes bayesite-viz's
-transitive resolution; set it to the midnight UTC following the pinned
-commit's date). Neither needs touching when only bayeswire's pin moves.
-
-## After the bump
-
-- All four consumers should record the same ref: two `pyproject.toml` pins,
-  `BAYESWIRE_TAG`, and the viz dev pin. Grep before declaring done.
-- The nightly alignment keeps testing consumers against bayeswire HEAD, so
-  drift between releases surfaces as red runs, not at the next tag.
+A scheduled `bayesite HEAD vs workspace HEAD` job (the engine built from
+source, run against this workspace's `main`) has not been re-created since
+the migration — see [`monorepo-migration.md`](monorepo-migration.md) for
+status. Until it exists, `bayesite` compatibility is checked only at
+vendor-refresh and engine-pin-bump time, not continuously.

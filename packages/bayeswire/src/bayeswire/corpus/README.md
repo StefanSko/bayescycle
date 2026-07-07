@@ -19,8 +19,8 @@ files; none may substitute private fixtures.
   `<model>.json` and `data/<model>.json`.
 
 The evaluation values in `fixtures/` are **JAX-oracle outputs**: computed by
-the jaxstanv5 backend in float64 (`jax_enable_x64`), regenerated with
-jaxstanv5's `scripts/generate_ir_fixtures.py` against this corpus. Consumers
+the bayesjax backend in float64 (`jax_enable_x64`), regenerated with
+`packages/bayesjax/scripts/generate_ir_fixtures.py` against this corpus. Consumers
 reproduce them within the tolerance policy stated in
 `spec/ir-format-v1.md` — the tolerances live in the spec, not in any
 consumer's tests.

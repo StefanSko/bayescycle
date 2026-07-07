@@ -23,19 +23,18 @@ interpret diagnostics, or host any backend. Invalid states the identity makes
 unrepresentable: a JAX (or any non-stdlib) import anywhere in `src/` is a bug
 by definition, enforced by a repo-level test that walks every module.
 
-Known consumers: [jaxstanv5](https://github.com/StefanSko/jaxstanv5) (JAX/
-BlackJAX backend), [bayesite](https://github.com/StefanSko/bayesite) (Rust
-engine; vendors spec and fixtures by file, never by package dependency), and
-[bayescycle](https://github.com/StefanSko/bayescycle) (workflow harness).
-Consumers pin bayeswire by exact version; bumping the pin is a PR whose diff
-is the compatibility review.
+Known consumers: `bayesjax` (`packages/bayesjax`, JAX/BlackJAX backend) and
+`bayescycle` (`packages/bayescycle`, workflow harness) live in this same
+repository as sibling workspace members, pinned to the exact lockstep
+version via `[project.dependencies]`. `bayesite` (Rust engine,
+[StefanSko/bayesite](https://github.com/StefanSko/bayesite)) is the one
+consumer outside this repo: it vendors `spec/` and this package's corpus by
+byte-reviewed file copy, never by package dependency.
 
-Local sibling checkouts for compatibility work live under `projects/`:
-
-- [jaxstanv5](projects/jaxstanv5/)
-- [bayescycle](projects/bayescycle/)
-- [bayesite](projects/bayesite/)
-- [bayesite-viz](projects/bayesite-viz/)
+See the root [`AGENTS.md`](../../AGENTS.md) for the workspace layout and
+[`docs/releasing.md`](../../docs/releasing.md) for the release and
+vendor-refresh procedure — this package no longer keeps its own consumer
+pin-bump checklist or sibling checkouts under `projects/`.
 
 ## Communication
 
@@ -85,9 +84,10 @@ that lives in backend packages, never here.
 
 ## IR compatibility invariants
 
-The wire format is the product. Read `spec/ir-format-v1.md` and
-`spec/ir-v1-tags.md` before changing the codec, the registry, or any
-registered dataclass.
+The wire format is the product. Read `../../spec/ir-format-v1.md` and
+`../../spec/ir-v1-tags.md` (the repo-root `spec/`, normative for the whole
+toolchain, not package-internal) before changing the codec, the registry, or
+any registered dataclass.
 
 - The serialized `ModelMeta` is the producer/consumer boundary.
 - Decoding executes no user code.
@@ -100,8 +100,10 @@ registered dataclass.
 - Unknown non-core tags fail explicitly.
 - Any change to canonical bytes, tags, or field lists requires a spec
   changelog entry, a regenerated corpus (`scripts/regenerate_corpus.py`), and
-  a coordinated consumer-pin bump. Golden-file diffs plus an IR version
-  decision, always.
+  a coordinated bump: the lockstep release for `bayesjax`/`bayescycle`
+  (sibling workspace members, same repo) plus a byte-reviewed vendor refresh
+  in `bayesite` (see [`docs/releasing.md`](../../docs/releasing.md)).
+  Golden-file diffs plus an IR version decision, always.
 
 ## Development process
 
