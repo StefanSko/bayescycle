@@ -1,0 +1,61 @@
+# The one surviving cross-repo edge: bayesite (Rust engine) lives in its
+# own repo and per-PR CI here tests only the pinned released engine, so
+# this scheduled job is the only place bayesite HEAD is exercised against
+# the workspace. A red run here blocks cutting a bayesite release (and a
+# toolchain tag that depends on one), not merging.
+#
+# The workspace already tests bayescycle against bayeswire HEAD on every
+# PR (shared workspace lock), so unlike the retired pre-monorepo
+# cross-repo workflow, no reinstall juggling is needed — only the engine
+# binary is swapped for a HEAD build.
+name: bayesite HEAD vs workspace
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  bayesite-head:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: StefanSko/bayesite
+          path: bayesite
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bayesite
+      - name: Build bayesite HEAD
+        run: cargo build --release --manifest-path bayesite/Cargo.toml
+      - name: Sync bayescycle (no-JAX profile, workspace HEAD)
+        run: uv sync --package bayescycle
+      - name: Run bayescycle tests against bayesite HEAD
+        run: |
+          export BAYESCYCLE_TEST_BAYESITE_BIN="$GITHUB_WORKSPACE/bayesite/target/release/bayesite"
+          "$BAYESCYCLE_TEST_BAYESITE_BIN" capabilities || status=$?
+          if [ "${status:-0}" -gt 1 ]; then
+            echo "::error::bayesite HEAD binary did not launch (exit ${status})"
+            exit 1
+          fi
+          uv run --no-sync pytest packages/bayescycle -q
+
+  # Only bayeswire carries normative wire-format prose; the retired
+  # envelope key must never reappear in bayesite code. (The Python
+  # packages are audited implicitly: they live in this repo, where the
+  # string survives only in historical docs.)
+  bayesite-prose-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: StefanSko/bayesite
+          path: bayesite
+      - name: Retired envelope key absent from bayesite code
+        run: |
+          ! grep -rn "jaxstanv5_ir" bayesite --include="*.rs" --include="*.py" \
+            || { echo "::error::retired envelope key found in bayesite code"; exit 1; }
