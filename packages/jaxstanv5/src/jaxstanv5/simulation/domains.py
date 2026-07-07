@@ -1,0 +1,47 @@
+"""Prior simulation domains derived from parameter constraints."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from bayeswire.constraints.core import Constraint
+from bayeswire.constraints.interval import Interval, UnitInterval
+from bayeswire.constraints.ordered import Ordered
+from bayeswire.constraints.positive import Positive
+from bayeswire.distributions.core import DistributionValue
+
+
+@dataclass(frozen=True)
+class UnconstrainedDomain:
+    """Unrestricted real-valued prior domain."""
+
+
+@dataclass(frozen=True)
+class ScalarIntervalDomain:
+    """Scalar interval prior domain."""
+
+    lower: DistributionValue | None
+    upper: DistributionValue | None
+
+
+@dataclass(frozen=True)
+class OrderedVectorDomain:
+    """Ordered vector prior domain."""
+
+
+type PriorDomain = UnconstrainedDomain | ScalarIntervalDomain | OrderedVectorDomain
+
+
+def prior_domain_for_constraint(constraint: Constraint | None) -> PriorDomain:
+    """Return the constrained-value prior domain implied by a constraint."""
+    if constraint is None:
+        return UnconstrainedDomain()
+    if isinstance(constraint, Positive):
+        return ScalarIntervalDomain(lower=0.0, upper=None)
+    if isinstance(constraint, Interval):
+        return ScalarIntervalDomain(lower=constraint.lower, upper=constraint.upper)
+    if isinstance(constraint, UnitInterval):
+        return ScalarIntervalDomain(lower=0.0, upper=1.0)
+    if isinstance(constraint, Ordered):
+        return OrderedVectorDomain()
+    raise TypeError(f"Unsupported prior constraint: {type(constraint).__name__}")

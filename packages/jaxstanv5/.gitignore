@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+
+# Builds
+build/
+dist/
+*.egg-info/
+
+# Stan/CmdStan build artifacts
+reference/stan/models/*.hpp
+reference/stan/models/*.o
+reference/stan/models/normal_known_scale
+reference/stan/models/ordinal_logistic_regression
+reference/stan/models/partially_observed_mvn
+reference/stan/models/positive_scale_normal
+reference/stan/models/exponential_rate
+reference/stan/models/fixed_kernel_gp
+reference/stan/models/hierarchical_beta_binomial_logistic_varying_slopes
+reference/stan/models/hierarchical_beta_regression_logistic_varying_slopes
+reference/stan/models/hierarchical_binomial_logistic_varying_slopes
+reference/stan/models/hierarchical_negative_binomial_log_rate_varying_slopes
+reference/stan/models/hierarchical_poisson_varying_slopes
+reference/stan/models/multivariate_normal_likelihood
+reference/stan/models/student_t_location
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

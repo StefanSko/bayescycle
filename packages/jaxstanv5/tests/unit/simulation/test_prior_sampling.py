@@ -1,0 +1,224 @@
+"""Tests for constraint-aware prior sampling primitives."""
+
+from __future__ import annotations
+
+import jax
+import jax.numpy as jnp
+import pytest
+from bayeswire.constraints import Ordered, Positive
+from bayeswire.constraints.core import ConstrainedValue, LogAbsDetJacobian, UnconstrainedValue
+from bayeswire.distributions import MultivariateNormal, Normal
+from bayeswire.distributions.core import DistributionValue, LogProbability
+
+from jaxstanv5.simulation.core import _leading_sample_shape, _sample_prior_value
+
+
+class UnitIntervalDistribution:
+    """Simple inverse-CDF distribution for generic constrained sampling tests."""
+
+    def batch_shape(self) -> tuple[int, ...]:
+        return ()
+
+    def event_shape(self) -> tuple[int, ...]:
+        return ()
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return jnp.zeros_like(jnp.asarray(x))
+
+    def sample(
+        self,
+        key: jax.Array,
+        *,
+        sample_shape: tuple[int, ...] = (),
+    ) -> jax.Array:
+        return jax.random.uniform(key, shape=sample_shape)
+
+    def cdf(self, x: DistributionValue) -> jax.Array:
+        return jnp.asarray(x)
+
+    def icdf(self, p: DistributionValue) -> jax.Array:
+        return jnp.asarray(p)
+
+
+class EventVectorInverseCdfDistribution:
+    """Vector-event inverse-CDF distribution used to test explicit rejection."""
+
+    def batch_shape(self) -> tuple[int, ...]:
+        return ()
+
+    def event_shape(self) -> tuple[int, ...]:
+        return (2,)
+
+    def log_prob(self, x: DistributionValue) -> LogProbability:
+        return jnp.zeros(jnp.asarray(x).shape[:-1])
+
+    def sample(
+        self,
+        key: jax.Array,
+        *,
+        sample_shape: tuple[int, ...] = (),
+    ) -> jax.Array:
+        return jax.random.uniform(key, shape=sample_shape + self.event_shape())
+
+    def cdf(self, x: DistributionValue) -> jax.Array:
+        return jnp.asarray(x)
+
+    def icdf(self, p: DistributionValue) -> jax.Array:
+        return jnp.asarray(p)
+
+
+class UnsupportedConstraint:
+    """Constraint shape used to verify explicit unsupported-state failures."""
+
+    def transform(self, x: ConstrainedValue) -> UnconstrainedValue:
+        return x
+
+    def inverse_transform(self, y: UnconstrainedValue) -> ConstrainedValue:
+        return y
+
+    def log_abs_det_jacobian(self, y: UnconstrainedValue) -> LogAbsDetJacobian:
+        return jnp.zeros_like(jnp.asarray(y))
+
+
+def test_leading_sample_shape_keeps_scalar_event_vector_shape() -> None:
+    sample_shape = _leading_sample_shape(
+        target_shape=(3,),
+        batch_shape=(),
+        event_shape=(),
+    )
+
+    assert sample_shape == (3,)
+
+
+def test_leading_sample_shape_removes_event_shape_suffix() -> None:
+    sample_shape = _leading_sample_shape(
+        target_shape=(3,),
+        batch_shape=(),
+        event_shape=(3,),
+    )
+
+    assert sample_shape == ()
+
+
+def test_leading_sample_shape_removes_batch_shape_suffix() -> None:
+    sample_shape = _leading_sample_shape(
+        target_shape=(2, 3),
+        batch_shape=(3,),
+        event_shape=(),
+    )
+
+    assert sample_shape == (2,)
+
+
+def test_leading_sample_shape_rejects_incompatible_event_suffix() -> None:
+    with pytest.raises(ValueError, match="Target shape"):
+        _leading_sample_shape(
+            target_shape=(2,),
+            batch_shape=(),
+            event_shape=(3,),
+        )
+
+
+def test_sample_prior_value_draws_unconstrained_normal_with_requested_shape() -> None:
+    key = jax.random.PRNGKey(11)
+
+    value = _sample_prior_value(key, Normal(1.0, 2.0), constraint=None, target_shape=(5,))
+
+    assert value.shape == (5,)
+    assert jnp.all(jnp.isfinite(value))
+
+
+def test_sample_prior_value_draws_positive_truncated_normal_for_positive_constraint() -> None:
+    key = jax.random.PRNGKey(12)
+
+    value = _sample_prior_value(key, Normal(0.0, 1.0), constraint=Positive(), target_shape=(100,))
+
+    assert value.shape == (100,)
+    assert jnp.all(value > 0.0)
+
+
+def test_sample_prior_value_uses_inverse_cdf_distribution_for_positive_constraint() -> None:
+    value = _sample_prior_value(
+        jax.random.PRNGKey(14),
+        UnitIntervalDistribution(),
+        constraint=Positive(),
+        target_shape=(20,),
+    )
+
+    assert value.shape == (20,)
+    assert jnp.all(value >= 0.0)
+    assert jnp.all(value <= 1.0)
+
+
+def test_sample_prior_value_rejects_interval_constrained_vector_event_distribution() -> None:
+    with pytest.raises(TypeError, match="scalar-event distributions"):
+        _sample_prior_value(
+            jax.random.PRNGKey(15),
+            EventVectorInverseCdfDistribution(),
+            constraint=Positive(),
+            target_shape=(2,),
+        )
+
+
+def test_sample_prior_value_draws_ordered_scalar_event_prior() -> None:
+    value = _sample_prior_value(
+        jax.random.PRNGKey(16),
+        Normal(0.0, 2.0),
+        constraint=Ordered(),
+        target_shape=(4,),
+    )
+
+    assert value.shape == (4,)
+    assert jnp.all(value[1:] > value[:-1])
+
+
+def test_sample_prior_value_draws_ordered_prior_with_leading_dimensions() -> None:
+    value = _sample_prior_value(
+        jax.random.PRNGKey(17),
+        Normal(0.0, 2.0),
+        constraint=Ordered(),
+        target_shape=(3, 4),
+    )
+
+    assert value.shape == (3, 4)
+    assert jnp.all(value[..., 1:] > value[..., :-1])
+
+
+def test_sample_prior_value_rejects_ordered_scalar_target_shape() -> None:
+    with pytest.raises(ValueError, match="Ordered prior simulation requires vector target shape"):
+        _sample_prior_value(
+            jax.random.PRNGKey(18),
+            Normal(0.0, 1.0),
+            constraint=Ordered(),
+            target_shape=(),
+        )
+
+
+def test_sample_prior_value_rejects_ordered_vector_event_distribution() -> None:
+    with pytest.raises(TypeError, match="Ordered prior simulation requires scalar-event"):
+        _sample_prior_value(
+            jax.random.PRNGKey(19),
+            MultivariateNormal(0.0, jnp.eye(2)),
+            constraint=Ordered(),
+            target_shape=(2,),
+        )
+
+
+def test_sample_prior_value_rejects_ordered_batched_distribution() -> None:
+    with pytest.raises(TypeError, match="Ordered prior simulation requires iid scalar"):
+        _sample_prior_value(
+            jax.random.PRNGKey(20),
+            Normal(jnp.asarray([0.0, 1.0]), 1.0),
+            constraint=Ordered(),
+            target_shape=(2,),
+        )
+
+
+def test_sample_prior_value_rejects_unsupported_constraint() -> None:
+    with pytest.raises(TypeError, match="Unsupported prior constraint"):
+        _sample_prior_value(
+            jax.random.PRNGKey(13),
+            Normal(0.0, 1.0),
+            constraint=UnsupportedConstraint(),
+            target_shape=(),
+        )
