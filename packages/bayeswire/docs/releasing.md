@@ -72,8 +72,11 @@ whenever a new bayesite tag ships via
 `scripts/bump_engine_release.py --tag vX.Y.Z`; and `BAYESITE_VIZ_SOURCE`
 (the bayesite-viz uvx pin, in
 `src/bayescycle/backends/bayesite_viz/uvx_runner.py`), bumped by hand
-whenever the pinned bayesite-viz commit changes. Neither needs touching
-when only bayeswire's pin moves.
+whenever the pinned bayesite-viz commit changes — always together with
+its determinism companion `BAYESITE_VIZ_EXCLUDE_NEWER` in the same
+module (the `--exclude-newer` timestamp that freezes bayesite-viz's
+transitive resolution; set it to the midnight UTC following the pinned
+commit's date). Neither needs touching when only bayeswire's pin moves.
 
 ## After the bump
 
