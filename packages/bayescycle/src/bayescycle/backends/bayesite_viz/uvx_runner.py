@@ -45,7 +45,7 @@ BAYESITE_IDATA_SOURCE = "bayesite-idata==0.3.0"
 # package versions published on or before this timestamp, making the
 # plot/idata environments a pure function of the pins together. Stamped by
 # scripts/bump_version.py to the moment of the version bump.
-BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-07T16:31:32Z"
+BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-07T16:40:01Z"
 
 # The first-party packages above are exact version pins (`==X.Y.Z`), so a
 # resolver can only ever pick that one version of them -- the global

@@ -84,6 +84,26 @@ def test_all_five_package_versions_agree() -> None:
     )
 
 
+_VERSION_CONSTANT_RE = re.compile(r'^__version__ = "([^"]*)"$', re.MULTILINE)
+
+# Packages that expose a runtime __version__ constant; it must track the
+# pyproject version, or `--version` output drifts from the published wheel.
+VERSION_CONSTANT_FILES = {
+    "bayescycle": PACKAGES_DIR / "bayescycle" / "src" / "bayescycle" / "__init__.py",
+    "bayesite-viz": PACKAGES_DIR / "bayesite-viz" / "src" / "bayesite_viz" / "__init__.py",
+}
+
+
+def test_runtime_version_constants_match_pyproject_versions() -> None:
+    for package, path in VERSION_CONSTANT_FILES.items():
+        match = _VERSION_CONSTANT_RE.search(path.read_text())
+        assert match is not None, f"no __version__ constant found in {path}"
+        assert match.group(1) == _package_version(package), (
+            f"{package}'s __version__ constant is {match.group(1)!r} but its "
+            f"pyproject version is {_package_version(package)!r}"
+        )
+
+
 def test_bayescycle_depends_on_exact_bayeswire_pin() -> None:
     version = _package_version("bayeswire")
     data = _load_pyproject("bayescycle")

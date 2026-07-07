@@ -10,6 +10,9 @@ Given ``--version X.Y.Z``, this script rewrites, across the monorepo:
   ``[project.optional-dependencies]`` that reference another workspace
   package (bayescycle -> bayeswire, bayescycle's inproc extra ->
   jaxstanv5, jaxstanv5 -> bayeswire);
+- the runtime ``__version__`` constants in the ``__init__.py`` of the
+  packages listed in ``VERSION_CONSTANT_MODULES`` (bayescycle,
+  bayesite-viz);
 - the two moving pins in
   ``packages/bayescycle/src/bayescycle/backends/bayesite_viz/uvx_runner.py``:
   ``BAYESITE_VIZ_SOURCE``/``BAYESITE_IDATA_SOURCE`` (both rewritten to
@@ -46,6 +49,14 @@ PACKAGES: tuple[str, ...] = (
 )
 
 _VERSION_FIELD_RE = re.compile(r'^version = "[^"]*"$', re.MULTILINE)
+_VERSION_CONSTANT_RE = re.compile(r'^__version__ = "[^"]*"$', re.MULTILINE)
+
+# Packages whose top-level __init__.py exposes a runtime __version__
+# constant that must track the pyproject version, as (package, module dir).
+VERSION_CONSTANT_MODULES: tuple[tuple[str, str], ...] = (
+    ("bayescycle", "bayescycle"),
+    ("bayesite-viz", "bayesite_viz"),
+)
 
 
 class BumpError(RuntimeError):
@@ -115,6 +126,17 @@ def _bump_uvx_runner_pins(path: Path, version: str, exclude_newer: str) -> None:
     path.write_text(text)
 
 
+def _bump_version_constant(path: Path, version: str) -> None:
+    text = path.read_text()
+    new_text = _rewrite_exactly_once(
+        text,
+        _VERSION_CONSTANT_RE,
+        f'__version__ = "{version}"',
+        description=f"__version__ constant in {path}",
+    )
+    path.write_text(new_text)
+
+
 def rfc3339_now() -> str:
     """Return the current UTC time as RFC 3339 with seconds precision."""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -146,6 +168,9 @@ def bump(version: str, *, repo_root: Path = REPO_ROOT, exclude_newer: str | None
     _bump_dependency_pin(packages_dir / "bayescycle" / "pyproject.toml", "bayeswire", version)
     _bump_dependency_pin(packages_dir / "bayescycle" / "pyproject.toml", "jaxstanv5", version)
     _bump_dependency_pin(packages_dir / "jaxstanv5" / "pyproject.toml", "bayeswire", version)
+
+    for package, module in VERSION_CONSTANT_MODULES:
+        _bump_version_constant(packages_dir / package / "src" / module / "__init__.py", version)
 
     _bump_uvx_runner_pins(uvx_runner_path, version, stamp)
 

@@ -88,6 +88,14 @@ def _write_fixture_repo(root: Path) -> None:
     uvx_runner_dir.mkdir(parents=True)
     (uvx_runner_dir / "uvx_runner.py").write_text(_UVX_RUNNER)
 
+    version_constant = '__version__ = "0.1.0"\n'
+    (root / "packages" / "bayescycle" / "src" / "bayescycle" / "__init__.py").write_text(
+        version_constant
+    )
+    viz_src_dir = root / "packages" / "bayesite-viz" / "src" / "bayesite_viz"
+    viz_src_dir.mkdir(parents=True)
+    (viz_src_dir / "__init__.py").write_text(version_constant)
+
 
 def _read(root: Path, *parts: str) -> str:
     return (root / "packages" / Path(*parts)).read_text()
@@ -118,6 +126,12 @@ def test_bump_rewrites_all_versions_and_sibling_pins(tmp_path: Path) -> None:
     assert 'BAYESITE_VIZ_EXCLUDE_NEWER = "2030-05-01T12:00:00Z"' in uvx_runner_text
     # Not one of the moving pins.
     assert 'FIRST_PARTY_EXCLUDE_NEWER_EXEMPTION = "2100-01-01T00:00:00Z"' in uvx_runner_text
+
+    for init_path in (
+        ("bayescycle", "src", "bayescycle", "__init__.py"),
+        ("bayesite-viz", "src", "bayesite_viz", "__init__.py"),
+    ):
+        assert '__version__ = "0.3.0"' in _read(tmp_path, *init_path)
 
 
 def test_bump_is_idempotent_for_the_same_version(tmp_path: Path) -> None:
