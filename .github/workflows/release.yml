@@ -2,12 +2,20 @@
 # bayesjax, bayescycle, bayesite-viz, bayesite-idata) to PyPI on a tag
 # (monorepo migration step 3, see docs/monorepo-migration.md).
 #
-# Publishing requires the five pending trusted publishers to be registered
-# on pypi.org before the first tag: owner StefanSko, repo bayescycle,
-# workflow release.yml, environment pypi -- one trusted publisher per
-# distribution name (bayeswire, bayesjax, bayescycle, bayesite-viz,
-# bayesite-idata). Without that registration, `uv publish`'s OIDC exchange
-# is rejected by PyPI.
+# PyPI's PENDING trusted publishers are unique on the (owner, repository,
+# workflow, environment) tuple -- one repo cannot pre-register five
+# not-yet-existing project names against the same environment. Each
+# package therefore publishes from its own job with its own environment
+# (pypi-<name>), and the five pending publishers are registered as:
+# owner StefanSko, repo bayescycle, workflow release.yml, environment
+# pypi-bayeswire / pypi-bayesjax / pypi-bayescycle / pypi-bayesite-viz /
+# pypi-bayesite-idata, one per matching distribution name. GitHub creates
+# the environments automatically on first use. After the first publish,
+# each pending publisher converts to a normal per-project trusted
+# publisher bound to the same environment name.
+#
+# `uv publish --check-url` makes re-runs idempotent: artifacts already on
+# PyPI are skipped instead of failing the job.
 
 on:
   push:
@@ -18,7 +26,7 @@ jobs:
   # Confirms the tag names the lockstep version every pyproject.toml
   # actually carries, then runs the root guard tests (tests/) that assert
   # all five versions and sibling pins agree -- a tag on a tree where they
-  # don't agree must never reach the publish job.
+  # don't agree must never reach the publish jobs.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -44,22 +52,29 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-    environment: pypi
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: bayeswire
+            build: uv build --package bayeswire --out-dir dist
+          - name: bayesjax
+            build: uv build --package bayesjax --out-dir dist
+          - name: bayescycle
+            build: uv build --package bayescycle --out-dir dist
+          - name: bayesite-viz
+            build: uv build packages/bayesite-viz --out-dir dist
+          - name: bayesite-idata
+            build: uv build packages/bayesite-idata --out-dir dist
+    environment: pypi-${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Build workspace distributions (bayeswire, bayesjax, bayescycle)
-        run: |
-          uv build --package bayeswire --out-dir dist
-          uv build --package bayesjax --out-dir dist
-          uv build --package bayescycle --out-dir dist
-      - name: Build bayesite-viz and bayesite-idata (standalone uv projects)
-        run: |
-          uv build packages/bayesite-viz --out-dir dist
-          uv build packages/bayesite-idata --out-dir dist
-      - name: Check distributions
+      - name: Build ${{ matrix.name }}
+        run: ${{ matrix.build }}
+      - name: Check distribution
         run: uvx twine check dist/*
-      - name: Publish to PyPI (trusted publishing, no token secrets)
-        run: uv publish dist/*
+      - name: Publish ${{ matrix.name }} to PyPI (trusted publishing, no token secrets)
+        run: uv publish --check-url https://pypi.org/simple/ dist/*
