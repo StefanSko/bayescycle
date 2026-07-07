@@ -44,6 +44,12 @@ from bayeswire.model.expr import (
 )
 
 
+def _as_dict(value: object) -> dict[str, object]:
+    """Narrow an encoded JSON value to an object node for further assertions."""
+    assert isinstance(value, dict)
+    return cast(dict[str, object], value)
+
+
 def test_encodes_minimal_meta_into_versioned_envelope() -> None:
     document = meta_to_dict(minimal_meta())
 
@@ -131,7 +137,7 @@ def test_map_entries_preserve_insertion_order() -> None:
     assert isinstance(model, dict)
     params = model["params"]
     assert isinstance(params, list)
-    assert [entry["name"] for entry in params] == ["zeta", "alpha"]
+    assert [_as_dict(entry)["name"] for entry in params] == ["zeta", "alpha"]
 
 
 def test_preserves_int_float_lexical_identity() -> None:
@@ -167,7 +173,7 @@ def test_encodes_constraints_sizes_and_schemas() -> None:
     assert isinstance(model, dict)
     params = model["params"]
     assert isinstance(params, list)
-    encoded = {entry["name"]: entry["value"] for entry in params}
+    encoded = {_as_dict(entry)["name"]: _as_dict(_as_dict(entry)["value"]) for entry in params}
     assert encoded["sigma"]["constraint"] == {"node": "Positive"}
     assert encoded["cutpoints"]["constraint"] == {"node": "Ordered"}
     assert encoded["cutpoints"]["size"] == {"node": "DataRef", "name": "n"}
@@ -176,7 +182,7 @@ def test_encodes_constraints_sizes_and_schemas() -> None:
     assert encoded["level"]["constraint"] == {"node": "Interval", "lower": -1.0, "upper": 3.0}
     data = model["data"]
     assert isinstance(data, list)
-    assert data[1]["value"]["schema"] == {
+    assert _as_dict(_as_dict(data[1])["value"])["schema"] == {
         "node": "ResolvedDataShapeSchema",
         "dims": [{"node": "DataDimRef", "name": "n"}, 4],
     }
@@ -202,7 +208,7 @@ def test_encodes_index_and_scatter_nodes() -> None:
     assert isinstance(model, dict)
     expressions = model["expressions"]
     assert isinstance(expressions, list)
-    encoded = expressions[0]["value"]
+    encoded = _as_dict(_as_dict(expressions[0])["value"])
     assert encoded["left"] == {
         "node": "UnaryOp",
         "function": "exp",

@@ -5,9 +5,10 @@ description = "A Python project built with the Astral stack: uv, ruff, and ty."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    # The language and the backend move in lockstep: exact-commit pin, bumped
-    # deliberately (the pin-bump diff is the compatibility review).
-    "bayeswire @ git+https://github.com/StefanSko/bayeswire.git@v0.2.0",
+    # The language and the backend move in lockstep inside the uv workspace:
+    # both packages resolve from the same repo at the same commit, so there
+    # is no separate pin to bump.
+    "bayeswire",
     "jax>=0.6.0",
     "blackjax>=1.2.0",
 ]
@@ -18,6 +19,9 @@ dev = [
     "ruff>=0.13.0",
     "ty>=0.0.1a20",
 ]
+
+[tool.uv.sources]
+bayeswire = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.9.0"]
@@ -32,6 +36,6 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ty.environment]
-python = "./.venv"
+python = "../../.venv"
 python-version = "3.12"
 root = ["./src", "./tests"]
