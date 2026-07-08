@@ -63,8 +63,10 @@ toolchain-normative, not internal to any one package.
   JAX ever entering the environment.
 - **Viz packages** — standalone projects: `cd packages/bayesite-viz` (or
   `bayesite-idata`) and run `uv sync` / `ruff format --check .` /
-  `ruff check .` from that directory; they are not reachable via
-  `uv sync --package`.
+  `ruff check .` / `ty check` / `pytest tests -q` from that directory; they
+  are not reachable via `uv sync --package`. Each package carries its own
+  `[tool.ty]` config so type checking resolves against its own `.venv`
+  rather than the workspace root's.
 - `.github/workflows/ci.yml` runs all of the above per-PR; there is no
   cross-repo nightly anymore for the three workspace members, since they
   share one lock and CI already exercises HEAD-vs-HEAD.
