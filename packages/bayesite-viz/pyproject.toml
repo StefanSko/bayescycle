@@ -34,3 +34,10 @@ packages = ["bayesite_viz"]
 
 [project.scripts]
 bayesite-viz = "bayesite_viz.cli:cli"
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.13"
