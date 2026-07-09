@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import SupportsFloat, cast
 
-from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.constraints import Interval, Positive, UnitInterval, VectorBounds
 from bayeswire.constraints.core import Constraint
 from bayeswire.distributions._capabilities import has_scalar_inverse_cdf
 from bayeswire.distributions._symbolic_validation import reject_opaque_symbolic_distribution
@@ -246,13 +246,17 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     "Discrete distributions cannot be partially observed NUTS values; "
                     "marginalize discrete missing values or impute them posterior-predictively"
                 )
+            if isinstance(distribution, Truncated) and _partially_observed_has_bounds(value):
+                raise TypeError(
+                    "bounds on PartiallyObserved cannot be combined with Truncated bases"
+                )
             _validate_supported_truncated_distribution(
                 name=name,
                 distribution=distribution,
                 role="PartiallyObserved",
             )
             free_values[name] = ResolvedFreeValue(
-                constraint=None,
+                constraint=_resolve_partially_observed_vector_bounds(value, symbols),
                 size=_resolve_partially_observed_missing_size(value, symbols),
             )
             stochastic_sites.append(
@@ -766,6 +770,29 @@ def _resolve_partially_observed_missing_size(
     if isinstance(dim, DataDimSymbol):
         return DataRef(_resolve_symbol(dim.symbol, symbols))
     raise TypeError(f"Unknown partial-observed missing size dimension: {type(dim).__name__}")
+
+
+def _partially_observed_has_bounds(value: PartiallyObserved) -> bool:
+    return value.missing_lower is not None or value.missing_upper is not None
+
+
+def _resolve_partially_observed_vector_bounds(
+    value: PartiallyObserved,
+    symbols: SymbolTable,
+) -> VectorBounds | None:
+    """Resolve optional per-missing-coordinate bounds for a partial vector."""
+    if not _partially_observed_has_bounds(value):
+        return None
+    return VectorBounds(
+        lower=_resolve_optional_data_ref(value.missing_lower, symbols),
+        upper=_resolve_optional_data_ref(value.missing_upper, symbols),
+    )
+
+
+def _resolve_optional_data_ref(value: Data | None, symbols: SymbolTable) -> DataRef | None:
+    if value is None:
+        return None
+    return DataRef(_resolve_symbol(value.symbol, symbols))
 
 
 def _resolve_partially_observed_vector(

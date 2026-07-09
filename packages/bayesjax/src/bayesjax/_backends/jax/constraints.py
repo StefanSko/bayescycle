@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol, cast, runtime_checkable
 
 import jax
@@ -10,6 +11,28 @@ from bayeswire.constraints.core import ConstrainedValue, Constraint, Unconstrain
 from bayeswire.constraints.interval import Interval, UnitInterval
 from bayeswire.constraints.ordered import Ordered
 from bayeswire.constraints.positive import Positive
+
+
+@dataclass(frozen=True, eq=False)
+class ResolvedVectorBounds:
+    """Concrete per-coordinate bounds resolved from VectorBounds data refs."""
+
+    lower: jax.Array | None = None
+    upper: jax.Array | None = None
+
+    def __post_init__(self) -> None:
+        """Validate that at least one side and compatible shapes are present."""
+        if self.lower is None and self.upper is None:
+            raise TypeError("ResolvedVectorBounds requires at least one bound side")
+        if (
+            self.lower is not None
+            and self.upper is not None
+            and self.lower.shape != self.upper.shape
+        ):
+            raise ValueError("ResolvedVectorBounds lower and upper shapes must match")
+
+
+type JaxConstraint = Constraint | ResolvedVectorBounds
 
 
 @runtime_checkable
@@ -29,7 +52,7 @@ class _PythonConstraint(Protocol):
         ...
 
 
-def transform(constraint: Constraint, x: ConstrainedValue) -> jax.Array:
+def transform(constraint: JaxConstraint, x: ConstrainedValue) -> jax.Array:
     """Map constrained values to unconstrained values with the JAX backend."""
     if isinstance(constraint, Positive):
         return jnp.log(jnp.asarray(x))
@@ -38,6 +61,16 @@ def transform(constraint: Constraint, x: ConstrainedValue) -> jax.Array:
         return jnp.log(unit_value) - jnp.log1p(-unit_value)
     if isinstance(constraint, UnitInterval):
         return transform(Interval(0.0, 1.0), x)
+    if isinstance(constraint, ResolvedVectorBounds):
+        constrained = jnp.asarray(x)
+        if constraint.lower is None:
+            if constraint.upper is None:
+                raise TypeError("ResolvedVectorBounds requires at least one bound side")
+            return jnp.log(constraint.upper - constrained)
+        if constraint.upper is None:
+            return jnp.log(constrained - constraint.lower)
+        unit_value = (constrained - constraint.lower) / (constraint.upper - constraint.lower)
+        return jnp.log(unit_value) - jnp.log1p(-unit_value)
     if isinstance(constraint, Ordered):
         constrained = jnp.asarray(x)
         if constrained.ndim == 0:
@@ -50,7 +83,7 @@ def transform(constraint: Constraint, x: ConstrainedValue) -> jax.Array:
     raise TypeError(f"Unsupported constraint: {type(constraint).__name__}")
 
 
-def inverse_transform(constraint: Constraint, y: UnconstrainedValue) -> jax.Array:
+def inverse_transform(constraint: JaxConstraint, y: UnconstrainedValue) -> jax.Array:
     """Map unconstrained values to constrained values with the JAX backend."""
     if isinstance(constraint, Positive):
         return jnp.exp(jnp.asarray(y))
@@ -58,6 +91,23 @@ def inverse_transform(constraint: Constraint, y: UnconstrainedValue) -> jax.Arra
         return constraint.lower + constraint.width * jax.nn.sigmoid(jnp.asarray(y))
     if isinstance(constraint, UnitInterval):
         return inverse_transform(Interval(0.0, 1.0), y)
+    if isinstance(constraint, ResolvedVectorBounds):
+        unconstrained = jnp.asarray(y)
+        if constraint.lower is None:
+            if constraint.upper is None:
+                raise TypeError("ResolvedVectorBounds requires at least one bound side")
+            return constraint.upper - jnp.exp(unconstrained)
+        if constraint.upper is None:
+            return constraint.lower + jnp.exp(unconstrained)
+        dtype = jnp.result_type(unconstrained, constraint.lower, constraint.upper, 1.0)
+        lower = jnp.asarray(constraint.lower, dtype=dtype)
+        upper = jnp.asarray(constraint.upper, dtype=dtype)
+        constrained = lower + (upper - lower) * jax.nn.sigmoid(unconstrained)
+        return jnp.clip(
+            constrained,
+            jnp.nextafter(lower, upper),
+            jnp.nextafter(upper, lower),
+        )
     if isinstance(constraint, Ordered):
         unconstrained = jnp.asarray(y)
         if unconstrained.ndim == 0:
@@ -71,7 +121,7 @@ def inverse_transform(constraint: Constraint, y: UnconstrainedValue) -> jax.Arra
     raise TypeError(f"Unsupported constraint: {type(constraint).__name__}")
 
 
-def log_abs_det_jacobian(constraint: Constraint, y: UnconstrainedValue) -> jax.Array:
+def log_abs_det_jacobian(constraint: JaxConstraint, y: UnconstrainedValue) -> jax.Array:
     """Return inverse-transform log absolute determinant with the JAX backend."""
     if isinstance(constraint, Positive):
         return jnp.asarray(y)
@@ -84,6 +134,19 @@ def log_abs_det_jacobian(constraint: Constraint, y: UnconstrainedValue) -> jax.A
         )
     if isinstance(constraint, UnitInterval):
         return log_abs_det_jacobian(Interval(0.0, 1.0), y)
+    if isinstance(constraint, ResolvedVectorBounds):
+        unconstrained = jnp.asarray(y)
+        if constraint.lower is None:
+            if constraint.upper is None:
+                raise TypeError("ResolvedVectorBounds requires at least one bound side")
+            return unconstrained
+        if constraint.upper is None:
+            return unconstrained
+        return (
+            jnp.log(constraint.upper - constraint.lower)
+            - jax.nn.softplus(-unconstrained)
+            - jax.nn.softplus(unconstrained)
+        )
     if isinstance(constraint, Ordered):
         unconstrained = jnp.asarray(y)
         if unconstrained.ndim == 0:

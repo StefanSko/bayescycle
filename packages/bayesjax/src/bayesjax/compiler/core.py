@@ -8,9 +8,10 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
+from bayeswire.constraints import VectorBounds
 from bayeswire.distributions._symbolic_validation import reject_opaque_symbolic_distribution
 from bayeswire.distributions.core import Distribution
-from bayeswire.model.decorator import ModelMeta, resolved_free_values, resolved_stochastic_sites
+from bayeswire.model.decorator import resolved_free_values, resolved_stochastic_sites
 from bayeswire.model.expr import (
     BinOp,
     ConstNode,
@@ -27,6 +28,7 @@ from bayeswire.model.expr import (
 )
 
 from bayesjax._backends.jax.constraints import (
+    JaxConstraint,
     inverse_transform,
     log_abs_det_jacobian,
 )
@@ -181,16 +183,21 @@ def _split_params(
 
 def _constrain_params(
     params: dict[str, jax.Array],
-    meta: ModelMeta,
+    bound: BoundModel,
 ) -> tuple[dict[str, jax.Array], jax.Array]:
     """Apply constraint transforms and return constrained params + log-Jacobian sum."""
     constrained: dict[str, jax.Array] = {}
     log_jac: jax.Array = jnp.array(0.0)
-    for name, value in resolved_free_values(meta).items():
+    for name, value in resolved_free_values(bound.meta).items():
         val = params[name]
         if value.constraint is not None:
-            constrained[name] = inverse_transform(value.constraint, val)
-            log_jac = log_jac + jnp.sum(log_abs_det_jacobian(value.constraint, val))
+            constraint: JaxConstraint
+            if isinstance(value.constraint, VectorBounds):
+                constraint = bound.vector_bounds[name]
+            else:
+                constraint = value.constraint
+            constrained[name] = inverse_transform(constraint, val)
+            log_jac = log_jac + jnp.sum(log_abs_det_jacobian(constraint, val))
         else:
             constrained[name] = val
     return constrained, log_jac
@@ -203,7 +210,7 @@ def _build_log_density(bound: BoundModel) -> Callable[[jax.Array], jax.Array]:
 
     def log_prob(q: jax.Array) -> jax.Array:
         params = _split_params(q, shapes)
-        constrained, log_jac = _constrain_params(params, meta)
+        constrained, log_jac = _constrain_params(params, bound)
         values = cast("dict[str, jax.Array]", {**constrained, **bound.data})
 
         lp: jax.Array = log_jac

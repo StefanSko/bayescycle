@@ -290,6 +290,8 @@ class PartiallyObserved(SymbolicDistributionParameter):
     observed: Data
     observed_idx: Data
     missing_idx: Data
+    missing_lower: Data | None
+    missing_upper: Data | None
     symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
 
     def __init__(
@@ -300,7 +302,13 @@ class PartiallyObserved(SymbolicDistributionParameter):
         observed: Data,
         observed_idx: Data,
         missing_idx: Data,
+        missing_lower: Data | None = None,
+        missing_upper: Data | None = None,
     ) -> None:
+        validated_missing_idx = _validate_exact_vector_data(
+            missing_idx,
+            label="PartiallyObserved missing_idx",
+        )
         object.__setattr__(self, "distribution", distribution)
         object.__setattr__(self, "length", _validate_partial_vector_length(length))
         object.__setattr__(
@@ -313,10 +321,24 @@ class PartiallyObserved(SymbolicDistributionParameter):
             "observed_idx",
             _validate_exact_vector_data(observed_idx, label="PartiallyObserved observed_idx"),
         )
+        object.__setattr__(self, "missing_idx", validated_missing_idx)
         object.__setattr__(
             self,
-            "missing_idx",
-            _validate_exact_vector_data(missing_idx, label="PartiallyObserved missing_idx"),
+            "missing_lower",
+            _validate_partially_observed_bound_data(
+                missing_lower,
+                missing_idx=validated_missing_idx,
+                label="PartiallyObserved missing_lower",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "missing_upper",
+            _validate_partially_observed_bound_data(
+                missing_upper,
+                missing_idx=validated_missing_idx,
+                label="PartiallyObserved missing_upper",
+            ),
         )
         object.__setattr__(self, "symbol", _next_symbol())
 
@@ -329,6 +351,8 @@ class PartiallyObserved(SymbolicDistributionParameter):
         observed: Data,
         observed_idx: Data,
         missing_idx: Data,
+        missing_lower: Data | None = None,
+        missing_upper: Data | None = None,
     ) -> PartiallyObserved:
         """Declare a rank-1 random vector with explicit observed/missing coordinates."""
         return cls(
@@ -337,6 +361,8 @@ class PartiallyObserved(SymbolicDistributionParameter):
             observed=observed,
             observed_idx=observed_idx,
             missing_idx=missing_idx,
+            missing_lower=missing_lower,
+            missing_upper=missing_upper,
         )
 
     def __add__(self, other: object) -> DeferredBinOp:
@@ -388,3 +414,24 @@ def _validate_exact_vector_data(value: Data, *, label: str) -> Data:
     if not isinstance(value.schema, DataShapeSchema) or len(value.schema.dims) != 1:
         raise TypeError(f"{label} must be a Data.vector(length) declaration")
     return value
+
+
+def _validate_partially_observed_bound_data(
+    value: Data | None,
+    *,
+    missing_idx: Data,
+    label: str,
+) -> Data | None:
+    if value is None:
+        return None
+    bound = _validate_exact_vector_data(value, label=label)
+    if _exact_vector_dim(bound) != _exact_vector_dim(missing_idx):
+        raise TypeError(f"{label} must use the same length dimension as missing_idx")
+    return bound
+
+
+def _exact_vector_dim(value: Data) -> DataShapeDim:
+    schema = value.schema
+    if not isinstance(schema, DataShapeSchema) or len(schema.dims) != 1:
+        raise TypeError("Data declaration must be an exact vector")
+    return schema.dims[0]

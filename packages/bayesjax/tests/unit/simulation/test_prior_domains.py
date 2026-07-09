@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import pytest
-from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.constraints import Interval, Positive, UnitInterval, VectorBounds
 from bayeswire.constraints.core import (
     ConstrainedValue,
     LogAbsDetJacobian,
     UnconstrainedValue,
 )
+from bayeswire.model.expr import DataRef
 
 from bayesjax.simulation.domains import (
     ScalarIntervalDomain,
@@ -54,6 +55,11 @@ def test_prior_domain_for_unit_interval_is_bounded_interval() -> None:
         lower=0.0,
         upper=1.0,
     )
+
+
+def test_prior_domain_for_vector_bounds_raises_explicit_error() -> None:
+    with pytest.raises(TypeError, match="VectorBounds"):
+        prior_domain_for_constraint(VectorBounds(lower=DataRef("lower")))
 
 
 def test_prior_domain_for_unsupported_constraint_raises() -> None:

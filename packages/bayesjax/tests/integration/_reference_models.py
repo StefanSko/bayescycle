@@ -38,6 +38,23 @@ class ExponentialRateFixture:
 
 
 @dataclass(frozen=True)
+class CensoredExponentialFixture:
+    """Bound lower-censored Exponential model with analytic Gamma posterior."""
+
+    bound: BoundModel
+    complete_case_bound: BoundModel
+    parameter: str
+    true_rate: float
+    prior_rate: float
+    observed_values: jax.Array
+    missing_lower: jax.Array
+    observed_idx: jax.Array
+    missing_idx: jax.Array
+    posterior_shape: float
+    posterior_rate: float
+
+
+@dataclass(frozen=True)
 class PoissonLogRateFixture:
     """Bound scalar log-rate Poisson model and data needed for references."""
 
@@ -284,6 +301,88 @@ def exponential_rate_fixture(
         parameter="rate",
         y=y,
         prior_scale=prior_scale,
+    )
+
+
+def censored_exponential_fixture(
+    *,
+    seed: int = 13,
+    sample_count: int = 50,
+    true_rate: float = 2.0,
+    prior_rate: float = 1.0,
+) -> CensoredExponentialFixture:
+    """Return a lower-censored Exponential fixture with a conjugate reference.
+
+    Observations with latent waiting time above their censoring time enter through
+    a PartiallyObserved vector with per-missing-coordinate lower bounds.  With
+    ``rate ~ Exponential(prior_rate)`` this marginalizes to
+    ``Gamma(1 + n_obs, prior_rate + sum(t_obs) + sum(c_i))``.
+    """
+    from bayeswire import Data, Observed, Param, PartiallyObserved, model
+    from bayeswire.constraints import Positive
+    from bayeswire.distributions import Exponential
+
+    @model
+    class CensoredExponential:
+        """Lower-censored Exponential waiting-time model."""
+
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        missing_lower = Data.vector(n_mis)
+
+        rate = Param(Exponential(prior_rate), constraint=Positive())
+        y = PartiallyObserved.vector(
+            Exponential(rate),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_lower=missing_lower,
+        )
+
+    @model
+    class CompleteCaseExponential:
+        """Naive model that drops censored observations."""
+
+        rate = Param(Exponential(prior_rate), constraint=Positive())
+        y = Observed(Exponential(rate))
+
+    latent = jax.random.exponential(jax.random.PRNGKey(seed), (sample_count,)) / true_rate
+    censor_times = 0.35 + 0.10 * jnp.sin(0.7 * jnp.arange(sample_count))
+    observed_mask = latent <= censor_times
+    observed_idx = jnp.nonzero(observed_mask, size=int(jnp.sum(observed_mask)))[0]
+    missing_idx = jnp.nonzero(~observed_mask, size=int(jnp.sum(~observed_mask)))[0]
+    observed_values = latent[observed_idx]
+    missing_lower = censor_times[missing_idx]
+
+    posterior_shape = 1.0 + float(observed_values.size)
+    posterior_rate = prior_rate + float(jnp.sum(observed_values) + jnp.sum(missing_lower))
+
+    return CensoredExponentialFixture(
+        bound=bind_model(
+            CensoredExponential,
+            n=sample_count,
+            n_obs=observed_values.size,
+            n_mis=missing_lower.size,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            observed_values=observed_values,
+            missing_lower=missing_lower,
+        ),
+        complete_case_bound=bind_model(CompleteCaseExponential, y=observed_values),
+        parameter="rate",
+        true_rate=true_rate,
+        prior_rate=prior_rate,
+        observed_values=observed_values,
+        missing_lower=missing_lower,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+        posterior_shape=posterior_shape,
+        posterior_rate=posterior_rate,
     )
 
 

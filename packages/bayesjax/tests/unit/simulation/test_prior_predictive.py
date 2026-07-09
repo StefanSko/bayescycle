@@ -115,7 +115,7 @@ class UnsupportedPrior:
 
 @model
 class PartialObservedPriorPredictive:
-    """Partially observed vectors are not prior-predictive simulation nodes in v1."""
+    """Partially observed vectors draw full prior-predictive vectors."""
 
     n = Data.scalar()
     n_obs = Data.scalar()
@@ -272,22 +272,24 @@ def test_simulate_prior_predictive_rejects_wrong_shaped_data() -> None:
         )
 
 
-def test_simulate_prior_predictive_rejects_partially_observed_models() -> None:
-    with pytest.raises(TypeError, match="PartiallyObserved declarations are not supported"):
-        simulate_prior_predictive(
-            PartialObservedPriorPredictive,
-            seed=46,
-            num_samples=2,
-            data={
-                "n": 3,
-                "n_obs": 2,
-                "n_mis": 1,
-                "chol": jnp.eye(3),
-                "observed_idx": jnp.asarray([0, 2]),
-                "missing_idx": jnp.asarray([1]),
-                "observed_values": jnp.asarray([1.0, -1.0]),
-            },
-        )
+def test_simulate_prior_predictive_draws_partially_observed_full_vectors() -> None:
+    result = simulate_prior_predictive(
+        PartialObservedPriorPredictive,
+        seed=46,
+        num_samples=3,
+        data={
+            "n": 3,
+            "n_obs": 2,
+            "n_mis": 1,
+            "chol": jnp.eye(3),
+            "observed_idx": jnp.asarray([0, 2]),
+            "missing_idx": jnp.asarray([1]),
+            "observed_values": jnp.asarray([1.0, -1.0]),
+        },
+    )
+
+    assert result.parameters == {}
+    assert result.observed["y"].shape == (3, 3)
 
 
 def test_simulate_prior_predictive_rejects_missing_data() -> None:
