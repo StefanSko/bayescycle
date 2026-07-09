@@ -99,8 +99,14 @@ def inverse_transform(constraint: JaxConstraint, y: UnconstrainedValue) -> jax.A
             return constraint.upper - jnp.exp(unconstrained)
         if constraint.upper is None:
             return constraint.lower + jnp.exp(unconstrained)
-        return constraint.lower + (constraint.upper - constraint.lower) * jax.nn.sigmoid(
-            unconstrained
+        dtype = jnp.result_type(unconstrained, constraint.lower, constraint.upper, 1.0)
+        lower = jnp.asarray(constraint.lower, dtype=dtype)
+        upper = jnp.asarray(constraint.upper, dtype=dtype)
+        constrained = lower + (upper - lower) * jax.nn.sigmoid(unconstrained)
+        return jnp.clip(
+            constrained,
+            jnp.nextafter(lower, upper),
+            jnp.nextafter(upper, lower),
         )
     if isinstance(constraint, Ordered):
         unconstrained = jnp.asarray(y)

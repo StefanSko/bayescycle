@@ -160,20 +160,46 @@ def _resolve_vector_bounds(
         expected_length = _vector_free_value_length(name, param_shapes[name])
         lower = _resolve_vector_bound_side(name, "lower", constraint.lower, data, expected_length)
         upper = _resolve_vector_bound_side(name, "upper", constraint.upper, data, expected_length)
-        if lower is not None and upper is not None and bool(jnp.any(lower >= upper)):
-            raise ValueError(f"VectorBounds for free value {name!r} require lower < upper")
         site = _vector_bound_site_for_free_value(meta, name, data)
+        support_lower: jax.Array | None = None
+        support_upper: jax.Array | None = None
         if site is not None:
-            _validate_vector_bounds_base_support(
-                name,
+            support_lower, support_upper = _vector_bounds_base_support_edges(
                 site.distribution,
-                lower,
-                upper,
                 data,
                 missing_idx=site.missing_idx,
+                expected_length=expected_length,
+            )
+        lower = _fold_vector_bound_side(lower, support_lower, expected_length)
+        upper = _fold_vector_bound_side(upper, support_upper, expected_length)
+        if lower is not None and upper is not None and bool(jnp.any(lower >= upper)):
+            raise ValueError(
+                f"VectorBounds for free value {name!r} require lower < upper after folding "
+                "finite base support edges"
+            )
+        if support_lower is not None or support_upper is not None:
+            _validate_vector_bounds_base_support(
+                name,
+                lower,
+                upper,
+                support_lower=support_lower,
+                support_upper=support_upper,
             )
         resolved[name] = ResolvedVectorBounds(lower=lower, upper=upper)
     return resolved
+
+
+def _fold_vector_bound_side(
+    bound: jax.Array | None,
+    support_edge: jax.Array | None,
+    expected_length: int,
+) -> jax.Array | None:
+    """Fill a missing VectorBounds side with a finite base support edge."""
+    if bound is not None or support_edge is None:
+        return bound
+    if support_edge.ndim == 0:
+        return jnp.broadcast_to(support_edge, (expected_length,))
+    return support_edge
 
 
 def _vector_free_value_length(name: str, shape: tuple[int, ...]) -> int:
@@ -285,29 +311,22 @@ def _index_references_free_value(spec: IndexSpec, free_name: str) -> bool:
     raise TypeError(f"Cannot inspect index spec: {type(spec).__name__}")
 
 
-def _validate_vector_bounds_base_support(
-    free_name: str,
+def _vector_bounds_base_support_edges(
     distribution: Distribution,
-    lower: jax.Array | None,
-    upper: jax.Array | None,
     data: dict[str, jax.Array],
     *,
     missing_idx: jax.Array | None,
-) -> None:
-    """Validate present VectorBounds sides against known base distribution support."""
+    expected_length: int,
+) -> tuple[jax.Array | None, jax.Array | None]:
+    """Return finite base support edges aligned to VectorBounds order."""
     if isinstance(distribution, Exponential | HalfNormal):
-        _validate_vector_bound_lower_support(
-            free_name, lower, upper, support_lower=jnp.asarray(0.0)
+        return jnp.broadcast_to(jnp.asarray(0.0), (expected_length,)), None
+    if isinstance(distribution, Beta):
+        return (
+            jnp.broadcast_to(jnp.asarray(0.0), (expected_length,)),
+            jnp.broadcast_to(jnp.asarray(1.0), (expected_length,)),
         )
-    elif isinstance(distribution, Beta):
-        _validate_vector_bounds_bounded_support(
-            free_name,
-            lower,
-            upper,
-            support_lower=jnp.asarray(0.0),
-            support_upper=jnp.asarray(1.0),
-        )
-    elif isinstance(distribution, Uniform):
+    if isinstance(distribution, Uniform):
         support_lower = _align_support_to_vector_bounds(
             _evaluate_optional_data_expr(distribution.low, data),
             missing_idx,
@@ -316,28 +335,44 @@ def _validate_vector_bounds_base_support(
             _evaluate_optional_data_expr(distribution.high, data),
             missing_idx,
         )
-        if support_lower is not None and support_upper is not None:
-            _validate_vector_bounds_bounded_support(
-                free_name,
-                lower,
-                upper,
-                support_lower=support_lower,
-                support_upper=support_upper,
-            )
-        elif support_lower is not None:
-            _validate_vector_bound_lower_support(
-                free_name,
-                lower,
-                upper,
-                support_lower=support_lower,
-            )
-        elif support_upper is not None:
-            _validate_vector_bound_upper_support(
-                free_name,
-                lower,
-                upper,
-                support_upper=support_upper,
-            )
+        return (
+            _broadcast_support_edge(support_lower, expected_length),
+            _broadcast_support_edge(support_upper, expected_length),
+        )
+    return None, None
+
+
+def _validate_vector_bounds_base_support(
+    free_name: str,
+    lower: jax.Array | None,
+    upper: jax.Array | None,
+    *,
+    support_lower: jax.Array | None,
+    support_upper: jax.Array | None,
+) -> None:
+    """Validate present VectorBounds sides against known base distribution support."""
+    if support_lower is not None:
+        _validate_vector_bound_lower_support(
+            free_name,
+            lower,
+            upper,
+            support_lower=support_lower,
+        )
+    if support_upper is not None:
+        _validate_vector_bound_upper_support(
+            free_name,
+            lower,
+            upper,
+            support_upper=support_upper,
+        )
+    if support_lower is not None and support_upper is not None:
+        _validate_vector_bounds_bounded_support(
+            free_name,
+            lower,
+            upper,
+            support_lower=support_lower,
+            support_upper=support_upper,
+        )
 
 
 def _align_support_to_vector_bounds(
@@ -348,6 +383,18 @@ def _align_support_to_vector_bounds(
     if support is None or support.ndim == 0 or missing_idx is None:
         return support
     return support[missing_idx]
+
+
+def _broadcast_support_edge(
+    support: jax.Array | None,
+    expected_length: int,
+) -> jax.Array | None:
+    """Broadcast scalar support edges to the VectorBounds length."""
+    if support is None:
+        return None
+    if support.ndim == 0:
+        return jnp.broadcast_to(support, (expected_length,))
+    return support
 
 
 def _validate_vector_bounds_bounded_support(

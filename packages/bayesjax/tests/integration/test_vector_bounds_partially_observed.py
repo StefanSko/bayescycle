@@ -95,6 +95,46 @@ class LowerCensoredBeta:
 
 
 @model
+class UpperCensoredExponential:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    missing_upper = Data.vector(n_mis)
+    y = PartiallyObserved.vector(
+        Exponential(2.0),
+        length=n,
+        observed=observed_values,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+        missing_upper=missing_upper,
+    )
+
+
+@model
+class LowerCensoredUniformVectorSupport:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    support_low = Data.vector(n)
+    support_high = Data.vector(n)
+    missing_lower = Data.vector(n_mis)
+    y = PartiallyObserved.vector(
+        Uniform(support_low, support_high),
+        length=n,
+        observed=observed_values,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+        missing_lower=missing_lower,
+    )
+
+
+@model
 class UpperCensoredBeta:
     n = Data.scalar()
     n_obs = Data.scalar()
@@ -221,6 +261,37 @@ def test_uniform_vector_support_rejects_bound_outside_missing_coordinate_support
             IntervalCensoredUniformVectorSupport,
             **_uniform_vector_support_values(missing_lower=jnp.asarray([9.0, 31.0])),
         )
+
+
+def test_beta_lower_only_folds_upper_support_edge_and_keeps_extreme_logp_finite() -> None:
+    bound = bind_model(LowerCensoredBeta, **_beta_values(missing_lower=jnp.asarray([0.8])))
+    log_density = compile_log_density(bound)
+
+    for q in (jnp.asarray([-50.0]), jnp.asarray([50.0])):
+        assert bool(jnp.isfinite(log_density(q)))
+        assert bool(jnp.all(jnp.isfinite(jax.grad(log_density)(q))))
+
+
+def test_exponential_upper_only_folds_lower_support_edge_and_keeps_extreme_logp_finite() -> None:
+    values = _lower_censored_values(missing_upper=jnp.asarray([3.0, 4.0]))
+    del values["missing_lower"]
+    bound = bind_model(UpperCensoredExponential, **values)
+    log_density = compile_log_density(bound)
+
+    for q in (jnp.asarray([-50.0, -50.0]), jnp.asarray([50.0, 50.0])):
+        assert bool(jnp.isfinite(log_density(q)))
+        assert bool(jnp.all(jnp.isfinite(jax.grad(log_density)(q))))
+
+
+def test_uniform_vector_support_lower_only_folds_gathered_upper_edges() -> None:
+    values = _uniform_vector_support_values()
+    del values["missing_upper"]
+    bound = bind_model(LowerCensoredUniformVectorSupport, **values)
+    log_density = compile_log_density(bound)
+
+    for q in (jnp.asarray([-50.0, -50.0]), jnp.asarray([50.0, 50.0])):
+        assert bool(jnp.isfinite(log_density(q)))
+        assert bool(jnp.all(jnp.isfinite(jax.grad(log_density)(q))))
 
 
 def test_beta_lower_bound_at_upper_support_edge_is_rejected() -> None:

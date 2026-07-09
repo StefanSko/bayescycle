@@ -169,3 +169,27 @@ this code next; safe to drop before merge if unwanted.
   its *own* edge but not the *opposite* edge, and assumed scalar supports.
   Both are instances of "validation written from the happy-path example."
 - Post-fix suite: 444 passed.
+
+## Codex review round 2 (PR #55) — P1: fold base support into one-sided bounds
+
+- The deeper version of round 1's finding: a one-sided bound on a base with
+  a finite *opposite* support edge (Beta + lower-only, Exponential +
+  upper-only) left that edge unenforced — the one-sided transform maps a
+  whole region of unconstrained space to -inf density (red evidence:
+  `log_density([50.]) == -inf`). Validation alone can't fix this; the
+  *transform choice* has to see the true support.
+- Fix: bind-time **support folding** — finite base edges are folded into
+  `ResolvedVectorBounds`, so a Beta + lower=0.8 site resolves to the
+  interval (0.8, 1.0) and gets the lub transform. The folded pair then
+  flows through the existing lower<upper validation, which now subsumes
+  round 1's opposite-edge checks (Beta lower=1.0 folds to a degenerate
+  interval and is rejected by the standard path).
+- Numerics rider: at saturated sigmoid (|u| ≳ 20 in float32) the two-sided
+  inverse transform hits the boundary *exactly* in floating point, and
+  strict-support bases (Beta) are -inf at their endpoints. Standard guard
+  applied: clip to one ULP inside via `nextafter` — a no-op at interior
+  values (consume-conformance oracle values unchanged, verified).
+- Corpus unaffected by folding: censored_exponential is lower-only on a
+  base with an infinite upper edge (no fold); interval_censored_normal has
+  a full-support base (no fold).
+- Post-fix suite: 447 passed; consume-conformance 9 passed.
