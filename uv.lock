@@ -31,7 +31,7 @@ wheels = [
 
 [[package]]
 name = "bayescycle"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/bayescycle" }
 dependencies = [
     { name = "bayeswire" },
@@ -65,7 +65,7 @@ dev = [
 
 [[package]]
 name = "bayesjax"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/bayesjax" }
 dependencies = [
     { name = "bayeswire" },
@@ -96,7 +96,7 @@ dev = [
 
 [[package]]
 name = "bayeswire"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/bayeswire" }
 
 [package.dev-dependencies]
