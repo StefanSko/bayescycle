@@ -104,3 +104,30 @@ this code next; safe to drop before merge if unwanted.
 - The interval-censored path (both bounds, sigmoid transform) is exercised
   end-to-end at the logp level with a Normal base, not just in unit tests.
 - Full suite: 433 passed (~90 s wall, JAX compile dominated).
+
+## Stage 3 — prior-predictive, statistical validation, CmdStan reference
+
+- Prior-predictive PO rule implemented as "full-vector draw, then overwrite
+  missing coordinates with truncated draws" (`.at[missing_idx].set(...)`) —
+  observed slots draw unrestricted (prior-predictively they *are* the data
+  being predicted), missing slots respect their bounds.
+- `ScalarIntervalDomain` already had `DistributionValue | None` bounds, and
+  `jax.random.uniform(minval=cdf(lo), maxval=cdf(hi))` broadcasts arrays —
+  so per-coordinate truncated inverse-CDF sampling needed no new machinery.
+  The Exponential lower-bound case short-circuits via memorylessness
+  (`c + Exp(rate)` draw), skipping cdf/icdf entirely.
+- **Statistical validation numbers** (seeded, deterministic):
+  - Conjugate check: censored exponential with Exponential(1) prior ⇒
+    analytic posterior Gamma(28.0, 13.636), mean 2.0534. NUTS: mean 2.0611
+    (z = 1.20 vs MCSE), variance z = 1.19, R-hat 1.0005, ESS 3789,
+    0 divergences. The censored contribution enters the Gamma rate as
+    Σc_i — direct confirmation of the CCDF marginalization semantics.
+  - Bias recovery: true rate 2.0 → censored fit 2.056 (|err| 0.056);
+    complete-case fit 5.016 (|err| 3.02, the McElreath ~2.5× upward bias).
+  - Prior-predictive memorylessness: bounded coordinate means match
+    c_i + 1/rate within MC tolerance; unbounded match 1/rate.
+- The CmdStan reference model uses `vector<lower=missing_lower>[N_mis]` —
+  Stan's data-dependent parameter bound, i.e. the exact construct
+  VectorBounds was modeled on. Script is manual (requires cmdstan), not in
+  pytest; only py_compile-checked in CI-able runs.
+- Full suite: 438 passed.
