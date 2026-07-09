@@ -8,6 +8,7 @@ from bayeswire.constraints.core import Constraint
 from bayeswire.constraints.interval import Interval, UnitInterval
 from bayeswire.constraints.ordered import Ordered
 from bayeswire.constraints.positive import Positive
+from bayeswire.constraints.vector_bounds import VectorBounds
 from bayeswire.distributions.core import DistributionValue
 
 
@@ -44,4 +45,6 @@ def prior_domain_for_constraint(constraint: Constraint | None) -> PriorDomain:
         return ScalarIntervalDomain(lower=0.0, upper=1.0)
     if isinstance(constraint, Ordered):
         return OrderedVectorDomain()
+    if isinstance(constraint, VectorBounds):
+        raise TypeError("VectorBounds prior simulation is not implemented")
     raise TypeError(f"Unsupported prior constraint: {type(constraint).__name__}")

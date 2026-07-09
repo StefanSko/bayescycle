@@ -9,9 +9,10 @@ from typing import NamedTuple, Protocol, cast
 import blackjax
 import jax
 import jax.numpy as jnp
-from bayeswire.model.decorator import ModelMeta, resolved_free_values
+from bayeswire.constraints import VectorBounds
+from bayeswire.model.decorator import resolved_free_values
 
-from bayesjax._backends.jax.constraints import inverse_transform
+from bayesjax._backends.jax.constraints import JaxConstraint, inverse_transform
 from bayesjax.compiler.core import compile_log_density
 from bayesjax.model.bound import BoundModel
 
@@ -233,17 +234,22 @@ def _unflatten_samples(
 
 def _constrain_sample_values(
     samples: dict[str, jax.Array],
-    meta: ModelMeta,
+    bound: BoundModel,
 ) -> dict[str, jax.Array]:
     """Map sampled unconstrained parameter values back to constrained values."""
     result: dict[str, jax.Array] = {}
-    free_values = resolved_free_values(meta)
+    free_values = resolved_free_values(bound.meta)
     for name, values in samples.items():
         constraint = free_values[name].constraint
         if constraint is None:
             result[name] = values
         else:
-            result[name] = jnp.asarray(inverse_transform(constraint, values))
+            jax_constraint: JaxConstraint
+            if isinstance(constraint, VectorBounds):
+                jax_constraint = bound.vector_bounds[name]
+            else:
+                jax_constraint = constraint
+            result[name] = jnp.asarray(inverse_transform(jax_constraint, values))
     return result
 
 
@@ -283,7 +289,7 @@ def _sample_one_chain(
 
     unconstrained = _unflatten_samples(sample_block.positions, bound.param_shapes)
     return _ChainSample(
-        samples=_constrain_sample_values(unconstrained, bound.meta),
+        samples=_constrain_sample_values(unconstrained, bound),
         diagnostics=SamplerDiagnostics(
             warmup=warmup_diagnostics,
             sampling=sample_block.diagnostics,
@@ -377,7 +383,7 @@ class CompiledSampler:
                 num_samples=num_samples,
             )
             return SamplerResult(
-                samples=_constrain_sample_values(unconstrained, self._bound.meta),
+                samples=_constrain_sample_values(unconstrained, self._bound),
                 diagnostics=_empty_sampler_diagnostics(
                     num_chains=num_chains,
                     num_warmup=num_warmup,

@@ -77,3 +77,30 @@ this code next; safe to drop before merge if unwanted.
 - Pre-existing, unrelated: `ty check` reports 2 `unsupported-base` warnings
   in `tests/unit/model/test_dimensions.py` and `tests/unit/test_public_hooks.py`
   (present on main; not introduced here).
+
+## Stage 2 — bayesjax transforms, bind resolution, validation
+
+- **A dispatch site the plan missed:** `_constrain_sample_values` in
+  `inference/core.py` maps posterior draws back to constrained space.
+  Without handling VectorBounds there, sampling would have *worked* but
+  reported the bounded coordinates in unconstrained space — a silent
+  wrong-answer bug. Found by the "audit every isinstance-on-constraint
+  site" discipline, not by a test failing.
+- Phase boundary implemented as planned: `ResolvedVectorBounds` (backend-
+  local frozen dataclass holding concrete arrays) is constructed at bind
+  time; `BoundModel.vector_bounds: Mapping[str, ResolvedVectorBounds]`
+  (default empty — existing bind paths unaffected). The wire-level
+  `VectorBounds` (DataRefs) never reaches jitted code.
+- Interval branch log|J| uses the softplus identity
+  `log σ(u) = −softplus(−u)`, mirroring the existing Interval constraint.
+- Support-compatibility validation needs to know which distribution
+  consumes a free value; there is no back-pointer, so binding walks the
+  stochastic-site expression trees (`_distribution_for_free_value`).
+  Support checks cover Exponential/HalfNormal (lower ≥ 0), Beta ([0,1]),
+  Uniform (within low/high); Normal/MVN unrestricted by design.
+- Bound-referenced data vectors are excluded from the generic finite-data
+  check and re-validated in bound resolution so errors name the free value
+  ("VectorBounds for free value 'y' ... must contain only finite values").
+- The interval-censored path (both bounds, sigmoid transform) is exercised
+  end-to-end at the logp level with a Normal base, not just in unit tests.
+- Full suite: 433 passed (~90 s wall, JAX compile dominated).

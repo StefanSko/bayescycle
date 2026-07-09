@@ -82,7 +82,9 @@ def test_constrain_sample_values_applies_parameter_constraints() -> None:
     )
     samples = {"sigma": jnp.array([[0.0, jnp.log(2.0)]])}
 
-    constrained = _constrain_sample_values(samples, meta)
+    bound = BoundModel(meta=meta, data={}, param_shapes={"sigma": ()}, n_params=1)
+
+    constrained = _constrain_sample_values(samples, bound)
 
     assert jnp.allclose(constrained["sigma"], jnp.array([[1.0, 2.0]]))
 

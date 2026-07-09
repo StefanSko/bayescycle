@@ -8,7 +8,8 @@ from typing import cast
 
 import jax
 import jax.numpy as jnp
-from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.constraints import Interval, Positive, UnitInterval, VectorBounds
+from bayeswire.distributions.continuous import Beta, Exponential, HalfNormal, Uniform
 from bayeswire.distributions.core import DiscreteDistribution, Distribution
 from bayeswire.distributions.counts import (
     Bernoulli,
@@ -47,6 +48,7 @@ from bayeswire.model.expr import (
     is_final_expr_node,
 )
 
+from bayesjax._backends.jax.constraints import ResolvedVectorBounds
 from bayesjax._backends.jax.distributions import (
     batch_shape as distribution_batch_shape,
 )
@@ -94,12 +96,16 @@ def bind_model_meta(
         raise ValueError(f"Unexpected model data: {sorted(extra)}")
 
     data = {name: jnp.asarray(value) for name, value in values.items()}
-    _validate_finite_bound_values(data)
-    _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
+    vector_bound_refs = _vector_bound_data_refs(meta)
+    _validate_finite_bound_values(
+        {name: value for name, value in data.items() if name not in vector_bound_refs}
+    )
     param_shapes = {
         name: _resolve_param_shape(value.size, data)
         for name, value in resolved_free_values(meta).items()
     }
+    vector_bounds = _resolve_vector_bounds(meta, data, param_shapes)
+    _validate_declared_data_values(meta, {name: data[name] for name in meta.data})
     n_params = sum(_param_count(shape) for shape in param_shapes.values())
     _validate_bound_index_expressions(meta, data, param_shapes)
     _validate_stochastic_site_shapes(meta, data, param_shapes)
@@ -113,7 +119,208 @@ def bind_model_meta(
         param_shapes=param_shapes,
         n_params=n_params,
         dimensions=dimensions,
+        vector_bounds=vector_bounds,
     )
+
+
+def _vector_bound_data_refs(meta: ModelMeta) -> set[str]:
+    """Return concrete data names referenced by VectorBounds constraints."""
+    refs: set[str] = set()
+    for value in resolved_free_values(meta).values():
+        constraint = value.constraint
+        if not isinstance(constraint, VectorBounds):
+            continue
+        if constraint.lower is not None:
+            refs.add(constraint.lower.name)
+        if constraint.upper is not None:
+            refs.add(constraint.upper.name)
+    return refs
+
+
+def _resolve_vector_bounds(
+    meta: ModelMeta,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> dict[str, ResolvedVectorBounds]:
+    """Resolve VectorBounds data refs to concrete arrays and validate them."""
+    resolved: dict[str, ResolvedVectorBounds] = {}
+    for name, value in resolved_free_values(meta).items():
+        constraint = value.constraint
+        if not isinstance(constraint, VectorBounds):
+            continue
+        expected_length = _vector_free_value_length(name, param_shapes[name])
+        lower = _resolve_vector_bound_side(name, "lower", constraint.lower, data, expected_length)
+        upper = _resolve_vector_bound_side(name, "upper", constraint.upper, data, expected_length)
+        if lower is not None and upper is not None and bool(jnp.any(lower >= upper)):
+            raise ValueError(f"VectorBounds for free value {name!r} require lower < upper")
+        distribution = _distribution_for_free_value(meta, name)
+        if distribution is not None:
+            _validate_vector_bounds_base_support(name, distribution, lower, upper, data)
+        resolved[name] = ResolvedVectorBounds(lower=lower, upper=upper)
+    return resolved
+
+
+def _vector_free_value_length(name: str, shape: tuple[int, ...]) -> int:
+    """Return the required VectorBounds length for a rank-1 free value."""
+    if len(shape) != 1:
+        raise ValueError(f"VectorBounds for free value {name!r} require a rank-1 free value")
+    return shape[0]
+
+
+def _resolve_vector_bound_side(
+    free_name: str,
+    side_name: str,
+    ref: DataRef | None,
+    data: dict[str, jax.Array],
+    expected_length: int,
+) -> jax.Array | None:
+    """Resolve and validate one optional side of a VectorBounds constraint."""
+    if ref is None:
+        return None
+    value = data.get(ref.name)
+    if value is None:
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} reference missing {side_name} "
+            f"data {ref.name!r}"
+        )
+    if value.ndim != 1:
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} {side_name} data {ref.name!r} "
+            "must be a rank-1 vector"
+        )
+    if value.shape[0] != expected_length:
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} {side_name} data {ref.name!r} "
+            f"has wrong length: expected {expected_length}, got {value.shape[0]}"
+        )
+    if bool(jnp.any(~jnp.isfinite(value))):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} {side_name} data {ref.name!r} "
+            "must contain only finite values"
+        )
+    return value
+
+
+def _distribution_for_free_value(meta: ModelMeta, free_name: str) -> Distribution | None:
+    """Return the stochastic-site distribution that consumes a free value."""
+    for site in resolved_stochastic_sites(meta):
+        if _expr_references_free_value(site.value, free_name):
+            return site.distribution
+    return None
+
+
+def _expr_references_free_value(node: ExprNode, free_name: str) -> bool:
+    """Return whether an expression tree contains a ParamRef to a free value."""
+    if isinstance(node, ParamRef):
+        return node.name == free_name
+    if isinstance(node, DataRef | ConstNode):
+        return False
+    if isinstance(node, BinOp):
+        return _expr_references_free_value(node.left, free_name) or _expr_references_free_value(
+            node.right,
+            free_name,
+        )
+    if isinstance(node, UnaryOp):
+        return _expr_references_free_value(node.operand, free_name)
+    if isinstance(node, IndexOp):
+        return _expr_references_free_value(node.base, free_name) or _index_references_free_value(
+            node.index,
+            free_name,
+        )
+    if isinstance(node, VectorScatterOp):
+        return (
+            _expr_references_free_value(node.length, free_name)
+            or _expr_references_free_value(node.observed_idx, free_name)
+            or _expr_references_free_value(node.observed_values, free_name)
+            or _expr_references_free_value(node.missing_idx, free_name)
+            or _expr_references_free_value(node.missing_values, free_name)
+        )
+    raise TypeError(f"Cannot inspect expression node: {type(node).__name__}")
+
+
+def _index_references_free_value(spec: IndexSpec, free_name: str) -> bool:
+    """Return whether an index spec contains a ParamRef to a free value."""
+    if isinstance(spec, ScalarIndex):
+        return _expr_references_free_value(spec.expr, free_name)
+    if isinstance(spec, FullSlice):
+        return False
+    if isinstance(spec, IndexTuple):
+        return any(_index_references_free_value(item, free_name) for item in spec.items)
+    raise TypeError(f"Cannot inspect index spec: {type(spec).__name__}")
+
+
+def _validate_vector_bounds_base_support(
+    free_name: str,
+    distribution: Distribution,
+    lower: jax.Array | None,
+    upper: jax.Array | None,
+    data: dict[str, jax.Array],
+) -> None:
+    """Validate present VectorBounds sides against known base distribution support."""
+    if isinstance(distribution, Exponential | HalfNormal):
+        _validate_vector_bound_lower_support(
+            free_name, lower, upper, support_lower=jnp.asarray(0.0)
+        )
+    elif isinstance(distribution, Beta):
+        _validate_vector_bound_lower_support(
+            free_name, lower, upper, support_lower=jnp.asarray(0.0)
+        )
+        _validate_vector_bound_upper_support(
+            free_name, lower, upper, support_upper=jnp.asarray(1.0)
+        )
+    elif isinstance(distribution, Uniform):
+        support_lower = _evaluate_optional_data_expr(distribution.low, data)
+        support_upper = _evaluate_optional_data_expr(distribution.high, data)
+        if support_lower is not None:
+            _validate_vector_bound_lower_support(
+                free_name,
+                lower,
+                upper,
+                support_lower=support_lower,
+            )
+        if support_upper is not None:
+            _validate_vector_bound_upper_support(
+                free_name,
+                lower,
+                upper,
+                support_upper=support_upper,
+            )
+
+
+def _validate_vector_bound_lower_support(
+    free_name: str,
+    lower: jax.Array | None,
+    upper: jax.Array | None,
+    *,
+    support_lower: jax.Array,
+) -> None:
+    """Reject present bound values below a base distribution lower support."""
+    if lower is not None and bool(jnp.any(lower < support_lower)):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} must be within base distribution support"
+        )
+    if upper is not None and bool(jnp.any(upper < support_lower)):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} must be within base distribution support"
+        )
+
+
+def _validate_vector_bound_upper_support(
+    free_name: str,
+    lower: jax.Array | None,
+    upper: jax.Array | None,
+    *,
+    support_upper: jax.Array,
+) -> None:
+    """Reject present bound values above a base distribution upper support."""
+    if lower is not None and bool(jnp.any(lower > support_upper)):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} must be within base distribution support"
+        )
+    if upper is not None and bool(jnp.any(upper > support_upper)):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} must be within base distribution support"
+        )
 
 
 def _normalize_declared_data_values(
@@ -519,9 +726,15 @@ def _is_positive_scalar_expr(
         if free_value is None:
             return False
         constraint = free_value.constraint
-        return isinstance(constraint, Positive | UnitInterval) or (
-            isinstance(constraint, Interval) and constraint.lower >= 0.0
-        )
+        if isinstance(constraint, Positive | UnitInterval):
+            return True
+        if isinstance(constraint, Interval):
+            return constraint.lower >= 0.0
+        if isinstance(constraint, VectorBounds):
+            return False
+        if constraint is None:
+            return False
+        return False
     if isinstance(value, UnaryOp):
         return value.function in {"exp", "sigmoid"}
     if isinstance(value, BinOp):
