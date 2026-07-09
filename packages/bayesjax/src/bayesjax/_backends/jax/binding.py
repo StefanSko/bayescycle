@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import cast
 
 import jax
@@ -63,6 +63,15 @@ from bayesjax.model.bound import BoundModel
 
 type EvaluatedIndexAtom = jax.Array | slice
 type EvaluatedIndex = EvaluatedIndexAtom | tuple[EvaluatedIndexAtom, ...]
+
+
+@dataclass(frozen=True)
+class _VectorBoundSite:
+    """Stochastic-site context needed to validate VectorBounds support."""
+
+    distribution: Distribution
+    missing_idx: jax.Array | None
+
 
 _INDEX_BINOPS: dict[str, Callable[[jax.Array, jax.Array], jax.Array]] = {
     "+": jnp.add,
@@ -153,9 +162,16 @@ def _resolve_vector_bounds(
         upper = _resolve_vector_bound_side(name, "upper", constraint.upper, data, expected_length)
         if lower is not None and upper is not None and bool(jnp.any(lower >= upper)):
             raise ValueError(f"VectorBounds for free value {name!r} require lower < upper")
-        distribution = _distribution_for_free_value(meta, name)
-        if distribution is not None:
-            _validate_vector_bounds_base_support(name, distribution, lower, upper, data)
+        site = _vector_bound_site_for_free_value(meta, name, data)
+        if site is not None:
+            _validate_vector_bounds_base_support(
+                name,
+                site.distribution,
+                lower,
+                upper,
+                data,
+                missing_idx=site.missing_idx,
+            )
         resolved[name] = ResolvedVectorBounds(lower=lower, upper=upper)
     return resolved
 
@@ -201,11 +217,31 @@ def _resolve_vector_bound_side(
     return value
 
 
-def _distribution_for_free_value(meta: ModelMeta, free_name: str) -> Distribution | None:
-    """Return the stochastic-site distribution that consumes a free value."""
+def _vector_bound_site_for_free_value(
+    meta: ModelMeta,
+    free_name: str,
+    data: dict[str, jax.Array],
+) -> _VectorBoundSite | None:
+    """Return stochastic-site support context for a VectorBounds free value."""
     for site in resolved_stochastic_sites(meta):
         if _expr_references_free_value(site.value, free_name):
-            return site.distribution
+            return _VectorBoundSite(
+                distribution=site.distribution,
+                missing_idx=_vector_scatter_missing_idx_for_free_value(site.value, free_name, data),
+            )
+    return None
+
+
+def _vector_scatter_missing_idx_for_free_value(
+    node: ExprNode,
+    free_name: str,
+    data: dict[str, jax.Array],
+) -> jax.Array | None:
+    """Return evaluated missing_idx when a free value is used by VectorScatterOp."""
+    if isinstance(node, VectorScatterOp):
+        if _expr_references_free_value(node.missing_values, free_name):
+            return _evaluate_data_index_expr(node.missing_idx, data)
+        return None
     return None
 
 
@@ -255,6 +291,8 @@ def _validate_vector_bounds_base_support(
     lower: jax.Array | None,
     upper: jax.Array | None,
     data: dict[str, jax.Array],
+    *,
+    missing_idx: jax.Array | None,
 ) -> None:
     """Validate present VectorBounds sides against known base distribution support."""
     if isinstance(distribution, Exponential | HalfNormal):
@@ -262,29 +300,85 @@ def _validate_vector_bounds_base_support(
             free_name, lower, upper, support_lower=jnp.asarray(0.0)
         )
     elif isinstance(distribution, Beta):
-        _validate_vector_bound_lower_support(
-            free_name, lower, upper, support_lower=jnp.asarray(0.0)
-        )
-        _validate_vector_bound_upper_support(
-            free_name, lower, upper, support_upper=jnp.asarray(1.0)
+        _validate_vector_bounds_bounded_support(
+            free_name,
+            lower,
+            upper,
+            support_lower=jnp.asarray(0.0),
+            support_upper=jnp.asarray(1.0),
         )
     elif isinstance(distribution, Uniform):
-        support_lower = _evaluate_optional_data_expr(distribution.low, data)
-        support_upper = _evaluate_optional_data_expr(distribution.high, data)
-        if support_lower is not None:
+        support_lower = _align_support_to_vector_bounds(
+            _evaluate_optional_data_expr(distribution.low, data),
+            missing_idx,
+        )
+        support_upper = _align_support_to_vector_bounds(
+            _evaluate_optional_data_expr(distribution.high, data),
+            missing_idx,
+        )
+        if support_lower is not None and support_upper is not None:
+            _validate_vector_bounds_bounded_support(
+                free_name,
+                lower,
+                upper,
+                support_lower=support_lower,
+                support_upper=support_upper,
+            )
+        elif support_lower is not None:
             _validate_vector_bound_lower_support(
                 free_name,
                 lower,
                 upper,
                 support_lower=support_lower,
             )
-        if support_upper is not None:
+        elif support_upper is not None:
             _validate_vector_bound_upper_support(
                 free_name,
                 lower,
                 upper,
                 support_upper=support_upper,
             )
+
+
+def _align_support_to_vector_bounds(
+    support: jax.Array | None,
+    missing_idx: jax.Array | None,
+) -> jax.Array | None:
+    """Align non-scalar full-vector support arrays to missing-value order."""
+    if support is None or support.ndim == 0 or missing_idx is None:
+        return support
+    return support[missing_idx]
+
+
+def _validate_vector_bounds_bounded_support(
+    free_name: str,
+    lower: jax.Array | None,
+    upper: jax.Array | None,
+    *,
+    support_lower: jax.Array,
+    support_upper: jax.Array,
+) -> None:
+    """Reject VectorBounds that leave no mass inside a bounded base support."""
+    _validate_vector_bound_lower_support(
+        free_name,
+        lower,
+        upper,
+        support_lower=support_lower,
+    )
+    _validate_vector_bound_upper_support(
+        free_name,
+        lower,
+        upper,
+        support_upper=support_upper,
+    )
+    if lower is not None and bool(jnp.any(lower >= support_upper)):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} must be within base distribution support"
+        )
+    if upper is not None and bool(jnp.any(upper <= support_lower)):
+        raise ValueError(
+            f"VectorBounds for free value {free_name!r} must be within base distribution support"
+        )
 
 
 def _validate_vector_bound_lower_support(

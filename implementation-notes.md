@@ -150,3 +150,22 @@ this code next; safe to drop before merge if unwanted.
   spec tolerance, 9 fixture tests). Root workspace guards 13 passed.
 - Oracle fixture values (spot record): censored_exponential eval[0]
   logp = -9.25; interval_censored_normal eval[0] logp = -8.9765.
+
+## Codex review round 1 (PR #55)
+
+- Both findings were real edge-case bugs in the bind-time support
+  validation, and both reproduced red before fixing:
+  1. Vectorized `Uniform(low, high)` bases (length-n support arrays) were
+     compared directly against length-n_mis bound arrays — broadcast crash,
+     or wrong-coordinate comparison if n happened to equal n_mis. Fixed by
+     threading the site's evaluated `missing_idx` into support validation
+     and gathering non-scalar supports (`support[missing_idx]`) first.
+  2. Degenerate one-sided bounds passed validation (e.g. Beta base with
+     `missing_lower=[1.0]`): the transform then maps every draw outside the
+     support and logp is -inf everywhere — a zero-mass model accepted
+     silently. Fixed with strict opposite-edge checks: lower bounds must be
+     `< support_upper`, upper bounds `> support_lower`.
+- Lesson recorded: the original support checks validated each bound against
+  its *own* edge but not the *opposite* edge, and assumed scalar supports.
+  Both are instances of "validation written from the happy-path example."
+- Post-fix suite: 444 passed.
