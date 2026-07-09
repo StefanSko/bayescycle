@@ -8,7 +8,7 @@ from typing import cast
 import pytest
 
 from bayeswire import model
-from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.constraints import Interval, Positive, UnitInterval, VectorBounds
 from bayeswire.constraints.core import Constraint
 from bayeswire.distributions import (
     Beta,
@@ -31,6 +31,7 @@ from bayeswire.distributions.core import (
 )
 from bayeswire.model.core import Data, Observed, Param, PartiallyObserved
 from bayeswire.model.decorator import _resolve_model_declaration
+from bayeswire.model.expr import DataRef
 
 
 def param_size(value: object) -> Data | int | None:
@@ -215,6 +216,121 @@ def test_partially_observed_vector_rejects_rank_only_missing_index_schema() -> N
             observed_idx=observed_idx,
             missing_idx=missing_idx,
         )
+
+
+def test_partially_observed_vector_with_missing_lower_resolves_vector_bounds() -> None:
+    class LowerCensoredPartial:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        missing_lower = Data.vector(n_mis)
+        y = PartiallyObserved.vector(
+            Normal(0.0, 1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_lower=missing_lower,
+        )
+
+    meta = _resolve_model_declaration(LowerCensoredPartial)
+
+    assert meta.free_values["y"].constraint == VectorBounds(
+        lower=DataRef("missing_lower"),
+        upper=None,
+    )
+    assert meta.free_values["y"].size == DataRef("n_mis")
+
+
+def test_partially_observed_vector_without_bounds_keeps_unbounded_free_value() -> None:
+    class UnboundedPartial:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        y = PartiallyObserved.vector(
+            Normal(0.0, 1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    meta = _resolve_model_declaration(UnboundedPartial)
+
+    assert meta.free_values["y"].constraint is None
+
+
+def test_partially_observed_vector_rejects_wrong_rank_missing_lower() -> None:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    missing_lower = Data.matrix(n_mis, n_mis)
+
+    with pytest.raises(TypeError, match="missing_lower.*Data.vector"):
+        PartiallyObserved.vector(
+            Normal(0.0, 1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_lower=missing_lower,
+        )
+
+
+def test_partially_observed_vector_rejects_mismatched_bound_length_dim() -> None:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    n_other = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    missing_lower = Data.vector(n_other)
+
+    with pytest.raises(TypeError, match="same length dimension as missing_idx"):
+        PartiallyObserved.vector(
+            Normal(0.0, 1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_lower=missing_lower,
+        )
+
+
+def test_partially_observed_vector_rejects_truncated_base_with_bounds() -> None:
+    with pytest.raises(
+        TypeError,
+        match="bounds on PartiallyObserved cannot be combined with Truncated bases",
+    ):
+
+        class TruncatedBoundedPartial:
+            n = Data.scalar()
+            n_obs = Data.scalar()
+            n_mis = Data.scalar()
+            observed_idx = Data.vector(n_obs)
+            missing_idx = Data.vector(n_mis)
+            observed_values = Data.vector(n_obs)
+            missing_lower = Data.vector(n_mis)
+            y = PartiallyObserved.vector(
+                Truncated(Normal(0.0, 1.0), lower=0.0),
+                length=n,
+                observed=observed_values,
+                observed_idx=observed_idx,
+                missing_idx=missing_idx,
+                missing_lower=missing_lower,
+            )
+
+        _resolve_model_declaration(TruncatedBoundedPartial)
 
 
 def test_partially_observed_vector_rejects_discrete_distribution() -> None:

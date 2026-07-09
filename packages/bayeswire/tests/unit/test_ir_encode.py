@@ -10,13 +10,14 @@ from typing import cast
 import pytest
 from _ir_meta import minimal_meta
 
-from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
+from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval, VectorBounds
 from bayeswire.distributions import Normal
 from bayeswire.distributions.core import DistributionParameter, DistributionValue, LogProbability
 from bayeswire.ir import (
     NonFiniteConstant,
     UnserializableDistribution,
     UnserializableValue,
+    meta_from_dict,
     meta_to_dict,
 )
 from bayeswire.model._data_schema import (
@@ -185,6 +186,40 @@ def test_encodes_constraints_sizes_and_schemas() -> None:
     assert _as_dict(_as_dict(data[1])["value"])["schema"] == {
         "node": "ResolvedDataShapeSchema",
         "dims": [{"node": "DataDimRef", "name": "n"}, 4],
+    }
+
+
+def test_round_trips_vector_bounds_on_free_values() -> None:
+    meta = ModelMeta(
+        params={},
+        data={
+            "n_mis": ResolvedData(ResolvedDataShapeSchema(())),
+            "lower": ResolvedData(ResolvedDataShapeSchema((DataDimRef("n_mis"),))),
+            "upper": ResolvedData(ResolvedDataShapeSchema((DataDimRef("n_mis"),))),
+        },
+        observed_nodes=(),
+        expressions={},
+        free_values={
+            "y": ResolvedFreeValue(
+                constraint=VectorBounds(lower=DataRef("lower"), upper=DataRef("upper")),
+                size=DataRef("n_mis"),
+            )
+        },
+        stochastic_sites=(ResolvedStochasticSite("y", Normal(0.0, 1.0), ParamRef("y")),),
+    )
+
+    document = meta_to_dict(meta)
+
+    assert meta_from_dict(document) == meta
+    model = document["model"]
+    assert isinstance(model, dict)
+    free_values = model["free_values"]
+    assert isinstance(free_values, list)
+    encoded = _as_dict(_as_dict(free_values[0])["value"])
+    assert encoded["constraint"] == {
+        "node": "VectorBounds",
+        "lower": {"node": "DataRef", "name": "lower"},
+        "upper": {"node": "DataRef", "name": "upper"},
     }
 
 

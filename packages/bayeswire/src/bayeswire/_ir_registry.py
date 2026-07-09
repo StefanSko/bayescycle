@@ -11,7 +11,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from typing import get_origin, get_type_hints
 
-from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
+from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval, VectorBounds
 from bayeswire.distributions import (
     Bernoulli,
     Beta,
@@ -165,6 +165,7 @@ _BUILTIN_NODE_CLASSES: tuple[type, ...] = (
     Interval,
     UnitInterval,
     Ordered,
+    VectorBounds,
     # Built-in distributions
     Normal,
     HalfNormal,

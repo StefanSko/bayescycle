@@ -9,6 +9,7 @@ from bayeswire.constraints.core import (
 from bayeswire.constraints.interval import Interval, UnitInterval
 from bayeswire.constraints.ordered import Ordered
 from bayeswire.constraints.positive import Positive
+from bayeswire.constraints.vector_bounds import VectorBounds
 
 __all__ = [
     "Constraint",
@@ -19,4 +20,5 @@ __all__ = [
     "Positive",
     "UnitInterval",
     "UnconstrainedValue",
+    "VectorBounds",
 ]

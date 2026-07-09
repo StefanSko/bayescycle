@@ -1,0 +1,79 @@
+# Implementation notes — VectorBounds / censored PartiallyObserved (#45/#46)
+
+Working log of non-obvious facts discovered while implementing the feature.
+Newest entries at the bottom of each section. Written for whoever touches
+this code next; safe to drop before merge if unwanted.
+
+## Design provenance (pre-implementation discussion, 2026-07-09)
+
+- **Both issues assumed the bound rides as a field on `VectorScatterOp`.**
+  That placement would have been a *breaking* wire change: the codec always
+  emits every registered field and the decoder strict-matches field sets
+  (`ir.py:272-279`), so "optional field" still changes canonical bytes of
+  every existing `VectorScatterOp` document. Issue #45's "byte-identical"
+  acceptance criterion was unsatisfiable under its own proposal.
+- **Stan settled the seam question.** The censored-imputation idiom the
+  issues cite (`vector<lower=c>[N] t;`) declares bounds on the *parameter*,
+  not the sampling statement, and Stan constraints reference data as a
+  matter of course. Hence `VectorBounds` as a constraint node on the free
+  value — a purely *additive* tag change, keeping `bayeswire_ir` at 1 and
+  every existing corpus document byte-identical.
+- **Prior-predictive insight:** prior predictive of a PO site is "PO with no
+  observables" — draw the full vector from the base distribution; the
+  observed/missing split doesn't exist before conditioning. The blanket
+  `TypeError` in `simulation/core.py` is a missing dispatch rule, not
+  missing math. Scoped in: scalar iid bases + unbounded MVN. Scoped out:
+  bounded MVN (per-coordinate truncation of a correlated joint has no
+  closed form).
+- **Exponential memorylessness bonus:** an exponential truncated to
+  `t > c` is exactly `c + Exponential(rate)` — bounded prior draws for the
+  black-cat model are a sample-and-shift, no inverse-CDF machinery needed.
+- Decision log with diagrams:
+  https://claude.ai/code/artifact/862c9a2a-06e2-4ac9-9184-fb4261b77c9a
+
+## Codebase facts that shaped the plan
+
+- `_field_kind` (`_ir_registry.py:130-136`) classifies any non-dict/tuple
+  hint as `VALUE`, so `DataRef | None` on a constraint node serializes via
+  the existing nullable-value rule (spec rule 6, the `ResolvedFreeValue.size`
+  pattern) with zero codec changes. The feared "constraints can only hold
+  floats" limitation was a convention, not a mechanism.
+- **Produce-conformance forces the stage order.** Every case in
+  `reference_models.py` must ship a JAX-oracle evaluation fixture
+  (`test_produce.py:91-100`), and only bayesjax can generate those — so new
+  reference models/corpus entries must land *after* the backend transform
+  work, not with the bayeswire surface. Stage order: surface → transforms →
+  prior-pred/tests → fixtures+corpus.
+- **Scalar-base PO already worked.** Sites sum an elementwise logpdf
+  (`compiler/core.py:213`), so `PartiallyObserved(Exponential(rate), ...)`
+  had iid vector semantics all along; the corpus only ever exercised MVN.
+  The feared prerequisite work item didn't exist.
+- Strict-decoder blast radius is small in practice: the only runtime
+  consumers of IR documents at rest are the pinned Rust engine and the
+  corpus tests; `bayesite-idata` deliberately reads `model.ir.json` with
+  tolerant ad-hoc helpers ("never a runtime dependency" on bayeswire).
+- Stale pre-monorepo references in the issues: `src/jaxstanv5/...` paths
+  are now `packages/bayesjax/src/bayesjax/...`; "bump the bayeswire pin" is
+  obsolete (workspace dependency, lockstep versions).
+
+## Stage 1 — bayeswire surface (VectorBounds node, eDSL, decorator, spec)
+
+- Red→green evidence (Pi run): ImportError → 4 passed (construction);
+  `UnserializableValue` → 1 passed (round-trip); unexpected-kwarg → 5 passed
+  (decorator/validation). Full suite 220 passed.
+- `regenerate_corpus.py` after registering the tag changed *only*
+  `spec/ir-v1-tags.md` (+1 row); zero corpus JSON diffs — empirical
+  confirmation the change is additive.
+- Bound validation reuses `_validate_exact_vector_data` and additionally
+  requires the bound's length *dimension object* to be the same as
+  `missing_idx`'s (`_exact_vector_dim` comparison) — stronger than "same
+  rank", it pins the shared `n_mis` symbol at declaration time.
+- Unbounded PO still resolves `constraint=None` — byte-identity for
+  existing models is preserved at the resolution level, not just the codec
+  level.
+- Inline-expression PO references reuse the declaration branch for free
+  values, so the constraint is attached exactly once regardless of how the
+  PO is referenced.
+- Pre-existing, unrelated: `ty check` reports 2 `unsupported-base` warnings
+  in `tests/unit/model/test_dimensions.py` and `tests/unit/test_public_hooks.py`
+  (present on main; not introduced here).
