@@ -15,6 +15,7 @@ from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
 from bayeswire.distributions import (
     Bernoulli,
     Beta,
+    Exponential,
     HalfNormal,
     MultivariateNormal,
     Normal,
@@ -194,6 +195,83 @@ def _bounded_rates() -> ReferenceModelCase:
     )
 
 
+def _censored_exponential() -> ReferenceModelCase:
+    @model
+    class CensoredExponential:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        missing_lower = Data.vector(n_mis)
+
+        rate = Param(Exponential(1.0), constraint=Positive())
+        y = PartiallyObserved.vector(
+            Exponential(rate),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_lower=missing_lower,
+        )
+
+    return ReferenceModelCase(
+        name="censored_exponential",
+        model_cls=CensoredExponential,
+        meta=_meta(CensoredExponential),
+        bind_values={
+            "n": 6,
+            "n_obs": 4,
+            "n_mis": 2,
+            "observed_idx": [0, 1, 3, 5],
+            "missing_idx": [2, 4],
+            "observed_values": [0.25, 0.9, 0.4, 1.2],
+            "missing_lower": [1.5, 2.0],
+        },
+    )
+
+
+def _interval_censored_normal() -> ReferenceModelCase:
+    @model
+    class IntervalCensoredNormal:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        missing_lower = Data.vector(n_mis)
+        missing_upper = Data.vector(n_mis)
+
+        mu = Param(Normal(0.0, 1.0))
+        y = PartiallyObserved.vector(
+            Normal(mu, 1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_lower=missing_lower,
+            missing_upper=missing_upper,
+        )
+
+    return ReferenceModelCase(
+        name="interval_censored_normal",
+        model_cls=IntervalCensoredNormal,
+        meta=_meta(IntervalCensoredNormal),
+        bind_values={
+            "n": 5,
+            "n_obs": 3,
+            "n_mis": 2,
+            "observed_idx": [0, 2, 4],
+            "missing_idx": [1, 3],
+            "observed_values": [-0.3, 0.8, 1.1],
+            "missing_lower": [-1.0, 0.25],
+            "missing_upper": [0.5, 1.75],
+        },
+    )
+
+
 def reference_model_cases() -> tuple[ReferenceModelCase, ...]:
     """Return all corpus reference models in their pinned order."""
     return (
@@ -203,4 +281,6 @@ def reference_model_cases() -> tuple[ReferenceModelCase, ...]:
         _ordinal_regression(),
         _partially_observed_mvn(),
         _bounded_rates(),
+        _censored_exponential(),
+        _interval_censored_normal(),
     )

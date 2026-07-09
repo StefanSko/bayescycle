@@ -131,3 +131,22 @@ this code next; safe to drop before merge if unwanted.
   VectorBounds was modeled on. Script is manual (requires cmdstan), not in
   pytest; only py_compile-checked in CI-able runs.
 - Full suite: 438 passed.
+
+## Stage 4 — golden models, oracle fixtures, corpus
+
+- Two new corpus models: `censored_exponential` (lower bounds, the wire
+  path the black cat needs) and `interval_censored_normal` (both bounds,
+  pinning the upper-bound encoding and the lub transform). Deliberate
+  simplification vs issue #45's "two rates" sketch: golden models pin
+  bytes, the statistical story lives in the integration suite.
+- **Byte-identity gate held:** `git diff` on the corpus shows only new
+  files plus strictly-appended entries in `hashes.json` /
+  `fingerprints.json` — every pre-existing corpus document byte-identical,
+  exactly what the additive-tag design promised.
+- `VectorBounds` on the wire is the nullable-value pattern:
+  `{"node":"VectorBounds","lower":{"node":"DataRef",...},"upper":null}`.
+- Conformance both directions green: produce (bayeswire, 228) and consume
+  (bayesjax evaluates the new fixtures' float64 oracle logp/gradient within
+  spec tolerance, 9 fixture tests). Root workspace guards 13 passed.
+- Oracle fixture values (spot record): censored_exponential eval[0]
+  logp = -9.25; interval_censored_normal eval[0] logp = -8.9765.
