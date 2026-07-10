@@ -29,7 +29,7 @@ wheels = [
 
 [[package]]
 name = "bayesite-idata"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "arviz-base" },
@@ -66,7 +66,7 @@ dev = [
 
 [[package]]
 name = "bayeswire"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "../bayeswire" }
 
 [package.metadata]

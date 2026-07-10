@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from bayescycle._cli import main
-from bayescycle.backends.bayesite.provisioning import platform_target
+from bayescycle.backends.bayesite.provisioning import PINNED_ENGINE_RELEASE, platform_target
 
 ArchiveServer = tuple[str, Path, list[int]]
 
@@ -88,7 +88,12 @@ def test_engine_ensure_honors_base_url_and_cache_root_seams(
     """
     base_url, serve_dir, requests = archive_server
     target = platform_target()
-    _build_release_archive(serve_dir, "v0.2.0", target, b"#!/bin/sh\necho ok\n")
+    _build_release_archive(
+        serve_dir,
+        PINNED_ENGINE_RELEASE.version,
+        target,
+        b"#!/bin/sh\necho ok\n",
+    )
     cache_root = tmp_path / "cache"
 
     code = main(
@@ -114,7 +119,12 @@ def test_engine_ensure_does_not_cache_a_verification_failure(
 ) -> None:
     base_url, serve_dir, requests = archive_server
     target = platform_target()
-    _build_release_archive(serve_dir, "v0.2.0", target, b"#!/bin/sh\necho ok\n")
+    _build_release_archive(
+        serve_dir,
+        PINNED_ENGINE_RELEASE.version,
+        target,
+        b"#!/bin/sh\necho ok\n",
+    )
     cache_root = tmp_path / "cache"
     args = ["engine", "ensure", "--base-url", base_url, "--cache-root", str(cache_root)]
 
@@ -154,7 +164,12 @@ def test_engine_path_prints_cached_path_without_downloading(
     monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
     base_url, serve_dir, requests = archive_server
     target = platform_target()
-    sha256 = _build_release_archive(serve_dir, "v0.2.0", target, b"#!/bin/sh\necho ok\n")
+    sha256 = _build_release_archive(
+        serve_dir,
+        PINNED_ENGINE_RELEASE.version,
+        target,
+        b"#!/bin/sh\necho ok\n",
+    )
     cache_root = tmp_path / "cache"
     # Populate the cache directly through the Python API (with a release
     # whose sha256 matches our local fixture) -- this is the same cache
@@ -162,7 +177,7 @@ def test_engine_path_prints_cached_path_without_downloading(
     # release, just reached without needing byte-identical mirror content.
     provisioned = ensure_engine(
         EngineRelease(
-            version="v0.2.0",
+            version=PINNED_ENGINE_RELEASE.version,
             base_url=base_url,
             targets=(EngineTarget(target=target, archive_format="tar.gz", sha256=sha256),),
         ),
