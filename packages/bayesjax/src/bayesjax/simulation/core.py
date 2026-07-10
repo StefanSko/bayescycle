@@ -18,7 +18,20 @@ from bayeswire.model.decorator import (
     resolved_free_values,
     resolved_stochastic_sites,
 )
-from bayeswire.model.expr import ParamRef, VectorScatterOp
+from bayeswire.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    ExprNode,
+    FullSlice,
+    IndexOp,
+    IndexSpec,
+    IndexTuple,
+    ParamRef,
+    ScalarIndex,
+    UnaryOp,
+    VectorScatterOp,
+)
 
 from bayesjax._backends.jax.binding import (
     _normalize_declared_data_values,
@@ -281,25 +294,55 @@ def _resolve_free_value_shapes(
     }
 
 
+def _index_param_refs(spec: IndexSpec) -> set[str]:
+    """Return parameter names referenced by an index expression."""
+    if isinstance(spec, ScalarIndex):
+        return _expr_param_refs(spec.expr)
+    if isinstance(spec, FullSlice):
+        return set()
+    if isinstance(spec, IndexTuple):
+        return set().union(*(_index_param_refs(item) for item in spec.items))
+    raise TypeError(f"Cannot inspect index spec: {type(spec).__name__}")
+
+
+def _expr_param_refs(node: ExprNode) -> set[str]:
+    """Return every parameter name referenced by a site value expression."""
+    if isinstance(node, ParamRef):
+        return {node.name}
+    if isinstance(node, DataRef | ConstNode):
+        return set()
+    if isinstance(node, BinOp):
+        return _expr_param_refs(node.left) | _expr_param_refs(node.right)
+    if isinstance(node, UnaryOp):
+        return _expr_param_refs(node.operand)
+    if isinstance(node, IndexOp):
+        return _expr_param_refs(node.base) | _index_param_refs(node.index)
+    if isinstance(node, VectorScatterOp):
+        return set().union(
+            _expr_param_refs(node.length),
+            _expr_param_refs(node.observed_idx),
+            _expr_param_refs(node.observed_values),
+            _expr_param_refs(node.missing_idx),
+            _expr_param_refs(node.missing_values),
+        )
+    raise TypeError(f"Cannot inspect expression node: {type(node).__name__}")
+
+
 def _validate_prior_predictive_vector_bound_owners(
     meta: ModelMeta,
     vector_bounds: Mapping[str, ResolvedVectorBounds],
 ) -> None:
-    """Reject extra assignable factors that cannot be forward-simulated."""
+    """Reject extra factors over bounded values that cannot be forward-simulated."""
+    bounded_names = set(vector_bounds)
     for site in resolved_stochastic_sites(meta):
-        value = site.value
-        if isinstance(value, ParamRef):
-            free_name = value.name
-        elif isinstance(value, VectorScatterOp) and isinstance(value.missing_values, ParamRef):
-            free_name = value.missing_values.name
-        else:
-            continue
-        if free_name in vector_bounds and site.name != free_name:
-            raise TypeError(
-                f"prior-predictive site {site.name!r} is not the same-name owner of free value "
-                f"{free_name!r}; additional factors evaluated at free values are not "
-                "forward-simulatable, so use a generative model with one same-name owner site"
-            )
+        referenced_bounds = sorted(_expr_param_refs(site.value) & bounded_names)
+        for free_name in referenced_bounds:
+            if site.name != free_name:
+                raise TypeError(
+                    f"prior-predictive site {site.name!r} is not the same-name owner of free "
+                    f"value {free_name!r}; additional factors evaluated at free values are not "
+                    "forward-simulatable, so use a generative model with one same-name owner site"
+                )
 
 
 def _partially_observed_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:

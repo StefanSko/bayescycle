@@ -253,3 +253,11 @@ this code next; safe to drop before merge if unwanted.
   established behavior.
 - Post-follow-up gates: BayesJAX Ruff/ty plus 454 tests and all 13 root guards
   passed; ty retained only its known inheritance-rejection diagnostic.
+- Codex round 2 on PR #57 found the shallow predictive check still silently
+  dropped wrapped factors such as `y + 0`. Red coverage reproduced it. Unlike
+  owner selection, predictive safety must inspect the entire site-value tree:
+  any differently named factor whose value references a VectorBounds slot has
+  no supported ancestral interpretation and must fail before drawing.
+- The explicit typed expression/index walk catches direct, wrapped, indexed,
+  and scatter references without changing density owner selection. BayesJAX's
+  full 455-test suite, Ruff/ty, and 13 root guards passed after the fix.
