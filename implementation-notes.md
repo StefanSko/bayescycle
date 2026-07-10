@@ -261,3 +261,12 @@ this code next; safe to drop before merge if unwanted.
 - The explicit typed expression/index walk catches direct, wrapped, indexed,
   and scatter references without changing density owner selection. BayesJAX's
   full 455-test suite, Ruff/ty, and 13 root guards passed after the fix.
+- Codex round 3 identified the other half of a stochastic factor: its
+  distribution parameters can reference the bounded value even when its value
+  expression does not. Red coverage with `Normal(y, 1)` at a constant value
+  reproduced another silent drop. Predictive validation therefore checks both
+  value-expression and distribution-expression references, while exempting
+  actual free/observed declaration sites that simulation handles.
+- The distribution walk follows explicit dataclass fields and delegates all IR
+  expression/index traversal to the typed helper. Full BayesJAX validation is
+  green at 456 tests plus Ruff/ty and 13 root guards.

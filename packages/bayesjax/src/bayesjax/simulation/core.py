@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
+from typing import cast
 
 import jax
 import jax.numpy as jnp
@@ -31,6 +32,7 @@ from bayeswire.model.expr import (
     ScalarIndex,
     UnaryOp,
     VectorScatterOp,
+    is_final_expr_node,
 )
 
 from bayesjax._backends.jax.binding import (
@@ -328,21 +330,39 @@ def _expr_param_refs(node: ExprNode) -> set[str]:
     raise TypeError(f"Cannot inspect expression node: {type(node).__name__}")
 
 
+def _distribution_param_refs(distribution: Distribution) -> set[str]:
+    """Return parameter names referenced by symbolic distribution fields."""
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return set()
+    refs: set[str] = set()
+    for distribution_field in fields(distribution):
+        value = getattr(distribution, distribution_field.name)
+        if is_final_expr_node(value):
+            refs.update(_expr_param_refs(cast(ExprNode, value)))
+        elif is_dataclass(value) and not isinstance(value, type):
+            refs.update(_distribution_param_refs(cast(Distribution, value)))
+    return refs
+
+
 def _validate_prior_predictive_vector_bound_owners(
     meta: ModelMeta,
     vector_bounds: Mapping[str, ResolvedVectorBounds],
 ) -> None:
     """Reject extra factors over bounded values that cannot be forward-simulated."""
     bounded_names = set(vector_bounds)
+    declaration_site_names = set(resolved_free_values(meta))
+    declaration_site_names.update(observed.name for observed in meta.observed_nodes)
     for site in resolved_stochastic_sites(meta):
-        referenced_bounds = sorted(_expr_param_refs(site.value) & bounded_names)
-        for free_name in referenced_bounds:
-            if site.name != free_name:
-                raise TypeError(
-                    f"prior-predictive site {site.name!r} is not the same-name owner of free "
-                    f"value {free_name!r}; additional factors evaluated at free values are not "
-                    "forward-simulatable, so use a generative model with one same-name owner site"
-                )
+        if site.name in declaration_site_names:
+            continue
+        referenced_params = _expr_param_refs(site.value)
+        referenced_params.update(_distribution_param_refs(site.distribution))
+        for free_name in sorted(referenced_params & bounded_names):
+            raise TypeError(
+                f"prior-predictive site {site.name!r} is not the same-name owner of free value "
+                f"{free_name!r}; additional factors involving free values are not "
+                "forward-simulatable, so use a generative model with one same-name owner site"
+            )
 
 
 def _partially_observed_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:

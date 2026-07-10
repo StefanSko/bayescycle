@@ -375,6 +375,33 @@ def test_simulate_prior_predictive_rejects_wrapped_non_owner_vector_bounds_facto
         )
 
 
+def test_simulate_prior_predictive_rejects_non_owner_distribution_factor() -> None:
+    meta = model_meta(UpperCensoredExponentialPriorPredictive)
+    owner = meta.stochastic_sites[0]
+    factor = ResolvedStochasticSite(
+        "penalty",
+        Normal(ParamRef("y"), 1.0),
+        ConstNode(0.0),
+    )
+    adversarial = bindable_from_meta(replace(meta, stochastic_sites=(factor, owner)))
+
+    with pytest.raises(TypeError, match="not the same-name owner"):
+        simulate_prior_predictive(
+            adversarial,
+            seed=49,
+            num_samples=1,
+            data={
+                "n": 2,
+                "n_obs": 1,
+                "n_mis": 1,
+                "observed_idx": jnp.asarray([0]),
+                "missing_idx": jnp.asarray([1]),
+                "observed_values": jnp.asarray([0.5]),
+                "missing_upper": jnp.asarray([1.0]),
+            },
+        )
+
+
 def test_simulate_prior_predictive_rejects_missing_data() -> None:
     with pytest.raises(ValueError, match="Missing model data"):
         simulate_prior_predictive(DataSizedPrior, seed=5, num_samples=2)
