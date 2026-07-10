@@ -1855,6 +1855,44 @@ def test_sample_rejects_dims_sidecar_rank_mismatch(
     assert "invalid model dimension metadata" in capsys.readouterr().err
 
 
+def test_sample_selects_only_unreferenced_submodel_root(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from bayeswire import Observed, Param, Submodel, model\n"
+        "from bayeswire.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Measurement:\n"
+        "    mu = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(mu, 1.0))\n"
+        "\n"
+        "@model\n"
+        "class Study:\n"
+        "    measurement = Submodel(Measurement)\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"measurement.y": 0.25}\n', encoding="utf-8")
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["model"] == "Study"
+
+
 def test_sample_requires_explicit_model_when_file_declares_multiple_models(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

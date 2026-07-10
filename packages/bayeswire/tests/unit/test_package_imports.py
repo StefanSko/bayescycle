@@ -19,6 +19,7 @@ def test_top_level_exports_the_declaration_language() -> None:
         "Observed",
         "Param",
         "PartiallyObserved",
+        "Submodel",
         "dimension_metadata_to_dict",
         "model",
         "model_dimensions",

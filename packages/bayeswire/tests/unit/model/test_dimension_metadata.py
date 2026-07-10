@@ -7,6 +7,7 @@ from bayeswire import (
     Dim,
     Observed,
     Param,
+    Submodel,
     dimension_metadata_to_dict,
     model,
     model_dimensions,
@@ -40,3 +41,31 @@ def test_declared_dimension_metadata_is_exposed_for_linear_regression() -> None:
     model_node = meta_to_dict(meta)["model"]
     assert isinstance(model_node, dict)
     assert "dims" not in model_node
+
+
+def test_submodel_prefixes_dimension_variables_labels_and_coordinates() -> None:
+    group = Dim("group", coords=("a", "b"))
+
+    @model
+    class Effects:
+        n = Data.scalar()
+        theta = Param(Normal(0.0, 1.0), size=2, dims=(group,))
+        y = Observed(Normal(theta, 1.0), dims=(group,))
+
+    @model
+    class PairedEffects:
+        treatment = Submodel(Effects)
+        control = Submodel(Effects)
+
+    assert dimension_metadata_to_dict(model_dimensions(PairedEffects)) == {
+        "dims": {
+            "treatment.theta": ["treatment.group"],
+            "treatment.y": ["treatment.group"],
+            "control.theta": ["control.group"],
+            "control.y": ["control.group"],
+        },
+        "coords": {
+            "treatment.group": ["a", "b"],
+            "control.group": ["a", "b"],
+        },
+    }

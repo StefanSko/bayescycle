@@ -15,7 +15,7 @@ Core invariants that should remain true as the codebase changes.
 
 ## Declaration language
 
-- `Param`, `Data`, and `Observed` are declarations.
+- `Param`, `Data`, `Observed`, and `Submodel` are declarations.
 - `Param(...)` is latent and contributes a prior term.
 - `Data.scalar()`, `Data.vector(...)`, `Data.matrix(...)`, and
   `Data.array(...)` are known inputs with shape/rank schemas and contribute no
@@ -28,7 +28,16 @@ Core invariants that should remain true as the codebase changes.
   `PartiallyObserved`.
 - `Observed` nodes are optional; prior-only models are valid.
 - Declaration aliases are invalid: one declaration object maps to one class
-  attribute name.
+  attribute name, including `Submodel` instances.
+- `Submodel(Model)` composes one already-resolved model as a closed namespace:
+  it accepts no input wiring, includes every child stochastic factor (including
+  `Observed` likelihoods), and prefixes child data bind keys.
+- Parents may reference composed parameters, data, derived expressions, and
+  partially observed values. Child `Observed` declarations contribute factors
+  but are not expression values, matching ordinary same-class behavior.
+- Repeated submodel instances are independent. Their attribute names determine
+  distinct dotted prefixes; child variable names, dimension labels, and
+  coordinate keys are all prefixed.
 - `Dim(...)` labels and coordinates are authoring-side semantic metadata only;
   they do not change log-density, transforms, sampling, or distribution shapes.
 - Dimension coordinates are optional JSON-scalar metadata and are validated
@@ -58,7 +67,9 @@ Core invariants that should remain true as the codebase changes.
   symbolic math functions cross the declaration boundary through explicit helper
   nodes.
 - `_resolve_model_declaration(...)` is the only transition from declaration
-  symbols to named references.
+  symbols to named references. Submodel composition occurs at this boundary by
+  prefixing and flattening already-resolved child metadata; no `Submodel` or
+  submodel-member token enters final expression IR.
 - Binding is a backend phase. No module in this package binds data, holds
   arrays, or attaches runtime methods to model classes.
 - `_deferred.py` is private class-body syntax capture.
@@ -73,7 +84,9 @@ Core invariants that should remain true as the codebase changes.
 ## IR and serialization
 
 - `ModelMeta` contains resolved metadata only, including resolved data schemas,
-  free NUTS values, and stochastic log-density sites.
+  free NUTS values, and stochastic log-density sites. Composed models use the
+  same flat representation with opaque dotted names; hierarchy is not a wire
+  concept and consumers never split names on `.`.
 - `ModelMeta` is the serialization boundary: `bayeswire.ir` round-trips resolved
   metadata only, executes no user code on decode, and uses only the standard
   library.

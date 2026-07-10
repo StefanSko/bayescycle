@@ -7,7 +7,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
-from bayeswire.model.core import Data, Observed, Param, PartiallyObserved
+from bayeswire.model.core import Data, Observed, Param, PartiallyObserved, Submodel
 from bayeswire.model.decorator import (
     ModelMeta,
     attached_model_dimensions,
@@ -36,6 +36,7 @@ __all__ = [
     "Observed",
     "Param",
     "PartiallyObserved",
+    "Submodel",
     "attached_model_dimensions",
     "dimension_metadata_from_dict",
     "dimension_metadata_to_dict",

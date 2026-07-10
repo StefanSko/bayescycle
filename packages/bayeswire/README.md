@@ -119,6 +119,40 @@ metadata without executing any user code, and
 `bindable_from_meta(meta, dimensions=...)` returns a pure metadata class that
 backends bind and sample.
 
+### Closed model composition
+
+Use `Submodel` to reuse a complete, already-validated model under an explicit
+namespace rather than through Python inheritance:
+
+```python
+from bayeswire import Data, Observed, Param, Submodel, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
+
+@model
+class GroupEffects:
+    n_groups = Data.scalar()
+    mu = Param(Normal(0.0, 1.0))
+    sigma = Param(HalfNormal(0.5), constraint=Positive())
+    z = Param(Normal(0.0, 1.0), size=n_groups)
+    theta = mu + sigma * z
+    measurements = Observed(Normal(theta, 1.0))
+
+@model
+class Study:
+    effects = Submodel(GroupEffects)
+    y = Observed(Normal(effects.theta, 1.0))
+```
+
+Composition is closed: `GroupEffects` owns all of its inputs, so binding
+`Study` requires `effects.n_groups`, `effects.measurements`, and `y`. The
+child's parameters, data, expressions, free values, and likelihood factors
+are flattened into ordinary resolved metadata with opaque dotted names such
+as `effects.mu`; there is no hierarchical IR node or backend recursion.
+Two `Submodel(GroupEffects)` declarations create independent namespaces.
+Child `Observed` declarations contribute their likelihood factors but, like
+ordinary `Observed` declarations, are not expression values.
+
 ## Layout
 
 - `src/bayeswire/` — the package: `model`, `distributions`, `constraints`,

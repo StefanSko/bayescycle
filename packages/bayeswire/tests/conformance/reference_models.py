@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import cast
 
-from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, model
+from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, Submodel, model
 from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
 from bayeswire.distributions import (
     Bernoulli,
@@ -116,6 +116,35 @@ def _varying_intercepts_poisson() -> ReferenceModelCase:
             "group_idx": [0, 0, 1, 1, 2, 2],
             "x": [-1.0, -0.6, -0.2, 0.2, 0.6, 1.0],
             "y": [0, 1, 2, 1, 3, 2],
+        },
+    )
+
+
+def _composed_measurements() -> ReferenceModelCase:
+    @model
+    class Measurement:
+        offset = Data.scalar()
+        location = Param(Normal(offset, 1.0))
+        centered = location - offset
+        values = Observed(Normal(centered, 1.0))
+
+    @model
+    class ComposedMeasurements:
+        first = Submodel(Measurement)
+        second = Submodel(Measurement)
+        contrast = first.centered - second.centered
+        comparison = Observed(Normal(contrast, 1.0))
+
+    return ReferenceModelCase(
+        name="composed_measurements",
+        model_cls=ComposedMeasurements,
+        meta=_meta(ComposedMeasurements),
+        bind_values={
+            "first.offset": 0.25,
+            "first.values": [0.1, 0.4, -0.2],
+            "second.offset": -0.5,
+            "second.values": [-0.3, 0.2, 0.6],
+            "comparison": 0.75,
         },
     )
 
@@ -328,6 +357,7 @@ def reference_model_cases() -> tuple[ReferenceModelCase, ...]:
         _linear_regression(),
         _eight_schools_non_centered(),
         _varying_intercepts_poisson(),
+        _composed_measurements(),
         _ordinal_regression(),
         _partially_observed_mvn(),
         _bounded_rates(),

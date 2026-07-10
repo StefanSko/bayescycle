@@ -9,8 +9,8 @@ library.
 
 It exists to:
 
-- define models with `@model`, `Param`, `Data`, `Observed`, and
-  `PartiallyObserved`
+- define models with `@model`, `Param`, `Data`, `Observed`,
+  `PartiallyObserved`, and closed namespaced `Submodel` composition
 - resolve declarations into `ModelMeta`, the serialization boundary
 - serialize/deserialize `ModelMeta` as the `bayeswire_ir` v1 wire format
 - carry dimension labels in a separate sidecar document
