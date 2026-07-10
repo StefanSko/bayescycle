@@ -28,6 +28,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataSchema,
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
+    SubmodelDataDimSymbol,
 )
 from bayeswire.model._deferred import (
     DeclarationSymbol,
@@ -42,7 +43,18 @@ from bayeswire.model._expression_errors import (
     is_non_scalar_array_like_constant,
     non_scalar_distribution_parameter_error,
 )
-from bayeswire.model.core import Data, Observed, Param, PartiallyObserved
+from bayeswire.model.core import (
+    Data,
+    Observed,
+    Param,
+    PartiallyObserved,
+    Submodel,
+    _submodel_member_state,
+    _submodel_symbol,
+    _SubmodelMember,
+    _SubmodelMemberKind,
+    submodel_target,
+)
 from bayeswire.model.dimensions import (
     CoordValue,
     Dim,
@@ -133,6 +145,170 @@ class _ResolvedDeclarations:
     stochastic_sites: tuple[ResolvedStochasticSite, ...]
 
 
+def _qualified_name(prefix: str, name: str) -> str:
+    """Return one opaque, dotted name in a composed model namespace."""
+    return f"{prefix}.{name}"
+
+
+def _prefix_model_meta(meta: ModelMeta, prefix: str) -> ModelMeta:
+    """Flatten resolved child metadata under one opaque name prefix."""
+    return ModelMeta(
+        params={
+            _qualified_name(prefix, name): ResolvedParam(
+                distribution=_prefix_distribution(value.distribution, prefix),
+                constraint=_prefix_constraint(value.constraint, prefix),
+                size=_prefix_size(value.size, prefix),
+            )
+            for name, value in meta.params.items()
+        },
+        data={
+            _qualified_name(prefix, name): ResolvedData(_prefix_data_schema(value.schema, prefix))
+            for name, value in meta.data.items()
+        },
+        observed_nodes=tuple(
+            ResolvedObserved(
+                name=_qualified_name(prefix, value.name),
+                distribution=_prefix_distribution(value.distribution, prefix),
+            )
+            for value in meta.observed_nodes
+        ),
+        expressions={
+            _qualified_name(prefix, name): _prefix_expr(value, prefix)
+            for name, value in meta.expressions.items()
+        },
+        free_values={
+            _qualified_name(prefix, name): ResolvedFreeValue(
+                constraint=_prefix_constraint(value.constraint, prefix),
+                size=_prefix_size(value.size, prefix),
+            )
+            for name, value in resolved_free_values(meta).items()
+        },
+        stochastic_sites=tuple(
+            ResolvedStochasticSite(
+                name=_qualified_name(prefix, site.name),
+                distribution=_prefix_distribution(site.distribution, prefix),
+                value=_prefix_expr(site.value, prefix),
+            )
+            for site in resolved_stochastic_sites(meta)
+        ),
+    )
+
+
+def _prefix_distribution(distribution: Distribution, prefix: str) -> Distribution:
+    """Prefix every resolved declaration reference inside a distribution."""
+    if not is_dataclass(distribution) or isinstance(distribution, type):
+        return distribution
+    resolved = {
+        distribution_field.name: _prefix_resolved_value(
+            getattr(distribution, distribution_field.name),
+            prefix,
+        )
+        for distribution_field in fields(distribution)
+    }
+    return type(distribution)(**resolved)
+
+
+def _prefix_constraint(constraint: Constraint | None, prefix: str) -> Constraint | None:
+    """Prefix data references carried by a resolved constraint."""
+    if constraint is None or not is_dataclass(constraint) or isinstance(constraint, type):
+        return constraint
+    resolved = {
+        constraint_field.name: _prefix_resolved_value(
+            getattr(constraint, constraint_field.name),
+            prefix,
+        )
+        for constraint_field in fields(constraint)
+    }
+    return type(constraint)(**resolved)
+
+
+def _prefix_resolved_value(value: object, prefix: str) -> object:
+    """Prefix references recursively inside one resolved dataclass field."""
+    if is_final_expr_node(value):
+        return _prefix_expr(cast(ExprNode, value), prefix)
+    if isinstance(value, DataDimRef):
+        return DataDimRef(_qualified_name(prefix, value.name))
+    if isinstance(value, tuple):
+        return tuple(_prefix_resolved_value(item, prefix) for item in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        resolved = {
+            value_field.name: _prefix_resolved_value(
+                getattr(value, value_field.name),
+                prefix,
+            )
+            for value_field in fields(value)
+        }
+        return type(value)(**resolved)
+    return value
+
+
+def _prefix_expr(value: ExprNode, prefix: str) -> ExprNode:
+    """Prefix every parameter and data reference in one final expression tree."""
+    if isinstance(value, ParamRef):
+        return ParamRef(_qualified_name(prefix, value.name))
+    if isinstance(value, DataRef):
+        return DataRef(_qualified_name(prefix, value.name))
+    if isinstance(value, ConstNode):
+        return value
+    if isinstance(value, BinOp):
+        return BinOp(
+            value.op,
+            _prefix_expr(value.left, prefix),
+            _prefix_expr(value.right, prefix),
+        )
+    if isinstance(value, UnaryOp):
+        return UnaryOp(value.function, _prefix_expr(value.operand, prefix))
+    if isinstance(value, IndexOp):
+        return IndexOp(
+            _prefix_expr(value.base, prefix),
+            _prefix_index_spec(value.index, prefix),
+        )
+    if isinstance(value, VectorScatterOp):
+        return VectorScatterOp(
+            length=_prefix_expr(value.length, prefix),
+            observed_idx=_prefix_expr(value.observed_idx, prefix),
+            observed_values=_prefix_expr(value.observed_values, prefix),
+            missing_idx=_prefix_expr(value.missing_idx, prefix),
+            missing_values=_prefix_expr(value.missing_values, prefix),
+        )
+
+
+def _prefix_index_spec(value: IndexSpec, prefix: str) -> IndexSpec:
+    """Prefix expression references inside an explicit index specification."""
+    if isinstance(value, ScalarIndex):
+        return ScalarIndex(_prefix_expr(value.expr, prefix))
+    if isinstance(value, FullSlice):
+        return value
+    return IndexTuple(tuple(_prefix_index_spec(item, prefix) for item in value.items))
+
+
+def _prefix_data_schema(schema: ResolvedDataSchema, prefix: str) -> ResolvedDataSchema:
+    """Prefix scalar-data references used by an exact shape schema."""
+    if isinstance(schema, ResolvedDataRankSchema):
+        return schema
+    return ResolvedDataShapeSchema(
+        tuple(
+            DataDimRef(_qualified_name(prefix, dim.name)) if isinstance(dim, DataDimRef) else dim
+            for dim in schema.dims
+        )
+    )
+
+
+def _prefix_size(size: DataRef | int | None, prefix: str) -> DataRef | int | None:
+    """Prefix a data-dependent free-value size."""
+    if isinstance(size, DataRef):
+        return DataRef(_qualified_name(prefix, size.name))
+    return size
+
+
+def _merge_unique[T](target: dict[str, T], source: dict[str, T], *, label: str) -> None:
+    """Merge one ordered resolved map while rejecting ambiguous names."""
+    for name, value in source.items():
+        if name in target:
+            raise ValueError(f"Composed model has duplicate {label} name {name!r}")
+        target[name] = value
+
+
 def _resolve_model_declaration(cls: ModelClass) -> ModelMeta:
     """Resolve a declaration class into final model metadata."""
     _reject_declaration_inheritance(cls)
@@ -167,14 +343,15 @@ def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
     symbols: SymbolTable = {}
 
     for name, value in cls.__dict__.items():
-        if isinstance(value, Param | Data | Observed | PartiallyObserved):
-            existing_name = symbols.get(value.symbol)
+        if isinstance(value, Param | Data | Observed | PartiallyObserved | Submodel):
+            symbol = _submodel_symbol(value) if isinstance(value, Submodel) else value.symbol
+            existing_name = symbols.get(symbol)
             if existing_name is not None:
                 raise ValueError(
                     "Declaration aliases are not supported: "
                     f"{existing_name!r} and {name!r} share one symbol"
                 )
-            symbols[value.symbol] = name
+            symbols[symbol] = name
 
     return symbols
 
@@ -239,6 +416,13 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                     value=DataRef(name),
                 )
             )
+        elif isinstance(value, Submodel):
+            child = _prefix_model_meta(model_meta(submodel_target(value)), name)
+            _merge_unique(params, child.params, label="parameter")
+            _merge_unique(data, child.data, label="data")
+            observed_nodes.extend(child.observed_nodes)
+            _merge_unique(free_values, child.free_values, label="free value")
+            stochastic_sites.extend(child.stochastic_sites)
         elif isinstance(value, PartiallyObserved):
             distribution = _resolve_declaration_distribution(value.distribution, symbols)
             if _contains_discrete_distribution(distribution):
@@ -530,7 +714,12 @@ def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, Exp
     expressions: dict[str, ExprNode] = {}
 
     for name, value in cls.__dict__.items():
-        if is_deferred_expr(value):
+        if isinstance(value, Submodel):
+            child = _prefix_model_meta(model_meta(submodel_target(value)), name)
+            _merge_unique(expressions, child.expressions, label="expression")
+        elif isinstance(value, _SubmodelMember):
+            expressions[name] = _resolve_submodel_member_expr(value, symbols)
+        elif is_deferred_expr(value):
             expressions[name] = _resolve_declaration_expr(value, symbols)
 
     return expressions
@@ -568,8 +757,45 @@ def _resolve_dimension_metadata(cls: ModelClass) -> ResolvedModelDimensions:
                 coords,
                 static_axis_sizes=tuple(None for _ in value.dims),
             )
+        elif isinstance(value, Submodel):
+            child_dimensions = attached_model_dimensions(submodel_target(value))
+            if child_dimensions is None:
+                continue
+            prefixed = _prefix_model_dimensions(child_dimensions, name)
+            _merge_unique(variables, prefixed.variables, label="dimension variable")
+            _merge_dimension_coords(coords, prefixed.coords)
 
     return ResolvedModelDimensions(variables=variables, coords=coords)
+
+
+def _prefix_model_dimensions(
+    dimensions: ResolvedModelDimensions,
+    prefix: str,
+) -> ResolvedModelDimensions:
+    """Prefix child variable and dimension names under a closed namespace."""
+    return ResolvedModelDimensions(
+        variables={
+            _qualified_name(prefix, variable): ResolvedVariableDims(
+                tuple(_qualified_name(prefix, name) for name in variable_dims.names)
+            )
+            for variable, variable_dims in dimensions.variables.items()
+        },
+        coords={
+            _qualified_name(prefix, name): values for name, values in dimensions.coords.items()
+        },
+    )
+
+
+def _merge_dimension_coords(
+    target: dict[str, tuple[CoordValue, ...]],
+    source: dict[str, tuple[CoordValue, ...]],
+) -> None:
+    """Merge prefixed coordinate metadata and reject conflicting definitions."""
+    for name, values in source.items():
+        existing = target.get(name)
+        if existing is not None and existing != values:
+            raise ValueError(f"Dimension {name!r} has conflicting coordinate values")
+        target[name] = values
 
 
 def _resolve_variable_dims(
@@ -732,12 +958,50 @@ def _resolve_data_schema(
 
 
 def _resolve_data_shape_schema_dim(
-    dim: int | DataDimSymbol,
+    dim: int | DataDimSymbol | SubmodelDataDimSymbol,
     symbols: SymbolTable,
 ) -> ResolvedDataShapeDim:
     if isinstance(dim, int):
         return dim
-    return DataDimRef(_resolve_symbol(dim.symbol, symbols))
+    if isinstance(dim, DataDimSymbol):
+        return DataDimRef(_resolve_symbol(dim.symbol, symbols))
+    if isinstance(dim, SubmodelDataDimSymbol):
+        prefix = _resolve_symbol(dim.submodel_symbol, symbols)
+        return DataDimRef(_qualified_name(prefix, dim.member_path))
+    raise TypeError(f"Unknown data shape dimension: {type(dim).__name__}")
+
+
+def _resolve_submodel_data_ref(value: _SubmodelMember, symbols: SymbolTable) -> DataRef:
+    """Resolve one child data member to its flattened qualified name."""
+    state = _submodel_member_state(value)
+    if state.kind is not _SubmodelMemberKind.DATA:
+        raise TypeError(f"Submodel member {state.member_path!r} is not a data declaration")
+    prefix = _resolve_symbol(state.submodel_symbol, symbols)
+    return DataRef(_qualified_name(prefix, state.member_path))
+
+
+def _resolve_submodel_member_expr(value: _SubmodelMember, symbols: SymbolTable) -> ExprNode:
+    """Resolve one child member into the parent's final expression tree."""
+    state = _submodel_member_state(value)
+    if state.kind is _SubmodelMemberKind.DATA:
+        return _resolve_submodel_data_ref(value, symbols)
+
+    prefix = _resolve_symbol(state.submodel_symbol, symbols)
+    qualified = _qualified_name(prefix, state.member_path)
+    if state.kind is _SubmodelMemberKind.PARAM:
+        return ParamRef(qualified)
+
+    meta = model_meta(state.model_cls)
+    if state.kind is _SubmodelMemberKind.EXPRESSION:
+        return _prefix_expr(meta.expressions[state.member_path], prefix)
+    if state.kind is _SubmodelMemberKind.PARTIALLY_OBSERVED:
+        for site in resolved_stochastic_sites(meta):
+            if site.name == state.member_path:
+                return _prefix_expr(site.value, prefix)
+        raise ValueError(
+            f"Submodel member {state.member_path!r} has no stochastic value expression"
+        )
+    raise TypeError(f"Submodel namespace {state.member_path!r} is not a declaration expression")
 
 
 def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | int | None:
@@ -752,6 +1016,21 @@ def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | i
         if isinstance(size.schema, DataRankSchema) and size.schema.rank == 0:
             return DataRef(_resolve_symbol(size.symbol, symbols))
         raise TypeError("Data-dependent parameter sizes must use scalar data declarations")
+    if isinstance(size, _SubmodelMember):
+        state = _submodel_member_state(size)
+        if (
+            state.kind is _SubmodelMemberKind.DATA
+            and isinstance(state.schema, ResolvedDataShapeSchema)
+            and state.schema.dims == ()
+        ):
+            return _resolve_submodel_data_ref(size, symbols)
+        if (
+            state.kind is _SubmodelMemberKind.DATA
+            and isinstance(state.schema, ResolvedDataRankSchema)
+            and state.schema.rank == 0
+        ):
+            return _resolve_submodel_data_ref(size, symbols)
+        raise TypeError("Data-dependent parameter sizes must use scalar data declarations")
     raise TypeError(f"Cannot resolve {type(size).__name__} as a declaration size")
 
 
@@ -760,16 +1039,30 @@ def _resolve_partially_observed_missing_size(
     symbols: SymbolTable,
 ) -> DataRef | int:
     """Resolve the free-coordinate size from an exact missing-index data schema."""
-    schema = value.missing_idx.schema
-    if not isinstance(schema, DataShapeSchema) or len(schema.dims) != 1:
-        raise TypeError("PartiallyObserved missing_idx must be declared as Data.vector(length)")
-
-    dim = schema.dims[0]
-    if isinstance(dim, int):
-        return _validate_parameter_size(dim, "PartiallyObserved missing size")
-    if isinstance(dim, DataDimSymbol):
-        return DataRef(_resolve_symbol(dim.symbol, symbols))
-    raise TypeError(f"Unknown partial-observed missing size dimension: {type(dim).__name__}")
+    missing_idx = value.missing_idx
+    if isinstance(missing_idx, Data):
+        schema = missing_idx.schema
+        if not isinstance(schema, DataShapeSchema) or len(schema.dims) != 1:
+            raise TypeError("PartiallyObserved missing_idx must be declared as Data.vector(length)")
+        dim = schema.dims[0]
+        if isinstance(dim, int):
+            return _validate_parameter_size(dim, "PartiallyObserved missing size")
+        if isinstance(dim, DataDimSymbol):
+            return DataRef(_resolve_symbol(dim.symbol, symbols))
+        if isinstance(dim, SubmodelDataDimSymbol):
+            prefix = _resolve_symbol(dim.submodel_symbol, symbols)
+            return DataRef(_qualified_name(prefix, dim.member_path))
+    else:
+        state = _submodel_member_state(missing_idx)
+        schema = state.schema
+        if isinstance(schema, ResolvedDataShapeSchema) and len(schema.dims) == 1:
+            dim = schema.dims[0]
+            if isinstance(dim, int):
+                return _validate_parameter_size(dim, "PartiallyObserved missing size")
+            if isinstance(dim, DataDimRef):
+                prefix = _resolve_symbol(state.submodel_symbol, symbols)
+                return DataRef(_qualified_name(prefix, dim.name))
+    raise TypeError("PartiallyObserved missing_idx must be declared as Data.vector(length)")
 
 
 def _partially_observed_has_bounds(value: PartiallyObserved) -> bool:
@@ -789,9 +1082,14 @@ def _resolve_partially_observed_vector_bounds(
     )
 
 
-def _resolve_optional_data_ref(value: Data | None, symbols: SymbolTable) -> DataRef | None:
+def _resolve_optional_data_ref(
+    value: Data | _SubmodelMember | None,
+    symbols: SymbolTable,
+) -> DataRef | None:
     if value is None:
         return None
+    if isinstance(value, _SubmodelMember):
+        return _resolve_submodel_data_ref(value, symbols)
     return DataRef(_resolve_symbol(value.symbol, symbols))
 
 
@@ -880,6 +1178,8 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
             _resolve_symbol(value.symbol, symbols),
             symbols,
         )
+    if isinstance(value, _SubmodelMember):
+        return _resolve_submodel_member_expr(value, symbols)
     if isinstance(value, int | float):
         return ConstNode(value)
     if is_array_like_constant(value):
@@ -910,6 +1210,7 @@ def _is_declaration_expr(value: object) -> bool:
         Param
         | Data
         | PartiallyObserved
+        | _SubmodelMember
         | DeferredBinOp
         | DeferredIndexOp
         | DeferredUnaryOp

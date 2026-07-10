@@ -30,7 +30,10 @@ from _reference_models import (
     robust_regression_fixture,
     student_t_location_fixture,
 )
+from bayeswire import Data, Observed, Param, Submodel, model
+from bayeswire.distributions import Normal
 from bayeswire.ir import bindable_from_meta, canonical_bytes, meta_from_dict, meta_to_dict
+from bayeswire.model import model_meta
 
 from bayesjax.compiler import compile_log_density
 from bayesjax.model import bind_model
@@ -70,6 +73,32 @@ EQUIVALENCE_CASES: tuple[FixtureBuilder, ...] = (
     partially_observed_mvn_fixture,
     ordinal_logistic_regression_fixture,
 )
+
+
+def test_composed_model_round_trips_binds_and_compiles_with_opaque_dotted_names() -> None:
+    @model
+    class Measurement:
+        n = Data.scalar()
+        location = Param(Normal(0.0, 1.0), size=n)
+        values = Observed(Normal(location, 1.0))
+
+    @model
+    class Study:
+        measurement = Submodel(Measurement)
+
+    document = json.loads(canonical_bytes(model_meta(Study)).decode("utf-8"))
+    rebuilt = bindable_from_meta(meta_from_dict(document))
+    bound = bind_model(
+        rebuilt,
+        {
+            "measurement.n": 2,
+            "measurement.values": jnp.asarray([0.25, -0.5]),
+        },
+    )
+
+    assert bound.param_shapes == {"measurement.location": (2,)}
+    assert bound.n_params == 2
+    assert jnp.isfinite(compile_log_density(bound)(jnp.zeros((2,))))
 
 
 def _round_trip_meta(bound: BoundModel) -> BoundModel:

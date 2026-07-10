@@ -98,11 +98,16 @@ run-directory artifacts. Plan output records both the selected backend and the
 integration mode: Bayesite is an `external-command` adapter, while bayesjax is
 an `in-process-python` adapter.
 
-If a Python file declares more than one model, choose one explicitly:
+If a Python file declares independent root models, choose one explicitly:
 
 ```bash
 bayescycle sample model.py --model LogisticRegression --data data.json -o run/
 ```
+
+Models referenced through `Submodel(...)` are components rather than competing
+roots. When a file contains one unreferenced root plus its locally declared
+components, bayescycle selects that root automatically; `--model` can still
+select a component explicitly.
 
 Common sampler settings are first-class workflow options:
 

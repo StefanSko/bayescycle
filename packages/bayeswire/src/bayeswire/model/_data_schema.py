@@ -14,7 +14,15 @@ class DataDimSymbol:
     symbol: DeclarationSymbol
 
 
-type DataShapeDim = int | DataDimSymbol
+@dataclass(frozen=True)
+class SubmodelDataDimSymbol:
+    """Declaration-time reference to scalar data inside a submodel namespace."""
+
+    submodel_symbol: DeclarationSymbol
+    member_path: str
+
+
+type DataShapeDim = int | DataDimSymbol | SubmodelDataDimSymbol
 
 
 @dataclass(frozen=True)

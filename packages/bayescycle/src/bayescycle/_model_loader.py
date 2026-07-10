@@ -11,7 +11,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import cast
 
-from bayeswire.model import ModelMeta, is_model_class, model_meta
+from bayeswire import Submodel
+from bayeswire.model import ModelMeta, is_model_class, model_meta, submodel_target
 
 
 class ModelLoadError(RuntimeError):
@@ -103,11 +104,26 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
             f"no bayeswire @model declaration was found in {module.__file__}; "
             "pass --model NAME if the model is imported"
         )
+    roots = _unreferenced_model_roots(matches)
+    if len(roots) == 1:
+        return roots[0]
+
     names = ", ".join(match.name for match in matches)
     raise ModelLoadError(
         f"multiple bayeswire models were found in {module.__file__}: {names}; "
         "choose one with --model NAME"
     )
+
+
+def _unreferenced_model_roots(models: list[LoadedModel]) -> list[LoadedModel]:
+    """Return local model classes that are not components of another local model."""
+    referenced = {
+        submodel_target(value)
+        for loaded in models
+        for value in loaded.model_cls.__dict__.values()
+        if isinstance(value, Submodel)
+    }
+    return [loaded for loaded in models if loaded.model_cls not in referenced]
 
 
 def _declared_in_module(value: object, module: ModuleType) -> bool:

@@ -1,8 +1,7 @@
 # Implementation notes — VectorBounds / censored PartiallyObserved (#45/#46)
 
-Working log of non-obvious facts discovered while implementing the feature.
-Newest entries at the bottom of each section. Written for whoever touches
-this code next; safe to drop before merge if unwanted.
+Working log of non-obvious facts discovered while implementing features.
+Newest entries are appended for whoever touches these paths next.
 
 ## Design provenance (pre-implementation discussion, 2026-07-09)
 
@@ -288,3 +287,76 @@ this code next; safe to drop before merge if unwanted.
   ambiguous and fail. The reference walkers are gone. Final Python gates are
   green: bayeswire 232 tests, BayesJAX 460 tests, 13 root guards, Ruff, and ty
   with only the three known inheritance-rejection diagnostics.
+
+## Follow-up — closed namespaced `Submodel` composition (#48, 2026-07-10)
+
+### Agreed design and stage 1 north-star
+
+- Composition is an authoring-time operation: `Submodel(Child)` prefixes and
+  flattens the child's already-resolved `ModelMeta`. There is deliberately no
+  hierarchical wire node and no backend recursion; dotted names remain opaque
+  strings to every consumer.
+- The namespace is closed. Child `Data` declarations surface as prefixed bind
+  keys; there is no parent-to-child input wiring or constructor configuration.
+- A child contributes its complete model, including `Observed` likelihood
+  factors. Parameters, data, derived expressions, and partially observed values
+  are referenceable from the parent; observed values remain non-expression
+  declarations, matching ordinary same-class behavior.
+- Child dimension variable names, dimension labels, and coordinate keys are all
+  prefixed. This makes repeated instances isolated by construction.
+- First public red→green evidence: the north-star test failed at collection with
+  `ImportError: cannot import name 'Submodel' from 'bayeswire'`, then passed
+  after the declaration proxy and resolved-metadata prefix/merge path landed.
+- Interesting seam: parent expressions that reference a child derived expression
+  cannot point at an `ExpressionRef` because no such final IR node exists. The
+  resolver embeds a prefixed copy of the child's final expression tree, exactly
+  as same-class expression reuse does during Python class-body evaluation.
+- A union of separate parameter/data/namespace proxy types made normal class-body
+  code fail strict typing: `effects.n` statically remained the full union. One
+  private typed proxy plus an explicit member-kind enum keeps the public dynamic
+  attribute syntax usable while resolution still rejects category mistakes.
+- Auditing every `Data` dispatch site found two non-obvious consumers beyond
+  expressions: child scalar data may size parent `Data`/`Param` declarations,
+  and child exact-vector data may feed all `PartiallyObserved` inputs and bounds.
+  Both now normalize through qualified data-dimension symbols before final IR.
+- `bayescycle` model auto-discovery needed authoring provenance that intentionally
+  does not belong in `ModelMeta`. Adding a public `model_submodels(...)` hook
+  would have made IR-reconstructed classes observably different through the
+  public hooks, violating an existing invariant. Instead, the loader inspects
+  the explicit public `Submodel` declarations still present in each authoring
+  class body, removes referenced local components, and selects the sole root.
+
+### Corpus and backend conformance
+
+- The new `composed_measurements` case pins repeated submodels, child `Observed`
+  factors, parent use of child expressions, dotted data keys, and flat packing.
+  Produce-conformance went red on the six expected missing corpus artifacts,
+  then green at 38 tests after fixture/corpus generation.
+- Regenerating all JAX-oracle fixtures changed a few pre-existing floating-point
+  values under the current JAX environment. Those unrelated rewrites were
+  restored; the committed corpus diff is strictly the new case plus appended
+  hash/fingerprint entries. Existing model documents remained byte-identical.
+- bayesjax consume-conformance passes all 10 cases, including compilation and
+  gradient evaluation of the new dotted-name document. No backend composition
+  branch was added: the backend sees only ordinary opaque string keys.
+- The pinned Bayesite v0.2.0 binary sampled the new corpus document unchanged;
+  its posterior header and draw maps preserved `first.location` and
+  `second.location`. `bayesite-idata` then exported that real run to NetCDF and
+  xarray reopened both dotted posterior variable names intact. This checks the
+  external engine and artifact/export seams, not only Python metadata.
+
+## Codex review round 1 (PR #58)
+
+- Both findings reproduced red before fixing:
+  1. A direct re-export (`theta = child.theta`) was neither a declaration nor a
+     deferred operator tree, so `_resolve_expressions` silently skipped it and a
+     later composed wrapper could not see `theta`. Direct member proxies now
+     resolve as named expressions, preserving the same embedded-expression
+     semantics across another composition level.
+  2. `Submodel.model_cls` and `.symbol` were implementation fields, so children
+     with those valid declaration names were shadowed before `__getattr__` ran.
+     Internal target/identity and member-proxy details now live in one private
+     state object; the only reserved child segment is the deliberately obscure
+     `_bayeswire_state`. Nested proxies are covered as well. Bayescycle reaches
+     the target through the narrow `submodel_target(...)` function rather than
+     introspecting storage.
