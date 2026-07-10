@@ -91,6 +91,12 @@ Core invariants that should remain true as the codebase changes.
   site evaluated directly at its `ParamRef`, either alone or as a
   `VectorScatterOp.missing_values`; differently named factors never determine
   its base-support folding.
+- Ancestral consumers classify declaration-backed stochastic sites by
+  structural declaration matching, never expression-reference heuristics or
+  site order. Additional density factors stay part of log-density evaluation
+  but must be rejected by prior-predictive workflows that have no factor-aware
+  sampling semantics; silently dropping or independently drawing them changes
+  the model.
 - A model reconstructed with `bindable_from_meta(...)` is indistinguishable
   from one produced by `@model` through the public hooks. Dimension labels
   travel in a separate sidecar document (`spec/dimension-sidecar-v1.md`);

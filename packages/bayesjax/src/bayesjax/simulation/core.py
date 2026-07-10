@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, fields, is_dataclass
-from typing import cast
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -19,21 +18,7 @@ from bayeswire.model.decorator import (
     resolved_free_values,
     resolved_stochastic_sites,
 )
-from bayeswire.model.expr import (
-    BinOp,
-    ConstNode,
-    DataRef,
-    ExprNode,
-    FullSlice,
-    IndexOp,
-    IndexSpec,
-    IndexTuple,
-    ParamRef,
-    ScalarIndex,
-    UnaryOp,
-    VectorScatterOp,
-    is_final_expr_node,
-)
+from bayeswire.model.expr import DataRef, ParamRef, VectorScatterOp
 
 from bayesjax._backends.jax.binding import (
     _normalize_declared_data_values,
@@ -296,82 +281,104 @@ def _resolve_free_value_shapes(
     }
 
 
-def _index_param_refs(spec: IndexSpec) -> set[str]:
-    """Return parameter names referenced by an index expression."""
-    if isinstance(spec, ScalarIndex):
-        return _expr_param_refs(spec.expr)
-    if isinstance(spec, FullSlice):
-        return set()
-    if isinstance(spec, IndexTuple):
-        return set().union(*(_index_param_refs(item) for item in spec.items))
-    raise TypeError(f"Cannot inspect index spec: {type(spec).__name__}")
+@dataclass(frozen=True)
+class _PriorPredictiveSitePlan:
+    """Declaration-backed sites that have supported ancestral semantics."""
+
+    partially_observed_sites: tuple[ResolvedStochasticSite, ...]
 
 
-def _expr_param_refs(node: ExprNode) -> set[str]:
-    """Return every parameter name referenced by a site value expression."""
-    if isinstance(node, ParamRef):
-        return {node.name}
-    if isinstance(node, DataRef | ConstNode):
-        return set()
-    if isinstance(node, BinOp):
-        return _expr_param_refs(node.left) | _expr_param_refs(node.right)
-    if isinstance(node, UnaryOp):
-        return _expr_param_refs(node.operand)
-    if isinstance(node, IndexOp):
-        return _expr_param_refs(node.base) | _index_param_refs(node.index)
-    if isinstance(node, VectorScatterOp):
-        return set().union(
-            _expr_param_refs(node.length),
-            _expr_param_refs(node.observed_idx),
-            _expr_param_refs(node.observed_values),
-            _expr_param_refs(node.missing_idx),
-            _expr_param_refs(node.missing_values),
+def _claim_unique_generative_site(
+    sites: tuple[ResolvedStochasticSite, ...],
+    claimed: set[int],
+    *,
+    declaration: str,
+    matches: Callable[[ResolvedStochasticSite], bool],
+) -> tuple[int, ResolvedStochasticSite]:
+    matching_indices = [
+        index for index, site in enumerate(sites) if index not in claimed and matches(site)
+    ]
+    if len(matching_indices) != 1:
+        raise TypeError(
+            f"prior-predictive {declaration} requires exactly one matching generative "
+            f"stochastic site, found {len(matching_indices)}; keep one declaration-backed "
+            "site and remove additional density factors from the ancestrally simulated model"
         )
-    raise TypeError(f"Cannot inspect expression node: {type(node).__name__}")
+    index = matching_indices[0]
+    claimed.add(index)
+    return index, sites[index]
 
 
-def _distribution_param_refs(distribution: Distribution) -> set[str]:
-    """Return parameter names referenced by symbolic distribution fields."""
-    if not is_dataclass(distribution) or isinstance(distribution, type):
-        return set()
-    refs: set[str] = set()
-    for distribution_field in fields(distribution):
-        value = getattr(distribution, distribution_field.name)
-        if is_final_expr_node(value):
-            refs.update(_expr_param_refs(cast(ExprNode, value)))
-        elif is_dataclass(value) and not isinstance(value, type):
-            refs.update(_distribution_param_refs(cast(Distribution, value)))
-    return refs
+def _site_owns_non_param_free_value(site: ResolvedStochasticSite, name: str) -> bool:
+    if site.name != name:
+        return False
+    if isinstance(site.value, ParamRef):
+        return site.value.name == name
+    return (
+        isinstance(site.value, VectorScatterOp)
+        and isinstance(site.value.missing_values, ParamRef)
+        and site.value.missing_values.name == name
+    )
 
 
-def _validate_prior_predictive_vector_bound_owners(
-    meta: ModelMeta,
-    vector_bounds: Mapping[str, ResolvedVectorBounds],
-) -> None:
-    """Reject extra factors over bounded values that cannot be forward-simulated."""
-    bounded_names = set(vector_bounds)
-    declaration_site_names = set(resolved_free_values(meta))
-    declaration_site_names.update(observed.name for observed in meta.observed_nodes)
-    for site in resolved_stochastic_sites(meta):
-        if site.name in declaration_site_names:
+def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
+    """Classify declaration sites and reject Factors before ancestral drawing."""
+    sites = resolved_stochastic_sites(meta)
+    claimed: set[int] = set()
+
+    for name, param in meta.params.items():
+        _claim_unique_generative_site(
+            sites,
+            claimed,
+            declaration=f"Param {name!r}",
+            matches=lambda site, name=name, param=param: (
+                site.value == ParamRef(name) and site.distribution == param.distribution
+            ),
+        )
+
+    for observed in meta.observed_nodes:
+        _claim_unique_generative_site(
+            sites,
+            claimed,
+            declaration=f"Observed {observed.name!r}",
+            matches=lambda site, observed=observed: (
+                site.value == DataRef(observed.name) and site.distribution == observed.distribution
+            ),
+        )
+
+    partially_observed_indices: set[int] = set()
+    for name in resolved_free_values(meta):
+        if name in meta.params:
             continue
-        referenced_params = _expr_param_refs(site.value)
-        referenced_params.update(_distribution_param_refs(site.distribution))
-        for free_name in sorted(referenced_params & bounded_names):
+        index, site = _claim_unique_generative_site(
+            sites,
+            claimed,
+            declaration=f"non-Param free value {name!r}",
+            matches=lambda candidate, name=name: _site_owns_non_param_free_value(candidate, name),
+        )
+        if not isinstance(site.value, VectorScatterOp):
             raise TypeError(
-                f"prior-predictive site {site.name!r} is not the same-name owner of free value "
-                f"{free_name!r}; additional factors involving free values are not "
-                "forward-simulatable, so use a generative model with one same-name owner site"
+                f"prior-predictive non-Param free value {name!r} is not a "
+                "PartiallyObserved VectorScatter site"
             )
+        partially_observed_indices.add(index)
 
+    factor_sites = [
+        f"{site.name!r} at stochastic_sites[{index}]"
+        for index, site in enumerate(sites)
+        if index not in claimed
+    ]
+    if factor_sites:
+        raise TypeError(
+            "prior-predictive cannot simulate additional stochastic factor sites "
+            f"{factor_sites}; Factors affect density but have no ancestral draw, so use a "
+            "model containing only declaration-backed generative sites"
+        )
 
-def _partially_observed_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:
-    param_names = set(meta.params)
-    free_names = set(resolved_free_values(meta))
-    return tuple(
-        site
-        for site in resolved_stochastic_sites(meta)
-        if site.name in free_names and site.name not in param_names
+    return _PriorPredictiveSitePlan(
+        partially_observed_sites=tuple(
+            site for index, site in enumerate(sites) if index in partially_observed_indices
+        )
     )
 
 
@@ -472,15 +479,14 @@ def simulate_prior_predictive(
         raise ValueError("num_samples must be at least 1")
 
     meta = model_meta(model_cls)
+    site_plan = _prior_predictive_site_plan(meta)
     normalized_data = _normalize_data(meta, data)
     param_shapes = _resolve_param_shapes(meta, normalized_data)
     free_value_shapes = _resolve_free_value_shapes(meta, normalized_data)
     vector_bounds = _resolve_vector_bounds(meta, normalized_data, free_value_shapes)
-    _validate_prior_predictive_vector_bound_owners(meta, vector_bounds)
     _validate_bound_index_expressions(meta, normalized_data, free_value_shapes)
     _validate_bound_distribution_parameters(meta, normalized_data, free_value_shapes)
     normalized_observed_shapes = _validate_observed_shapes(meta, observed_shapes)
-    partially_observed_sites = _partially_observed_sites(meta)
     keys = jax.random.split(jax.random.PRNGKey(seed), num_samples)
 
     def draw_one(key: jax.Array) -> tuple[dict[str, jax.Array], dict[str, jax.Array]]:
@@ -491,7 +497,7 @@ def simulate_prior_predictive(
             param_shapes=param_shapes,
             observed_shapes=normalized_observed_shapes,
             vector_bounds=vector_bounds,
-            partially_observed_sites=partially_observed_sites,
+            partially_observed_sites=site_plan.partially_observed_sites,
         )
 
     parameters, observed = jax.jit(jax.vmap(draw_one))(keys)

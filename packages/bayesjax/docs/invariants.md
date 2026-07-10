@@ -78,6 +78,11 @@ Core invariants that should remain true as the codebase changes.
 
 ## Simulation
 
+- Prior-predictive simulation first claims exactly one declaration-backed
+  stochastic site for each `Param`, `Observed`, and non-`Param` free value.
+  Any remaining site is a density Factor and is rejected because bayesjax has
+  no factor-aware ancestral sampler; Factors are never silently discarded or
+  independently generated.
 - Prior and prior-predictive simulation distinguish iid sample dimensions,
   distribution batch dimensions, and event dimensions.
 - Distribution samples have shape `iid_sample_shape + batch_shape + event_shape`.

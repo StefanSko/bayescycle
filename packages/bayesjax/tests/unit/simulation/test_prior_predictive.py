@@ -156,6 +156,7 @@ class UpperCensoredExponentialPriorPredictive:
     missing_idx = Data.vector(n_mis)
     observed_values = Data.vector(n_obs)
     missing_upper = Data.vector(n_mis)
+    theta = Param(Normal(0.0, 1.0))
     y = PartiallyObserved.vector(
         Exponential(1.0),
         length=n,
@@ -325,80 +326,124 @@ def test_simulate_prior_predictive_draws_partially_observed_full_vectors() -> No
     assert result.observed["y"].shape == (3, 3)
 
 
+def _upper_censored_data() -> dict[str, object]:
+    return {
+        "n": jnp.asarray(2),
+        "n_obs": jnp.asarray(1),
+        "n_mis": jnp.asarray(1),
+        "observed_idx": jnp.asarray([0]),
+        "missing_idx": jnp.asarray([1]),
+        "observed_values": jnp.asarray([0.5]),
+        "missing_upper": jnp.asarray([1.0]),
+    }
+
+
 def test_simulate_prior_predictive_rejects_non_owner_vector_bounds_factor() -> None:
     meta = model_meta(UpperCensoredExponentialPriorPredictive)
-    owner = meta.stochastic_sites[0]
+    owner = next(site for site in meta.stochastic_sites if site.name == "y")
     factor = ResolvedStochasticSite("penalty", Normal(0.0, 1.0), owner.value)
-    adversarial = bindable_from_meta(replace(meta, stochastic_sites=(factor, owner)))
+    adversarial = bindable_from_meta(
+        replace(meta, stochastic_sites=(factor, *meta.stochastic_sites))
+    )
 
-    with pytest.raises(TypeError, match="not the same-name owner"):
+    with pytest.raises(TypeError, match="additional stochastic factor"):
         simulate_prior_predictive(
             adversarial,
             seed=47,
             num_samples=1,
-            data={
-                "n": 2,
-                "n_obs": 1,
-                "n_mis": 1,
-                "observed_idx": jnp.asarray([0]),
-                "missing_idx": jnp.asarray([1]),
-                "observed_values": jnp.asarray([0.5]),
-                "missing_upper": jnp.asarray([1.0]),
-            },
+            data=_upper_censored_data(),
         )
 
 
 def test_simulate_prior_predictive_rejects_wrapped_non_owner_vector_bounds_factor() -> None:
     meta = model_meta(UpperCensoredExponentialPriorPredictive)
-    owner = meta.stochastic_sites[0]
     factor = ResolvedStochasticSite(
         "penalty",
         Normal(0.0, 1.0),
         BinOp("+", ParamRef("y"), ConstNode(0.0)),
     )
-    adversarial = bindable_from_meta(replace(meta, stochastic_sites=(factor, owner)))
+    adversarial = bindable_from_meta(
+        replace(meta, stochastic_sites=(factor, *meta.stochastic_sites))
+    )
 
-    with pytest.raises(TypeError, match="not the same-name owner"):
+    with pytest.raises(TypeError, match="additional stochastic factor"):
         simulate_prior_predictive(
             adversarial,
             seed=48,
             num_samples=1,
-            data={
-                "n": 2,
-                "n_obs": 1,
-                "n_mis": 1,
-                "observed_idx": jnp.asarray([0]),
-                "missing_idx": jnp.asarray([1]),
-                "observed_values": jnp.asarray([0.5]),
-                "missing_upper": jnp.asarray([1.0]),
-            },
+            data=_upper_censored_data(),
         )
 
 
 def test_simulate_prior_predictive_rejects_non_owner_distribution_factor() -> None:
     meta = model_meta(UpperCensoredExponentialPriorPredictive)
-    owner = meta.stochastic_sites[0]
     factor = ResolvedStochasticSite(
         "penalty",
         Normal(ParamRef("y"), 1.0),
         ConstNode(0.0),
     )
-    adversarial = bindable_from_meta(replace(meta, stochastic_sites=(factor, owner)))
+    adversarial = bindable_from_meta(
+        replace(meta, stochastic_sites=(*meta.stochastic_sites, factor))
+    )
 
-    with pytest.raises(TypeError, match="not the same-name owner"):
+    with pytest.raises(TypeError, match="additional stochastic factor"):
         simulate_prior_predictive(
             adversarial,
             seed=49,
             num_samples=1,
-            data={
-                "n": 2,
-                "n_obs": 1,
-                "n_mis": 1,
-                "observed_idx": jnp.asarray([0]),
-                "missing_idx": jnp.asarray([1]),
-                "observed_values": jnp.asarray([0.5]),
-                "missing_upper": jnp.asarray([1.0]),
-            },
+            data=_upper_censored_data(),
+        )
+
+
+def test_simulate_prior_predictive_accepts_renamed_param_site_when_structure_matches() -> None:
+    meta = model_meta(PriorOnlyNormal)
+    owner = replace(meta.stochastic_sites[0], name="mu_prior")
+    renamed = bindable_from_meta(replace(meta, stochastic_sites=(owner,)))
+
+    result = simulate_prior_predictive(renamed, seed=50, num_samples=2)
+
+    assert result.parameters["mu"].shape == (2,)
+
+
+def test_simulate_prior_predictive_rejects_factor_without_bounded_references() -> None:
+    meta = model_meta(PriorOnlyNormal)
+    factor = ResolvedStochasticSite("penalty", Normal(0.0, 1.0), ConstNode(0.0))
+    adversarial = bindable_from_meta(
+        replace(meta, stochastic_sites=(*meta.stochastic_sites, factor))
+    )
+
+    with pytest.raises(TypeError, match="additional stochastic factor"):
+        simulate_prior_predictive(adversarial, seed=50, num_samples=1)
+
+
+def test_simulate_prior_predictive_rejects_duplicate_matching_param_sites() -> None:
+    meta = model_meta(PriorOnlyNormal)
+    duplicate = replace(meta.stochastic_sites[0], name="duplicate_prior")
+    adversarial = bindable_from_meta(
+        replace(meta, stochastic_sites=(*meta.stochastic_sites, duplicate))
+    )
+
+    with pytest.raises(TypeError, match="exactly one matching generative stochastic site"):
+        simulate_prior_predictive(adversarial, seed=51, num_samples=1)
+
+
+def test_simulate_prior_predictive_rejects_factor_colliding_with_declaration_name() -> None:
+    meta = model_meta(UpperCensoredExponentialPriorPredictive)
+    factor = ResolvedStochasticSite(
+        "theta",
+        Normal(ParamRef("y"), 1.0),
+        ConstNode(0.0),
+    )
+    adversarial = bindable_from_meta(
+        replace(meta, stochastic_sites=(factor, *meta.stochastic_sites))
+    )
+
+    with pytest.raises(TypeError, match="additional stochastic factor"):
+        simulate_prior_predictive(
+            adversarial,
+            seed=52,
+            num_samples=1,
+            data=_upper_censored_data(),
         )
 
 

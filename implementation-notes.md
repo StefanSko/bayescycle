@@ -270,3 +270,21 @@ this code next; safe to drop before merge if unwanted.
 - The distribution walk follows explicit dataclass fields and delegates all IR
   expression/index traversal to the typed helper. Full BayesJAX validation is
   green at 456 tests plus Ruff/ty and 13 root guards.
+- Codex round 4 showed the reference-based approach was the wrong abstraction:
+  a factor can reuse another declaration's name and bypass the exemption. More
+  expression cases would only continue the chase. The root ambiguity is that
+  one `stochastic_sites` sequence contains both declaration-backed generative
+  sites and arbitrary density factors.
+- Holistic replacement: prior predictive now inventories declaration-backed
+  sites structurally, claims exactly one site for every Param, Observed, and
+  non-Param free declaration, and rejects every unclaimed site as a Factor.
+  Param/Observed claims match both target and declaration distribution;
+  non-Param free values use the same-name direct/scatter owner shape. This is
+  independent of expression nesting, references, factor names, and site order.
+  Red tests cover an unrelated factor and a factor colliding with a declaration
+  name in addition to direct, wrapped, and distribution-reference forms.
+- The inventory preserves legacy differently named Param-site labels when
+  target and declaration distribution match, but duplicate matching sites are
+  ambiguous and fail. The reference walkers are gone. Final Python gates are
+  green: bayeswire 232 tests, BayesJAX 460 tests, 13 root guards, Ruff, and ty
+  with only the three known inheritance-rejection diagnostics.
