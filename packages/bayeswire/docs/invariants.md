@@ -87,6 +87,10 @@ Core invariants that should remain true as the codebase changes.
 - In serialized `ModelMeta`, `free_values` defines flat NUTS state layout,
   `stochastic_sites` defines log-density factors, and `data` plus
   `observed_nodes` define required bind inputs.
+- A `VectorBounds` free value is owned by exactly one same-name stochastic
+  site evaluated directly at its `ParamRef`, either alone or as a
+  `VectorScatterOp.missing_values`; differently named factors never determine
+  its base-support folding.
 - A model reconstructed with `bindable_from_meta(...)` is indistinguishable
   from one produced by `@model` through the public hooks. Dimension labels
   travel in a separate sidecar document (`spec/dimension-sidecar-v1.md`);

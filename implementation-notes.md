@@ -193,3 +193,47 @@ this code next; safe to drop before merge if unwanted.
   base with an infinite upper edge (no fold); interval_censored_normal has
   a full-support base (no fold).
 - Post-fix suite: 447 passed; consume-conformance 9 passed.
+
+## Follow-up — deterministic VectorBounds owner resolution (#56, 2026-07-10)
+
+- BayesJAX and Bayesite currently recover the distribution supplying implicit
+  support edges by selecting the first stochastic-site value expression that
+  references the constrained free value. That makes an unrelated earlier
+  factor alter the unconstrained transform.
+- The implementation invariant is narrower and structural: a VectorBounds
+  free value has exactly one same-name owner site. The owner value is either a
+  direct same-name `ParamRef` (generic vector parameter) or a `VectorScatterOp`
+  whose `missing_values` is a direct same-name `ParamRef` (PartiallyObserved).
+  Differently named factors remain free to score either the missing slot or
+  the assembled vector and never participate in owner selection.
+- This is a v1 semantic clarification, not an encoding change: no tag, field
+  list, encoding rule, or existing canonical model bytes change. The planned
+  adversarial corpus case is additive resolved metadata because the current
+  declaration eDSL intentionally has no general Factor surface.
+- First red-test attempt hit an unrelated validation boundary: an empty
+  `jnp.asarray([])` defaults to float and is correctly rejected as index data.
+  Pinning the empty observed index to integer dtype exposed the intended owner
+  resolution failures instead of weakening index validation.
+- Red evidence after correcting the fixture: an earlier differently named
+  full-scatter Normal factor made the upper-only Exponential target evaluate to
+  `-inf` at `q=1`, while missing, duplicate, and expression-valued same-name
+  owners were all silently accepted. The same-name/direct-value resolver made
+  all five focused owner tests green and removed the recursive first-reference
+  expression walk entirely.
+- A same-name direct `ParamRef` remains a valid owner. This preserves the
+  backend's generic VectorBounds metadata path in addition to the
+  PartiallyObserved scatter path; the invariant is not scatter-only.
+- The adversarial corpus model starts from an ordinary upper-censored
+  Exponential declaration, then prepends a differently named Normal factor
+  over the same full scatter at the resolved-`ModelMeta` boundary. Setting the
+  upper bound to 1 makes the old transform invalid already at oracle point
+  `q=0.1`, while the named-owner interval transform stays finite.
+- Regenerating every oracle fixture on the current toolchain caused irrelevant
+  last-bit drift in four pre-existing fixtures. Those files were restored;
+  only the new fixture is retained. Corpus regeneration then changed only the
+  appended hash/fingerprint entries plus the three new model/data/fixture
+  files, preserving all existing model and oracle bytes.
+- Bayescycle-side green gate: bayeswire 232 tests, bayesjax 453 tests, and 13
+  root guards passed; Ruff format/check passed for both packages. `ty check`
+  retained only the known unsupported-base diagnostics in inheritance-rejection
+  tests (two in bayeswire, one in bayesjax).

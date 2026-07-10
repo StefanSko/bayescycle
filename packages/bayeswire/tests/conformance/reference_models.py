@@ -1,13 +1,15 @@
-"""Deterministic reference models pinning the bayeswire IR v1 wire format.
+"""Deterministic reference metadata pinning the bayeswire IR v1 wire format.
 
-Shared by the produce-conformance tests and ``scripts/regenerate_corpus.py``.
-Any change to a corpus document is a wire-format change and requires a
+Most cases come directly from eDSL declarations; documented adversarial cases
+exercise the resolved-ModelMeta boundary. Shared by the produce-conformance
+tests and ``scripts/regenerate_corpus.py``. Any change to a corpus document is a
+wire-format change and requires a
 deliberate corpus diff, a spec changelog entry, and a version decision.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, model
@@ -24,7 +26,7 @@ from bayeswire.distributions import (
     Truncated,
 )
 from bayeswire.math import exp
-from bayeswire.model.decorator import ModelMeta
+from bayeswire.model.decorator import ModelMeta, ResolvedStochasticSite
 
 
 @dataclass(frozen=True)
@@ -232,6 +234,54 @@ def _censored_exponential() -> ReferenceModelCase:
     )
 
 
+def _vector_bounds_named_owner() -> ReferenceModelCase:
+    @model
+    class VectorBoundsNamedOwner:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        observed_values = Data.vector(n_obs)
+        missing_upper = Data.vector(n_mis)
+
+        y = PartiallyObserved.vector(
+            Exponential(1.0),
+            length=n,
+            observed=observed_values,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_upper=missing_upper,
+        )
+
+    declared_meta = _meta(VectorBoundsNamedOwner)
+    owner = declared_meta.stochastic_sites[0]
+    factor = ResolvedStochasticSite(
+        name="penalty",
+        distribution=Normal(0.0, 1.0),
+        value=owner.value,
+    )
+    # The eDSL has no general Factor declaration yet. Construct the adversarial
+    # resolved metadata explicitly: a differently named full-vector factor comes
+    # before the same-name PartiallyObserved owner and must not supply its support.
+    meta = replace(declared_meta, stochastic_sites=(factor, owner))
+
+    return ReferenceModelCase(
+        name="vector_bounds_named_owner",
+        model_cls=VectorBoundsNamedOwner,
+        meta=meta,
+        bind_values={
+            "n": 2,
+            "n_obs": 1,
+            "n_mis": 1,
+            "observed_idx": [0],
+            "missing_idx": [1],
+            "observed_values": [0.5],
+            "missing_upper": [1.0],
+        },
+    )
+
+
 def _interval_censored_normal() -> ReferenceModelCase:
     @model
     class IntervalCensoredNormal:
@@ -283,4 +333,5 @@ def reference_model_cases() -> tuple[ReferenceModelCase, ...]:
         _bounded_rates(),
         _censored_exponential(),
         _interval_censored_normal(),
+        _vector_bounds_named_owner(),
     )

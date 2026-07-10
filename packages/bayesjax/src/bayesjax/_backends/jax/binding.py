@@ -160,16 +160,13 @@ def _resolve_vector_bounds(
         expected_length = _vector_free_value_length(name, param_shapes[name])
         lower = _resolve_vector_bound_side(name, "lower", constraint.lower, data, expected_length)
         upper = _resolve_vector_bound_side(name, "upper", constraint.upper, data, expected_length)
-        site = _vector_bound_site_for_free_value(meta, name, data)
-        support_lower: jax.Array | None = None
-        support_upper: jax.Array | None = None
-        if site is not None:
-            support_lower, support_upper = _vector_bounds_base_support_edges(
-                site.distribution,
-                data,
-                missing_idx=site.missing_idx,
-                expected_length=expected_length,
-            )
+        owner = _vector_bound_owner_site(meta, name, data)
+        support_lower, support_upper = _vector_bounds_base_support_edges(
+            owner.distribution,
+            data,
+            missing_idx=owner.missing_idx,
+            expected_length=expected_length,
+        )
         lower = _fold_vector_bound_side(lower, support_lower, expected_length)
         upper = _fold_vector_bound_side(upper, support_upper, expected_length)
         if lower is not None and upper is not None and bool(jnp.any(lower >= upper)):
@@ -243,72 +240,36 @@ def _resolve_vector_bound_side(
     return value
 
 
-def _vector_bound_site_for_free_value(
+def _vector_bound_owner_site(
     meta: ModelMeta,
     free_name: str,
     data: dict[str, jax.Array],
-) -> _VectorBoundSite | None:
-    """Return stochastic-site support context for a VectorBounds free value."""
-    for site in resolved_stochastic_sites(meta):
-        if _expr_references_free_value(site.value, free_name):
-            return _VectorBoundSite(
-                distribution=site.distribution,
-                missing_idx=_vector_scatter_missing_idx_for_free_value(site.value, free_name, data),
-            )
-    return None
-
-
-def _vector_scatter_missing_idx_for_free_value(
-    node: ExprNode,
-    free_name: str,
-    data: dict[str, jax.Array],
-) -> jax.Array | None:
-    """Return evaluated missing_idx when a free value is used by VectorScatterOp."""
-    if isinstance(node, VectorScatterOp):
-        if _expr_references_free_value(node.missing_values, free_name):
-            return _evaluate_data_index_expr(node.missing_idx, data)
-        return None
-    return None
-
-
-def _expr_references_free_value(node: ExprNode, free_name: str) -> bool:
-    """Return whether an expression tree contains a ParamRef to a free value."""
-    if isinstance(node, ParamRef):
-        return node.name == free_name
-    if isinstance(node, DataRef | ConstNode):
-        return False
-    if isinstance(node, BinOp):
-        return _expr_references_free_value(node.left, free_name) or _expr_references_free_value(
-            node.right,
-            free_name,
+) -> _VectorBoundSite:
+    """Return the unique same-name site that owns a VectorBounds free value."""
+    named_sites = tuple(site for site in resolved_stochastic_sites(meta) if site.name == free_name)
+    if len(named_sites) != 1:
+        raise ValueError(
+            f"VectorBounds free value {free_name!r} requires exactly one same-name owner "
+            f"stochastic site; found {len(named_sites)}"
         )
-    if isinstance(node, UnaryOp):
-        return _expr_references_free_value(node.operand, free_name)
-    if isinstance(node, IndexOp):
-        return _expr_references_free_value(node.base, free_name) or _index_references_free_value(
-            node.index,
-            free_name,
-        )
-    if isinstance(node, VectorScatterOp):
-        return (
-            _expr_references_free_value(node.length, free_name)
-            or _expr_references_free_value(node.observed_idx, free_name)
-            or _expr_references_free_value(node.observed_values, free_name)
-            or _expr_references_free_value(node.missing_idx, free_name)
-            or _expr_references_free_value(node.missing_values, free_name)
-        )
-    raise TypeError(f"Cannot inspect expression node: {type(node).__name__}")
 
+    owner = named_sites[0]
+    value = owner.value
+    if isinstance(value, ParamRef) and value.name == free_name:
+        missing_idx = None
+    elif (
+        isinstance(value, VectorScatterOp)
+        and isinstance(value.missing_values, ParamRef)
+        and value.missing_values.name == free_name
+    ):
+        missing_idx = _evaluate_data_index_expr(value.missing_idx, data)
+    else:
+        raise ValueError(
+            f"VectorBounds owner site {free_name!r} must evaluate directly at ParamRef"
+            f"({free_name!r}) or at a VectorScatter whose missing_values is that ParamRef"
+        )
 
-def _index_references_free_value(spec: IndexSpec, free_name: str) -> bool:
-    """Return whether an index spec contains a ParamRef to a free value."""
-    if isinstance(spec, ScalarIndex):
-        return _expr_references_free_value(spec.expr, free_name)
-    if isinstance(spec, FullSlice):
-        return False
-    if isinstance(spec, IndexTuple):
-        return any(_index_references_free_value(item, free_name) for item in spec.items)
-    raise TypeError(f"Cannot inspect index spec: {type(spec).__name__}")
+    return _VectorBoundSite(distribution=owner.distribution, missing_idx=missing_idx)
 
 
 def _vector_bounds_base_support_edges(
