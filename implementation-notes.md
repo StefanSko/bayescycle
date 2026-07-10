@@ -193,3 +193,98 @@ this code next; safe to drop before merge if unwanted.
   base with an infinite upper edge (no fold); interval_censored_normal has
   a full-support base (no fold).
 - Post-fix suite: 447 passed; consume-conformance 9 passed.
+
+## Follow-up — deterministic VectorBounds owner resolution (#56, 2026-07-10)
+
+- BayesJAX and Bayesite currently recover the distribution supplying implicit
+  support edges by selecting the first stochastic-site value expression that
+  references the constrained free value. That makes an unrelated earlier
+  factor alter the unconstrained transform.
+- The implementation invariant is narrower and structural: a VectorBounds
+  free value has exactly one same-name owner site. The owner value is either a
+  direct same-name `ParamRef` (generic vector parameter) or a `VectorScatterOp`
+  whose `missing_values` is a direct same-name `ParamRef` (PartiallyObserved).
+  Differently named factors remain free to score either the missing slot or
+  the assembled vector and never participate in owner selection.
+- This is a v1 semantic clarification, not an encoding change: no tag, field
+  list, encoding rule, or existing canonical model bytes change. The planned
+  adversarial corpus case is additive resolved metadata because the current
+  declaration eDSL intentionally has no general Factor surface.
+- First red-test attempt hit an unrelated validation boundary: an empty
+  `jnp.asarray([])` defaults to float and is correctly rejected as index data.
+  Pinning the empty observed index to integer dtype exposed the intended owner
+  resolution failures instead of weakening index validation.
+- Red evidence after correcting the fixture: an earlier differently named
+  full-scatter Normal factor made the upper-only Exponential target evaluate to
+  `-inf` at `q=1`, while missing, duplicate, and expression-valued same-name
+  owners were all silently accepted. The same-name/direct-value resolver made
+  all five focused owner tests green and removed the recursive first-reference
+  expression walk entirely.
+- A same-name direct `ParamRef` remains a valid owner. This preserves the
+  backend's generic VectorBounds metadata path in addition to the
+  PartiallyObserved scatter path; the invariant is not scatter-only.
+- The adversarial corpus model starts from an ordinary upper-censored
+  Exponential declaration, then prepends a differently named Normal factor
+  over the same full scatter at the resolved-`ModelMeta` boundary. Setting the
+  upper bound to 1 makes the old transform invalid already at oracle point
+  `q=0.1`, while the named-owner interval transform stays finite.
+- Regenerating every oracle fixture on the current toolchain caused irrelevant
+  last-bit drift in four pre-existing fixtures. Those files were restored;
+  only the new fixture is retained. Corpus regeneration then changed only the
+  appended hash/fingerprint entries plus the three new model/data/fixture
+  files, preserving all existing model and oracle bytes.
+- Bayescycle-side green gate: bayeswire 232 tests, bayesjax 453 tests, and 13
+  root guards passed; Ruff format/check passed for both packages. `ty check`
+  retained only the known unsupported-base diagnostics in inheritance-rejection
+  tests (two in bayeswire, one in bayesjax).
+
+## Cross-workflow follow-up from Bayesite Codex review
+
+- Bayescycle PR #57's first Codex review was clean, but Bayesite PR #29 review
+  found that Rust prior-predictive treated the adversarial non-owner scatter as
+  separately generative. BayesJAX happened to ignore it because
+  `_partially_observed_sites` filters by same-name free sites, which avoided two
+  draws but silently discarded the extra density factor.
+- A product-of-experts Factor has no supported ancestral simulation semantics.
+  Red BayesJAX coverage confirmed the adversarial model was silently accepted;
+  both backends now reject differently named assignable factors over
+  VectorBounds free values before prior-predictive drawing. The check remains
+  VectorBounds-specific so pre-existing unbounded resolved metadata keeps its
+  established behavior.
+- Post-follow-up gates: BayesJAX Ruff/ty plus 454 tests and all 13 root guards
+  passed; ty retained only its known inheritance-rejection diagnostic.
+- Codex round 2 on PR #57 found the shallow predictive check still silently
+  dropped wrapped factors such as `y + 0`. Red coverage reproduced it. Unlike
+  owner selection, predictive safety must inspect the entire site-value tree:
+  any differently named factor whose value references a VectorBounds slot has
+  no supported ancestral interpretation and must fail before drawing.
+- The explicit typed expression/index walk catches direct, wrapped, indexed,
+  and scatter references without changing density owner selection. BayesJAX's
+  full 455-test suite, Ruff/ty, and 13 root guards passed after the fix.
+- Codex round 3 identified the other half of a stochastic factor: its
+  distribution parameters can reference the bounded value even when its value
+  expression does not. Red coverage with `Normal(y, 1)` at a constant value
+  reproduced another silent drop. Predictive validation therefore checks both
+  value-expression and distribution-expression references, while exempting
+  actual free/observed declaration sites that simulation handles.
+- The distribution walk follows explicit dataclass fields and delegates all IR
+  expression/index traversal to the typed helper. Full BayesJAX validation is
+  green at 456 tests plus Ruff/ty and 13 root guards.
+- Codex round 4 showed the reference-based approach was the wrong abstraction:
+  a factor can reuse another declaration's name and bypass the exemption. More
+  expression cases would only continue the chase. The root ambiguity is that
+  one `stochastic_sites` sequence contains both declaration-backed generative
+  sites and arbitrary density factors.
+- Holistic replacement: prior predictive now inventories declaration-backed
+  sites structurally, claims exactly one site for every Param, Observed, and
+  non-Param free declaration, and rejects every unclaimed site as a Factor.
+  Param/Observed claims match both target and declaration distribution;
+  non-Param free values use the same-name direct/scatter owner shape. This is
+  independent of expression nesting, references, factor names, and site order.
+  Red tests cover an unrelated factor and a factor colliding with a declaration
+  name in addition to direct, wrapped, and distribution-reference forms.
+- The inventory preserves legacy differently named Param-site labels when
+  target and declaration distribution match, but duplicate matching sites are
+  ambiguous and fail. The reference walkers are gone. Final Python gates are
+  green: bayeswire 232 tests, BayesJAX 460 tests, 13 root guards, Ruff, and ty
+  with only the three known inheritance-rejection diagnostics.

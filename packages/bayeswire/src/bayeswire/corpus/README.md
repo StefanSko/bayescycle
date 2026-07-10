@@ -4,8 +4,11 @@ This directory is the conformance corpus for the `bayeswire_ir` v1 wire
 format. Every producer and consumer in the toolchain tests against these
 files; none may substitute private fixtures.
 
-- `<model>.json` — golden IR documents for the reference models declared in
-  `tests/conformance/reference_models.py`, pretty-printed for diffability.
+- `<model>.json` — golden IR documents for the reference models constructed in
+  `tests/conformance/reference_models.py`, pretty-printed for diffability. Most
+  come directly from eDSL declarations; explicitly documented adversarial cases
+  may be assembled at the resolved-`ModelMeta` boundary to pin consumer
+  semantics that the deliberately narrow eDSL does not expose.
 - `hashes.json` — `sha256(canonical_bytes(meta))` for each reference model:
   the pinned canonical encoding.
 - `fixtures/<model>.json` — cross-backend evaluation fixtures bundling each

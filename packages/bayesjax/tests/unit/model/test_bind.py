@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import jax
 import jax.numpy as jnp
 import pytest
-from bayeswire.constraints import Interval, Positive, UnitInterval
+from bayeswire.constraints import Interval, Positive, UnitInterval, VectorBounds
 from bayeswire.distributions import (
     Beta,
     Binomial,
+    Exponential,
     HalfNormal,
     MultivariateNormal,
     Normal,
@@ -26,9 +29,10 @@ from bayeswire.model.decorator import (
     ResolvedStochasticSite,
 )
 from bayeswire.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
-from bayeswire.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
+from bayeswire.model.expr import BinOp, ConstNode, DataRef, ParamRef, VectorScatterOp
 
 from bayesjax._backends.jax.binding import _param_count, _resolve_param_shape
+from bayesjax.compiler import compile_log_density
 from bayesjax.model import bind_model
 from bayesjax.model.bound import BoundModel
 
@@ -184,6 +188,93 @@ def partial_vector_meta() -> ModelMeta:
             ),
         ),
     )
+
+
+def vector_bounds_owner_meta() -> ModelMeta:
+    scatter = VectorScatterOp(
+        length=ConstNode(1),
+        observed_idx=DataRef("obs_idx"),
+        observed_values=DataRef("y_obs"),
+        missing_idx=DataRef("mis_idx"),
+        missing_values=ParamRef("y"),
+    )
+    return ModelMeta(
+        params={},
+        data={
+            "upper": ResolvedData(ResolvedDataRankSchema(1)),
+            "obs_idx": ResolvedData(ResolvedDataRankSchema(1)),
+            "mis_idx": ResolvedData(ResolvedDataRankSchema(1)),
+            "y_obs": ResolvedData(ResolvedDataRankSchema(1)),
+        },
+        observed_nodes=(),
+        expressions={},
+        free_values={
+            "y": ResolvedFreeValue(
+                constraint=VectorBounds(lower=None, upper=DataRef("upper")),
+                size=1,
+            )
+        },
+        stochastic_sites=(ResolvedStochasticSite("y", Exponential(1.0), scatter),),
+    )
+
+
+def bind_vector_bounds_owner_meta(meta: ModelMeta) -> BoundModel:
+    return bind_meta(
+        meta,
+        upper=jnp.asarray([2.0]),
+        obs_idx=jnp.asarray([], dtype=jnp.int32),
+        mis_idx=jnp.asarray([0], dtype=jnp.int32),
+        y_obs=jnp.asarray([]),
+    )
+
+
+def test_vector_bounds_support_comes_from_same_name_owner_not_earlier_factor() -> None:
+    meta = vector_bounds_owner_meta()
+    owner = meta.stochastic_sites[0]
+    factor = ResolvedStochasticSite("penalty", Normal(0.0, 1.0), owner.value)
+    adversarial = replace(meta, stochastic_sites=(factor, owner))
+
+    log_density = compile_log_density(bind_vector_bounds_owner_meta(adversarial))
+
+    assert bool(jnp.isfinite(log_density(jnp.asarray([1.0]))))
+
+
+def test_vector_bounds_rejects_missing_same_name_owner() -> None:
+    meta = vector_bounds_owner_meta()
+    renamed_owner = replace(meta.stochastic_sites[0], name="renamed_y")
+
+    with pytest.raises(ValueError, match="exactly one same-name owner"):
+        bind_vector_bounds_owner_meta(replace(meta, stochastic_sites=(renamed_owner,)))
+
+
+def test_vector_bounds_rejects_duplicate_same_name_owners() -> None:
+    meta = vector_bounds_owner_meta()
+    owner = meta.stochastic_sites[0]
+
+    with pytest.raises(ValueError, match="exactly one same-name owner"):
+        bind_vector_bounds_owner_meta(replace(meta, stochastic_sites=(owner, owner)))
+
+
+def test_vector_bounds_rejects_malformed_same_name_owner() -> None:
+    meta = vector_bounds_owner_meta()
+    malformed_owner = replace(
+        meta.stochastic_sites[0],
+        value=BinOp("+", ParamRef("y"), ConstNode(0.0)),
+    )
+
+    with pytest.raises(ValueError, match="must evaluate directly"):
+        bind_vector_bounds_owner_meta(replace(meta, stochastic_sites=(malformed_owner,)))
+
+
+def test_vector_bounds_accepts_direct_parameter_owner() -> None:
+    meta = vector_bounds_owner_meta()
+    direct_owner = replace(meta.stochastic_sites[0], value=ParamRef("y"))
+
+    log_density = compile_log_density(
+        bind_vector_bounds_owner_meta(replace(meta, stochastic_sites=(direct_owner,)))
+    )
+
+    assert bool(jnp.isfinite(log_density(jnp.asarray([1.0]))))
 
 
 def test_bind_rejects_observed_values_that_expand_against_distribution_shape() -> None:
