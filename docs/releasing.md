@@ -41,29 +41,40 @@ version-bump mechanics below.
    run to wait on before tagging.
 2. If the corpus changed: the diff was reviewed byte-by-byte, and the
    evaluation/artifact fixtures were regenerated as described above.
+3. `CHANGELOG.md` has a complete dated section for the intended version.
+   Every user-visible change since the previous tag is represented; internal
+   implementation notes are not a substitute.
 
 ## Cut the release
 
 One version, one commit, one tag, one workflow run:
 
-1. **Bump.** `uv run python scripts/bump_version.py --version X.Y.Z` rewrites
+1. **Finalize the changelog.** Move the accumulated `Unreleased` entries into
+   `## [X.Y.Z] - YYYY-MM-DD`, restore an empty `Unreleased` section, and update
+   the comparison links at the bottom of `CHANGELOG.md`.
+2. **Bump.** `uv run python scripts/bump_version.py --version X.Y.Z` rewrites
    all five `pyproject.toml` versions; the exact sibling pins between them
    (bayescycle -> bayeswire, bayescycle's `[inproc]` extra -> bayesjax,
    bayesjax -> bayeswire); the runtime `__version__` constants; and the
    `BAYESITE_VIZ_SOURCE` / `BAYESITE_IDATA_SOURCE` / `BAYESITE_VIZ_EXCLUDE_NEWER`
    pins in
    `packages/bayescycle/src/bayescycle/backends/bayesite_viz/uvx_runner.py`.
-2. **Commit.** One commit. `uv run pytest tests -q` (the root guard suite)
-   asserts all five versions and sibling pins agree — run it before tagging.
-3. **Tag.** `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main vX.Y.Z`.
-4. **Publish.** The tag push triggers `.github/workflows/release.yml`:
+   Refresh all lock files with `uv lock`, `cd packages/bayesite-viz && uv lock`,
+   and `cd packages/bayesite-idata && uv lock`.
+3. **Commit.** One commit. `uv run pytest tests -q` (the root guard suite)
+   asserts all five versions, sibling pins, and the changelog section agree —
+   run it before tagging.
+4. **Tag.** `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main vX.Y.Z`.
+5. **Publish.** The tag push triggers `.github/workflows/release.yml`:
    - `check` re-verifies the tag matches the version read from
      `packages/bayeswire/pyproject.toml` and re-runs the root guard tests.
    - Five `publish` matrix jobs (one per package, each its own
      `pypi-<name>` trusted-publishing environment) build and
      `uv publish --check-url ...` a wheel/sdist. `--check-url` makes a re-run
      idempotent: artifacts already on PyPI are skipped, not re-uploaded.
-5. **Verify.** `uv tool install bayescycle` from real PyPI and run the
+6. **Release notes.** Create or update the GitHub Release for the tag from the
+   matching `CHANGELOG.md` section.
+7. **Verify.** `uv tool install bayescycle` from real PyPI and run the
    quickstart.
 
 ## The two surviving cross-repo edges

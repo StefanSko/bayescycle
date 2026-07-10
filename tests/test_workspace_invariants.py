@@ -84,6 +84,14 @@ def test_all_five_package_versions_agree() -> None:
     )
 
 
+def test_changelog_has_current_lockstep_version() -> None:
+    version = _package_version("bayeswire")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f"## [{version}]" in changelog, (
+        f"CHANGELOG.md has no section for current lockstep version {version}"
+    )
+
+
 _VERSION_CONSTANT_RE = re.compile(r'^__version__ = "([^"]*)"$', re.MULTILINE)
 
 # Packages that expose a runtime __version__ constant; it must track the
