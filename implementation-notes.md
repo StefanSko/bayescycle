@@ -344,3 +344,19 @@ Newest entries are appended for whoever touches these paths next.
   `second.location`. `bayesite-idata` then exported that real run to NetCDF and
   xarray reopened both dotted posterior variable names intact. This checks the
   external engine and artifact/export seams, not only Python metadata.
+
+## Codex review round 1 (PR #58)
+
+- Both findings reproduced red before fixing:
+  1. A direct re-export (`theta = child.theta`) was neither a declaration nor a
+     deferred operator tree, so `_resolve_expressions` silently skipped it and a
+     later composed wrapper could not see `theta`. Direct member proxies now
+     resolve as named expressions, preserving the same embedded-expression
+     semantics across another composition level.
+  2. `Submodel.model_cls` and `.symbol` were implementation fields, so children
+     with those valid declaration names were shadowed before `__getattr__` ran.
+     Internal target/identity and member-proxy details now live in one private
+     state object; the only reserved child segment is the deliberately obscure
+     `_bayeswire_state`. Nested proxies are covered as well. Bayescycle reaches
+     the target through the narrow `submodel_target(...)` function rather than
+     introspecting storage.

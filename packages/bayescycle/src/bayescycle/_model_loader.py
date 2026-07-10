@@ -12,7 +12,7 @@ from types import ModuleType
 from typing import cast
 
 from bayeswire import Submodel
-from bayeswire.model import ModelMeta, is_model_class, model_meta
+from bayeswire.model import ModelMeta, is_model_class, model_meta, submodel_target
 
 
 class ModelLoadError(RuntimeError):
@@ -118,7 +118,7 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
 def _unreferenced_model_roots(models: list[LoadedModel]) -> list[LoadedModel]:
     """Return local model classes that are not components of another local model."""
     referenced = {
-        value.model_cls
+        submodel_target(value)
         for loaded in models
         for value in loaded.model_cls.__dict__.values()
         if isinstance(value, Submodel)

@@ -90,8 +90,8 @@ class _SubmodelMemberKind(Enum):
 
 
 @dataclass(frozen=True)
-class _SubmodelMember(SymbolicDistributionParameter):
-    """Typed declaration proxy for one member of a closed submodel namespace."""
+class _SubmodelMemberState:
+    """Internal state kept behind one non-semantic reserved attribute."""
 
     submodel_symbol: DeclarationSymbol
     model_cls: type[object]
@@ -99,11 +99,19 @@ class _SubmodelMember(SymbolicDistributionParameter):
     kind: _SubmodelMemberKind
     schema: ResolvedDataSchema | None = None
 
+
+@dataclass(frozen=True)
+class _SubmodelMember(SymbolicDistributionParameter):
+    """Typed declaration proxy for one member of a closed submodel namespace."""
+
+    _bayeswire_state: _SubmodelMemberState
+
     def __getattr__(self, name: str) -> _SubmodelMember:
-        if self.kind is not _SubmodelMemberKind.NAMESPACE:
-            raise AttributeError(f"Submodel member {self.member_path!r} has no child members")
-        path = f"{self.member_path}.{name}"
-        return _resolve_submodel_member(self.submodel_symbol, self.model_cls, path)
+        state = _submodel_member_state(self)
+        if state.kind is not _SubmodelMemberKind.NAMESPACE:
+            raise AttributeError(f"Submodel member {state.member_path!r} has no child members")
+        path = f"{state.member_path}.{name}"
+        return _resolve_submodel_member(state.submodel_symbol, state.model_cls, path)
 
     def __add__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("+", self, other)
@@ -136,23 +144,77 @@ class _SubmodelMember(SymbolicDistributionParameter):
         return DeferredIndexOp(self, index)
 
 
+@dataclass(frozen=True)
+class _SubmodelState:
+    """Internal target and declaration identity for one submodel instance."""
+
+    model_cls: type[object]
+    symbol: DeclarationSymbol
+
+
 @dataclass(frozen=True, init=False)
 class Submodel:
     """Closed, namespaced composition of an already-resolved model declaration."""
 
-    model_cls: type[object]
-    symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
+    _bayeswire_state: _SubmodelState
 
     def __init__(self, model_cls: object) -> None:
-        from bayeswire.model.decorator import is_model_class
+        from bayeswire.model.decorator import is_model_class, model_meta, resolved_free_values
 
         if not isinstance(model_cls, type) or not is_model_class(model_cls):
             raise TypeError("Submodel requires a bayeswire model class decorated with @model")
-        object.__setattr__(self, "model_cls", model_cls)
-        object.__setattr__(self, "symbol", _next_symbol())
+        meta = model_meta(model_cls)
+        names = (
+            *meta.params,
+            *meta.data,
+            *meta.expressions,
+            *resolved_free_values(meta),
+            *(observed.name for observed in meta.observed_nodes),
+        )
+        if any("_bayeswire_state" in name.split(".") for name in names):
+            raise ValueError(
+                "Submodel member name '_bayeswire_state' is reserved for declaration state"
+            )
+        object.__setattr__(self, "_bayeswire_state", _SubmodelState(model_cls, _next_symbol()))
 
     def __getattr__(self, name: str) -> _SubmodelMember:
-        return _resolve_submodel_member(self.symbol, self.model_cls, name)
+        state = _submodel_state(self)
+        return _resolve_submodel_member(state.symbol, state.model_cls, name)
+
+
+def submodel_target(value: Submodel) -> type[object]:
+    """Return the model class targeted by a Submodel declaration."""
+    return _submodel_state(value).model_cls
+
+
+def _submodel_state(value: Submodel) -> _SubmodelState:
+    return object.__getattribute__(value, "_bayeswire_state")
+
+
+def _submodel_symbol(value: Submodel) -> DeclarationSymbol:
+    return _submodel_state(value).symbol
+
+
+def _submodel_member_state(value: _SubmodelMember) -> _SubmodelMemberState:
+    return object.__getattribute__(value, "_bayeswire_state")
+
+
+def _submodel_member(
+    submodel_symbol: DeclarationSymbol,
+    model_cls: type[object],
+    member_path: str,
+    kind: _SubmodelMemberKind,
+    schema: ResolvedDataSchema | None = None,
+) -> _SubmodelMember:
+    return _SubmodelMember(
+        _SubmodelMemberState(
+            submodel_symbol=submodel_symbol,
+            model_cls=model_cls,
+            member_path=member_path,
+            kind=kind,
+            schema=schema,
+        )
+    )
 
 
 def _resolve_submodel_member(
@@ -165,7 +227,7 @@ def _resolve_submodel_member(
 
     meta = model_meta(model_cls)
     if member_path in meta.params:
-        return _SubmodelMember(
+        return _submodel_member(
             submodel_symbol,
             model_cls,
             member_path,
@@ -173,7 +235,7 @@ def _resolve_submodel_member(
         )
     data = meta.data.get(member_path)
     if data is not None:
-        return _SubmodelMember(
+        return _submodel_member(
             submodel_symbol,
             model_cls,
             member_path,
@@ -181,14 +243,14 @@ def _resolve_submodel_member(
             data.schema,
         )
     if member_path in meta.expressions:
-        return _SubmodelMember(
+        return _submodel_member(
             submodel_symbol,
             model_cls,
             member_path,
             _SubmodelMemberKind.EXPRESSION,
         )
     if member_path in resolved_free_values(meta):
-        return _SubmodelMember(
+        return _submodel_member(
             submodel_symbol,
             model_cls,
             member_path,
@@ -209,7 +271,7 @@ def _resolve_submodel_member(
         *(observed.name for observed in meta.observed_nodes),
     )
     if any(name.startswith(prefix) for name in names):
-        return _SubmodelMember(
+        return _submodel_member(
             submodel_symbol,
             model_cls,
             member_path,
@@ -376,13 +438,14 @@ class Data(SymbolicDistributionParameter):
                 raise TypeError("Data shape dimensions must reference scalar data declarations")
             return DataDimSymbol(dim.symbol)
         if isinstance(dim, _SubmodelMember):
+            state = _submodel_member_state(dim)
             if (
-                dim.kind is not _SubmodelMemberKind.DATA
-                or dim.schema is None
-                or not _is_scalar_resolved_data_schema(dim.schema)
+                state.kind is not _SubmodelMemberKind.DATA
+                or state.schema is None
+                or not _is_scalar_resolved_data_schema(state.schema)
             ):
                 raise TypeError("Data shape dimensions must reference scalar data declarations")
-            return SubmodelDataDimSymbol(dim.submodel_symbol, dim.member_path)
+            return SubmodelDataDimSymbol(state.submodel_symbol, state.member_path)
         raise TypeError("Data shape dimensions must be integers or scalar data declarations")
 
     def __add__(self, other: object) -> DeferredBinOp:
@@ -567,10 +630,11 @@ def _validate_partial_vector_length(
             raise TypeError("PartiallyObserved.vector length must reference scalar data")
         return length
     if isinstance(length, _SubmodelMember):
+        state = _submodel_member_state(length)
         if (
-            length.kind is not _SubmodelMemberKind.DATA
-            or length.schema is None
-            or not _is_scalar_resolved_data_schema(length.schema)
+            state.kind is not _SubmodelMemberKind.DATA
+            or state.schema is None
+            or not _is_scalar_resolved_data_schema(state.schema)
         ):
             raise TypeError("PartiallyObserved.vector length must reference scalar data")
         return length
@@ -585,12 +649,14 @@ def _validate_exact_vector_data(
     if isinstance(value, Data):
         if isinstance(value.schema, DataShapeSchema) and len(value.schema.dims) == 1:
             return value
-    elif (
-        value.kind is _SubmodelMemberKind.DATA
-        and isinstance(value.schema, ResolvedDataShapeSchema)
-        and len(value.schema.dims) == 1
-    ):
-        return value
+    else:
+        state = _submodel_member_state(value)
+        if (
+            state.kind is _SubmodelMemberKind.DATA
+            and isinstance(state.schema, ResolvedDataShapeSchema)
+            and len(state.schema.dims) == 1
+        ):
+            return value
     raise TypeError(f"{label} must be a Data.vector(length) declaration")
 
 
@@ -609,17 +675,20 @@ def _validate_partially_observed_bound_data(
 
 
 def _exact_vector_dim(value: Data | _SubmodelMember) -> object:
-    schema = value.schema
     if isinstance(value, Data):
+        schema = value.schema
         if not isinstance(schema, DataShapeSchema) or len(schema.dims) != 1:
             raise TypeError("Data declaration must be an exact vector")
         dim = schema.dims[0]
         if isinstance(dim, SubmodelDataDimSymbol):
             return (dim.submodel_symbol, dim.member_path)
         return dim
+
+    state = _submodel_member_state(value)
+    schema = state.schema
     if not isinstance(schema, ResolvedDataShapeSchema) or len(schema.dims) != 1:
         raise TypeError("Data declaration must be an exact vector")
     dim = schema.dims[0]
     if isinstance(dim, DataDimRef):
-        return (value.submodel_symbol, dim.name)
+        return (state.submodel_symbol, dim.name)
     return dim

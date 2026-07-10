@@ -116,6 +116,51 @@ def test_submodel_instances_are_independent_and_may_form_the_complete_parent() -
     )
 
 
+def test_submodel_member_can_be_reexported_through_an_intermediate_model() -> None:
+    @model
+    class Leaf:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Wrapper:
+        leaf = Submodel(Leaf)
+        theta = leaf.theta
+
+    @model
+    class Outer:
+        wrapper = Submodel(Wrapper)
+        y = Observed(Normal(wrapper.theta, 1.0))
+
+    meta = model_meta(Outer)
+
+    assert meta.expressions["wrapper.theta"] == ParamRef("wrapper.leaf.theta")
+    assert normal_fields(meta.observed_nodes[0].distribution).loc == ParamRef("wrapper.leaf.theta")
+
+
+def test_submodel_internal_storage_does_not_shadow_child_member_names() -> None:
+    @model
+    class InternalNames:
+        symbol = Param(Normal(0.0, 1.0))
+        model_cls = Param(Normal(0.0, 1.0))
+
+    @model
+    class Wrapper:
+        child = Submodel(InternalNames)
+
+    @model
+    class Parent:
+        wrapper = Submodel(Wrapper)
+        combined = wrapper.child.symbol + wrapper.child.model_cls
+
+    meta = model_meta(Parent)
+
+    assert meta.expressions["combined"] == BinOp(
+        "+",
+        ParamRef("wrapper.child.symbol"),
+        ParamRef("wrapper.child.model_cls"),
+    )
+
+
 def test_submodel_data_can_shape_parent_declarations() -> None:
     @model
     class SizedPrior:
@@ -229,6 +274,13 @@ def test_submodel_rejects_invalid_classes_aliases_and_observed_references() -> N
     class Component:
         mu = Param(Normal(0.0, 1.0))
         y = Observed(Normal(mu, 1.0))
+
+    @model
+    class ReservedState:
+        _bayeswire_state = Param(Normal(0.0, 1.0))
+
+    with pytest.raises(ValueError, match="'_bayeswire_state' is reserved"):
+        Submodel(ReservedState)
 
     with pytest.raises(TypeError, match="unexpected keyword"):
         Submodel(Component, n=3)  # ty: ignore[unknown-argument]

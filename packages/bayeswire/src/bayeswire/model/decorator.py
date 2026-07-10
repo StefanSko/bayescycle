@@ -49,8 +49,11 @@ from bayeswire.model.core import (
     Param,
     PartiallyObserved,
     Submodel,
+    _submodel_member_state,
+    _submodel_symbol,
     _SubmodelMember,
     _SubmodelMemberKind,
+    submodel_target,
 )
 from bayeswire.model.dimensions import (
     CoordValue,
@@ -341,13 +344,14 @@ def _collect_declaration_symbols(cls: ModelClass) -> SymbolTable:
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Param | Data | Observed | PartiallyObserved | Submodel):
-            existing_name = symbols.get(value.symbol)
+            symbol = _submodel_symbol(value) if isinstance(value, Submodel) else value.symbol
+            existing_name = symbols.get(symbol)
             if existing_name is not None:
                 raise ValueError(
                     "Declaration aliases are not supported: "
                     f"{existing_name!r} and {name!r} share one symbol"
                 )
-            symbols[value.symbol] = name
+            symbols[symbol] = name
 
     return symbols
 
@@ -413,7 +417,7 @@ def _resolve_declarations(cls: ModelClass, symbols: SymbolTable) -> _ResolvedDec
                 )
             )
         elif isinstance(value, Submodel):
-            child = _prefix_model_meta(model_meta(value.model_cls), name)
+            child = _prefix_model_meta(model_meta(submodel_target(value)), name)
             _merge_unique(params, child.params, label="parameter")
             _merge_unique(data, child.data, label="data")
             observed_nodes.extend(child.observed_nodes)
@@ -711,8 +715,10 @@ def _resolve_expressions(cls: ModelClass, symbols: SymbolTable) -> dict[str, Exp
 
     for name, value in cls.__dict__.items():
         if isinstance(value, Submodel):
-            child = _prefix_model_meta(model_meta(value.model_cls), name)
+            child = _prefix_model_meta(model_meta(submodel_target(value)), name)
             _merge_unique(expressions, child.expressions, label="expression")
+        elif isinstance(value, _SubmodelMember):
+            expressions[name] = _resolve_submodel_member_expr(value, symbols)
         elif is_deferred_expr(value):
             expressions[name] = _resolve_declaration_expr(value, symbols)
 
@@ -752,7 +758,7 @@ def _resolve_dimension_metadata(cls: ModelClass) -> ResolvedModelDimensions:
                 static_axis_sizes=tuple(None for _ in value.dims),
             )
         elif isinstance(value, Submodel):
-            child_dimensions = attached_model_dimensions(value.model_cls)
+            child_dimensions = attached_model_dimensions(submodel_target(value))
             if child_dimensions is None:
                 continue
             prefixed = _prefix_model_dimensions(child_dimensions, name)
@@ -967,33 +973,35 @@ def _resolve_data_shape_schema_dim(
 
 def _resolve_submodel_data_ref(value: _SubmodelMember, symbols: SymbolTable) -> DataRef:
     """Resolve one child data member to its flattened qualified name."""
-    if value.kind is not _SubmodelMemberKind.DATA:
-        raise TypeError(f"Submodel member {value.member_path!r} is not a data declaration")
-    prefix = _resolve_symbol(value.submodel_symbol, symbols)
-    return DataRef(_qualified_name(prefix, value.member_path))
+    state = _submodel_member_state(value)
+    if state.kind is not _SubmodelMemberKind.DATA:
+        raise TypeError(f"Submodel member {state.member_path!r} is not a data declaration")
+    prefix = _resolve_symbol(state.submodel_symbol, symbols)
+    return DataRef(_qualified_name(prefix, state.member_path))
 
 
 def _resolve_submodel_member_expr(value: _SubmodelMember, symbols: SymbolTable) -> ExprNode:
     """Resolve one child member into the parent's final expression tree."""
-    if value.kind is _SubmodelMemberKind.DATA:
+    state = _submodel_member_state(value)
+    if state.kind is _SubmodelMemberKind.DATA:
         return _resolve_submodel_data_ref(value, symbols)
 
-    prefix = _resolve_symbol(value.submodel_symbol, symbols)
-    qualified = _qualified_name(prefix, value.member_path)
-    if value.kind is _SubmodelMemberKind.PARAM:
+    prefix = _resolve_symbol(state.submodel_symbol, symbols)
+    qualified = _qualified_name(prefix, state.member_path)
+    if state.kind is _SubmodelMemberKind.PARAM:
         return ParamRef(qualified)
 
-    meta = model_meta(value.model_cls)
-    if value.kind is _SubmodelMemberKind.EXPRESSION:
-        return _prefix_expr(meta.expressions[value.member_path], prefix)
-    if value.kind is _SubmodelMemberKind.PARTIALLY_OBSERVED:
+    meta = model_meta(state.model_cls)
+    if state.kind is _SubmodelMemberKind.EXPRESSION:
+        return _prefix_expr(meta.expressions[state.member_path], prefix)
+    if state.kind is _SubmodelMemberKind.PARTIALLY_OBSERVED:
         for site in resolved_stochastic_sites(meta):
-            if site.name == value.member_path:
+            if site.name == state.member_path:
                 return _prefix_expr(site.value, prefix)
         raise ValueError(
-            f"Submodel member {value.member_path!r} has no stochastic value expression"
+            f"Submodel member {state.member_path!r} has no stochastic value expression"
         )
-    raise TypeError(f"Submodel namespace {value.member_path!r} is not a declaration expression")
+    raise TypeError(f"Submodel namespace {state.member_path!r} is not a declaration expression")
 
 
 def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | int | None:
@@ -1009,16 +1017,17 @@ def _resolve_declaration_size(size: object, symbols: SymbolTable) -> DataRef | i
             return DataRef(_resolve_symbol(size.symbol, symbols))
         raise TypeError("Data-dependent parameter sizes must use scalar data declarations")
     if isinstance(size, _SubmodelMember):
+        state = _submodel_member_state(size)
         if (
-            size.kind is _SubmodelMemberKind.DATA
-            and isinstance(size.schema, ResolvedDataShapeSchema)
-            and size.schema.dims == ()
+            state.kind is _SubmodelMemberKind.DATA
+            and isinstance(state.schema, ResolvedDataShapeSchema)
+            and state.schema.dims == ()
         ):
             return _resolve_submodel_data_ref(size, symbols)
         if (
-            size.kind is _SubmodelMemberKind.DATA
-            and isinstance(size.schema, ResolvedDataRankSchema)
-            and size.schema.rank == 0
+            state.kind is _SubmodelMemberKind.DATA
+            and isinstance(state.schema, ResolvedDataRankSchema)
+            and state.schema.rank == 0
         ):
             return _resolve_submodel_data_ref(size, symbols)
         raise TypeError("Data-dependent parameter sizes must use scalar data declarations")
@@ -1031,8 +1040,8 @@ def _resolve_partially_observed_missing_size(
 ) -> DataRef | int:
     """Resolve the free-coordinate size from an exact missing-index data schema."""
     missing_idx = value.missing_idx
-    schema = missing_idx.schema
     if isinstance(missing_idx, Data):
+        schema = missing_idx.schema
         if not isinstance(schema, DataShapeSchema) or len(schema.dims) != 1:
             raise TypeError("PartiallyObserved missing_idx must be declared as Data.vector(length)")
         dim = schema.dims[0]
@@ -1043,13 +1052,16 @@ def _resolve_partially_observed_missing_size(
         if isinstance(dim, SubmodelDataDimSymbol):
             prefix = _resolve_symbol(dim.submodel_symbol, symbols)
             return DataRef(_qualified_name(prefix, dim.member_path))
-    elif isinstance(schema, ResolvedDataShapeSchema) and len(schema.dims) == 1:
-        dim = schema.dims[0]
-        if isinstance(dim, int):
-            return _validate_parameter_size(dim, "PartiallyObserved missing size")
-        if isinstance(dim, DataDimRef):
-            prefix = _resolve_symbol(missing_idx.submodel_symbol, symbols)
-            return DataRef(_qualified_name(prefix, dim.name))
+    else:
+        state = _submodel_member_state(missing_idx)
+        schema = state.schema
+        if isinstance(schema, ResolvedDataShapeSchema) and len(schema.dims) == 1:
+            dim = schema.dims[0]
+            if isinstance(dim, int):
+                return _validate_parameter_size(dim, "PartiallyObserved missing size")
+            if isinstance(dim, DataDimRef):
+                prefix = _resolve_symbol(state.submodel_symbol, symbols)
+                return DataRef(_qualified_name(prefix, dim.name))
     raise TypeError("PartiallyObserved missing_idx must be declared as Data.vector(length)")
 
 

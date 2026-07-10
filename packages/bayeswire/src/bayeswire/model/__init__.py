@@ -7,7 +7,14 @@ from bayeswire.model._data_schema import (
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
-from bayeswire.model.core import Data, Observed, Param, PartiallyObserved, Submodel
+from bayeswire.model.core import (
+    Data,
+    Observed,
+    Param,
+    PartiallyObserved,
+    Submodel,
+    submodel_target,
+)
 from bayeswire.model.decorator import (
     ModelMeta,
     attached_model_dimensions,
@@ -46,4 +53,5 @@ __all__ = [
     "model_meta",
     "resolved_free_values",
     "resolved_stochastic_sites",
+    "submodel_target",
 ]
