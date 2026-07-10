@@ -237,3 +237,19 @@ this code next; safe to drop before merge if unwanted.
   root guards passed; Ruff format/check passed for both packages. `ty check`
   retained only the known unsupported-base diagnostics in inheritance-rejection
   tests (two in bayeswire, one in bayesjax).
+
+## Cross-workflow follow-up from Bayesite Codex review
+
+- Bayescycle PR #57's first Codex review was clean, but Bayesite PR #29 review
+  found that Rust prior-predictive treated the adversarial non-owner scatter as
+  separately generative. BayesJAX happened to ignore it because
+  `_partially_observed_sites` filters by same-name free sites, which avoided two
+  draws but silently discarded the extra density factor.
+- A product-of-experts Factor has no supported ancestral simulation semantics.
+  Red BayesJAX coverage confirmed the adversarial model was silently accepted;
+  both backends now reject differently named assignable factors over
+  VectorBounds free values before prior-predictive drawing. The check remains
+  VectorBounds-specific so pre-existing unbounded resolved metadata keeps its
+  established behavior.
+- Post-follow-up gates: BayesJAX Ruff/ty plus 454 tests and all 13 root guards
+  passed; ty retained only its known inheritance-rejection diagnostic.

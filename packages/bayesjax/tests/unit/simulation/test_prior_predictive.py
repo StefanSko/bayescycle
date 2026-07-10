@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import jax.numpy as jnp
 import pytest
 from bayeswire import Data, Observed, Param, PartiallyObserved, model
 from bayeswire.constraints import Interval, Ordered, Positive
-from bayeswire.distributions import MultivariateNormal, Normal, OrderedLogistic, Truncated, Uniform
+from bayeswire.distributions import (
+    Exponential,
+    MultivariateNormal,
+    Normal,
+    OrderedLogistic,
+    Truncated,
+    Uniform,
+)
 from bayeswire.distributions.core import DistributionValue, LogProbability
+from bayeswire.ir import bindable_from_meta
+from bayeswire.model.decorator import ResolvedStochasticSite, model_meta
 
 from bayesjax.simulation import simulate_prior_predictive
 
@@ -130,6 +141,27 @@ class PartialObservedPriorPredictive:
         observed=observed_values,
         observed_idx=observed_idx,
         missing_idx=missing_idx,
+    )
+
+
+@model
+class UpperCensoredExponentialPriorPredictive:
+    """Upper-bounded PartiallyObserved owner used by adversarial metadata tests."""
+
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    missing_upper = Data.vector(n_mis)
+    y = PartiallyObserved.vector(
+        Exponential(1.0),
+        length=n,
+        observed=observed_values,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+        missing_upper=missing_upper,
     )
 
 
@@ -290,6 +322,29 @@ def test_simulate_prior_predictive_draws_partially_observed_full_vectors() -> No
 
     assert result.parameters == {}
     assert result.observed["y"].shape == (3, 3)
+
+
+def test_simulate_prior_predictive_rejects_non_owner_vector_bounds_factor() -> None:
+    meta = model_meta(UpperCensoredExponentialPriorPredictive)
+    owner = meta.stochastic_sites[0]
+    factor = ResolvedStochasticSite("penalty", Normal(0.0, 1.0), owner.value)
+    adversarial = bindable_from_meta(replace(meta, stochastic_sites=(factor, owner)))
+
+    with pytest.raises(TypeError, match="not the same-name owner"):
+        simulate_prior_predictive(
+            adversarial,
+            seed=47,
+            num_samples=1,
+            data={
+                "n": 2,
+                "n_obs": 1,
+                "n_mis": 1,
+                "observed_idx": jnp.asarray([0]),
+                "missing_idx": jnp.asarray([1]),
+                "observed_values": jnp.asarray([0.5]),
+                "missing_upper": jnp.asarray([1.0]),
+            },
+        )
 
 
 def test_simulate_prior_predictive_rejects_missing_data() -> None:

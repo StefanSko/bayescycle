@@ -18,7 +18,7 @@ from bayeswire.model.decorator import (
     resolved_free_values,
     resolved_stochastic_sites,
 )
-from bayeswire.model.expr import VectorScatterOp
+from bayeswire.model.expr import ParamRef, VectorScatterOp
 
 from bayesjax._backends.jax.binding import (
     _normalize_declared_data_values,
@@ -281,6 +281,27 @@ def _resolve_free_value_shapes(
     }
 
 
+def _validate_prior_predictive_vector_bound_owners(
+    meta: ModelMeta,
+    vector_bounds: Mapping[str, ResolvedVectorBounds],
+) -> None:
+    """Reject extra assignable factors that cannot be forward-simulated."""
+    for site in resolved_stochastic_sites(meta):
+        value = site.value
+        if isinstance(value, ParamRef):
+            free_name = value.name
+        elif isinstance(value, VectorScatterOp) and isinstance(value.missing_values, ParamRef):
+            free_name = value.missing_values.name
+        else:
+            continue
+        if free_name in vector_bounds and site.name != free_name:
+            raise TypeError(
+                f"prior-predictive site {site.name!r} is not the same-name owner of free value "
+                f"{free_name!r}; additional factors evaluated at free values are not "
+                "forward-simulatable, so use a generative model with one same-name owner site"
+            )
+
+
 def _partially_observed_sites(meta: ModelMeta) -> tuple[ResolvedStochasticSite, ...]:
     param_names = set(meta.params)
     free_names = set(resolved_free_values(meta))
@@ -392,6 +413,7 @@ def simulate_prior_predictive(
     param_shapes = _resolve_param_shapes(meta, normalized_data)
     free_value_shapes = _resolve_free_value_shapes(meta, normalized_data)
     vector_bounds = _resolve_vector_bounds(meta, normalized_data, free_value_shapes)
+    _validate_prior_predictive_vector_bound_owners(meta, vector_bounds)
     _validate_bound_index_expressions(meta, normalized_data, free_value_shapes)
     _validate_bound_distribution_parameters(meta, normalized_data, free_value_shapes)
     normalized_observed_shapes = _validate_observed_shapes(meta, observed_shapes)
