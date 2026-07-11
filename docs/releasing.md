@@ -76,11 +76,16 @@ One version, one commit, one tag, one workflow run:
    matching `CHANGELOG.md` section.
 7. **Verify.** `uv tool install bayescycle` from real PyPI and run the
    quickstart.
+8. **Advance Bayesite's G7 oracle pin.** In the separate `bayesite` repository,
+   update the exact `bayesjax==X.Y.Z` dependency in
+   `scripts/check_rust_backend_posterior.py`, run G7, and merge the pin bump
+   only when cross-backend conformance passes. If the release changed the wire
+   corpus, combine this with the Bayeswire vendor refresh described below.
 
-## The two surviving cross-repo edges
+## The three surviving cross-repo edges
 
 `bayesite` (the Rust engine) stays a separate repository; it vendors the
-spec and fixtures by file, never by package dependency. Two pins move
+spec and fixtures by file, never by package dependency. Three pins move
 independently of the lockstep Python release above:
 
 1. **Wire change -> bayesite vendor refresh.** After any canonical-bytes
@@ -96,14 +101,20 @@ independently of the lockstep Python release above:
    `packages/bayescycle/src/bayescycle/backends/bayesite/provisioning.py`.
    This is independent of the lockstep Python version and does not require a
    new tag on this repo unless one is cut alongside it.
+3. **A bayescycle release -> Bayesite G7 pin bump.** After the PyPI artifacts
+   exist, update Bayesite's exact Bayesjax oracle dependency to the released
+   lockstep version and run G7. Do not resolve an unpinned "latest" version:
+   incompatibility must produce a deliberate Bayesite compatibility change,
+   not a silently broken scheduled job.
 
-Neither edge is part of the `bump_version.py` / tag / `release.yml`
-sequence above; both are triggered by an event in the `bayesite` repository.
+These edges are not performed by `bump_version.py` or `release.yml`; each is a
+reviewed follow-up in the repository that consumes the new release.
 
 ## Pending
 
 A scheduled `bayesite HEAD vs workspace HEAD` job (the engine built from
 source, run against this workspace's `main`) has not been re-created since
 the migration — see [`monorepo-migration.md`](monorepo-migration.md) for
-status. Until it exists, `bayesite` compatibility is checked only at
-vendor-refresh and engine-pin-bump time, not continuously.
+status. Until it exists, `bayesite` compatibility is checked at vendor-refresh,
+engine-pin-bump, and released-Bayesjax G7-pin time, not continuously against
+workspace `main`.
