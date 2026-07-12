@@ -42,6 +42,22 @@ jobs:
       - name: Tests
         run: uv run --no-sync pytest tests -q
 
+  playground:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync (root dev group only)
+        run: uv sync --only-dev
+      - name: Stage assets
+        run: uv run python playground/scripts/stage_assets.py
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+      - name: Tests
+        run: uv run pytest playground/tests -q
+
   # bayeswire: stdlib-only wire format and model language. Its own gates
   # (no-JAX module walk, produce-conformance) run inside its pytest suite;
   # spec-doc generation additionally checks the corpus and spec/ir-v1-tags.md

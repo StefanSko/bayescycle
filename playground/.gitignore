@@ -1,0 +1,4 @@
+__pycache__/
+site/vendor/pyodide/*
+!site/vendor/pyodide/VENDOR.json
+site/vendor/bayeswire/
