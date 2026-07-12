@@ -235,7 +235,15 @@ def test_downloads_are_byte_stable(page: Page, base_url: str) -> None:
     start_and_wait_for_run(page)
     first_fit = downloaded_bytes(page, "#download-fit")
     first_diagnostics = downloaded_bytes(page, "#download-diagnostics")
-    assert b"\n\n" in first_fit, "fit download has no blank separator between chains"
+    # The fit download must be one valid NDJSON stream (the merged chains):
+    # no blank lines, every line a JSON object, both chains present.
+    fit_lines = first_fit.decode().splitlines()
+    assert fit_lines, "fit download is empty"
+    assert all(line.strip() for line in fit_lines), "fit download contains blank lines"
+    header = json.loads(fit_lines[0])
+    assert header["chain_count"] == 2
+    for line in fit_lines[1:]:
+        json.loads(line)
     json.loads(first_diagnostics)
 
     start_and_wait_for_run(page)

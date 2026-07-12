@@ -5,6 +5,15 @@ from playwright.sync_api import Page, expect
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPILE_TIMEOUT = 30_000
 RUN_TIMEOUT = 120_000
+SYNTHETIC_LENGTH_SOURCE = """from bayeswire import Data, Observed, model
+from bayeswire.distributions import Normal
+
+
+@model
+class SyntheticLength:
+    x = Data.vector()
+    y = Observed(Normal(x, 1.0))
+"""
 
 
 def fixture_text(relative_path: str) -> str:
@@ -45,6 +54,32 @@ def test_csv_column_mapping(page: Page, base_url: str) -> None:
         expect(page.locator(f'#mapping-table tr[data-input="{input_name}"]')).to_have_attribute(
             "data-status", "bound"
         )
+    expect(page.locator("#run-button")).to_be_enabled()
+
+
+def test_json_binding_derives_synthetic_length(page: Page, base_url: str) -> None:
+    open_app(page, base_url)
+    page.evaluate(
+        "source => window.__playground.setSource(source)",
+        SYNTHETIC_LENGTH_SOURCE,
+    )
+    page.wait_for_function(
+        "window.__playground.state().irHash !== ''",
+        timeout=COMPILE_TIMEOUT,
+    )
+    document = """{
+      "format": "bayescycle.data.json.v1",
+      "variables": {
+        "x": {"dtype": "float64", "shape": [3], "values": [1.0, 2.0, 3.0]},
+        "y": {"dtype": "float64", "shape": [3], "values": [1.5, 2.5, 3.5]}
+      }
+    }"""
+    page.locator("#json-input").fill(document)
+    page.locator("#json-load").click()
+
+    synthetic = page.locator('#mapping-table tr[data-input="n"]')
+    expect(synthetic).to_have_attribute("data-status", "bound")
+    expect(synthetic.locator("td").nth(1)).to_have_text("auto:length")
     expect(page.locator("#run-button")).to_be_enabled()
 
 

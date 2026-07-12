@@ -457,11 +457,43 @@ function bindJson(inputs) {
     variable.dtype = transformed.dtype;
     variable.values = transformed.values;
   }
-  const mapping = inputs.map((input) => ({
-    input: input.name,
-    source: input.name in documentValue.variables ? "document" : null,
-    status: input.name in documentValue.variables ? "bound" : "missing",
-  }));
+
+  let rowCount;
+  let rowCountInput;
+  const derivedScalars = new Set();
+  for (const input of inputs) {
+    if (input.kind !== "vector") continue;
+    const variable = documentValue.variables[input.name];
+    if (variable === undefined) continue;
+    const length = variable.values.length;
+    if (rowCount === undefined) {
+      rowCount = length;
+      rowCountInput = input.name;
+    } else if (length !== rowCount) {
+      throw new Error(
+        `bound vector length mismatch: ${input.name} has ${String(length)} rows, ` +
+          `${rowCountInput} has ${String(rowCount)}`,
+      );
+    }
+    for (const dim of input.dims) derivedScalars.add(dim);
+  }
+
+  const mapping = inputs.map((input) => {
+    if (input.name in documentValue.variables) {
+      return { input: input.name, source: "document", status: "bound" };
+    }
+    const derivesLength = input.kind === "scalar" &&
+      (input.synthetic === true || derivedScalars.has(input.name));
+    if (derivesLength && rowCount !== undefined) {
+      documentValue.variables[input.name] = {
+        dtype: "int64",
+        shape: [],
+        values: [rowCount],
+      };
+      return { input: input.name, source: "auto:length", status: "bound" };
+    }
+    return { input: input.name, source: null, status: "missing" };
+  });
   boundDocument = documentValue;
   mappingComplete = mapping.every((row) => row.status === "bound");
   renderMapping(mapping, numericJsonVariables(documentValue));
@@ -872,7 +904,8 @@ async function runStudy() {
         executor,
       }),
     )[0];
-    renderResults(fitTexts, diagnosed, predictive, prior, truthForRecovery);
+    const downloadableFit = fitTexts.length === 1 ? fitTexts[0] : mergedFit;
+    renderResults(fitTexts, downloadableFit, diagnosed, predictive, prior, truthForRecovery);
   } catch (error) {
     showRunError(error);
   } finally {
@@ -903,7 +936,7 @@ function renderProgress(counts) {
   }
 }
 
-function renderResults(fitTexts, diagnosed, predictive, prior, truth) {
+function renderResults(fitTexts, downloadableFit, diagnosed, predictive, prior, truth) {
   dashboardData = readDashboardData({ fits: fitTexts, diagnose: diagnosed.rawBytes });
   recovery = truth === null ? null : recoverySummary(dashboardData, truth);
   renderChainPlot();
@@ -917,7 +950,7 @@ function renderResults(fitTexts, diagnosed, predictive, prior, truth) {
     overlayPlotData(dashboardData, prior.rawBytes),
   );
 
-  fitDownload = new Blob([fitTexts.join("\n")], { type: "application/x-ndjson" });
+  fitDownload = new Blob([downloadableFit], { type: "application/x-ndjson" });
   diagnosticsDownload = new Blob([diagnosed.rawBytes], { type: "application/json" });
   element("#download-fit").disabled = false;
   element("#download-diagnostics").disabled = false;
