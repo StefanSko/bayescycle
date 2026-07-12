@@ -69,9 +69,11 @@ def page(browser: Browser) -> Generator[Page]:
     instance.close()
 
 
-def _run_suite(page: Page, base_url: str, name: str) -> list[dict[str, Any]]:
+def _run_suite(
+    page: Page, base_url: str, name: str, timeout_ms: int = 30_000
+) -> list[dict[str, Any]]:
     page.goto(f"{base_url}/tests/harness.html?suite={name}")
-    page.wait_for_function("window.__done === true")
+    page.wait_for_function("window.__done === true", timeout=timeout_ms)
     return page.evaluate("window.__results")
 
 

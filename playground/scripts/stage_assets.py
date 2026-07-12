@@ -36,15 +36,22 @@ def stage_bayeswire() -> int:
     target = VENDOR_ROOT / "bayeswire" / "bayeswire"
     shutil.rmtree(target.parent, ignore_errors=True)
 
-    sources = [
-        path
-        for path in BAYESWIRE_SOURCE.rglob("*.py")
-        if "corpus" not in path.relative_to(BAYESWIRE_SOURCE).parts
-    ]
+    sources = sorted(
+        (
+            path
+            for path in BAYESWIRE_SOURCE.rglob("*.py")
+            if "corpus" not in path.relative_to(BAYESWIRE_SOURCE).parts
+        ),
+        key=lambda path: path.relative_to(BAYESWIRE_SOURCE).as_posix(),
+    )
+    manifest = []
     for source in sources:
-        destination = target / source.relative_to(BAYESWIRE_SOURCE)
+        relative = source.relative_to(BAYESWIRE_SOURCE)
+        destination = target / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+        manifest.append((Path("bayeswire") / relative).as_posix())
+    (target.parent / "MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return len(sources)
 
 

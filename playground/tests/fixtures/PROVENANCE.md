@@ -1,0 +1,1 @@
+These fixtures are byte-for-byte copies from bayesledger at commit `7346d71`, preserving the corpus sources and golden IR documents plus both engine model artifact directories for browser-harness conformance tests.

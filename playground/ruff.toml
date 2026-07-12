@@ -1,0 +1,6 @@
+line-length = 100
+target-version = "py312"
+exclude = ["tests/fixtures"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
