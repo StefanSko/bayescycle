@@ -83,6 +83,50 @@ def test_json_binding_derives_synthetic_length(page: Page, base_url: str) -> Non
     expect(page.locator("#run-button")).to_be_enabled()
 
 
+def test_json_binding_allows_distinct_dimension_lengths(page: Page, base_url: str) -> None:
+    open_app(page, base_url)
+    page.evaluate(
+        "source => window.__playground.setSource(source)",
+        fixture_text("corpus/interval_censored_normal.py"),
+    )
+    page.wait_for_function(
+        "window.__playground.state().irHash !== ''",
+        timeout=COMPILE_TIMEOUT,
+    )
+    document = """{
+      "format": "bayescycle.data.json.v1",
+      "variables": {
+        "n": {"dtype": "int64", "shape": [], "values": [5]},
+        "observed_idx": {"dtype": "int64", "shape": [3], "values": [0, 2, 4]},
+        "missing_idx": {"dtype": "int64", "shape": [2], "values": [1, 3]},
+        "observed_values": {"dtype": "float64", "shape": [3], "values": [-0.3, 0.8, 1.1]},
+        "missing_lower": {"dtype": "float64", "shape": [2], "values": [-1.0, 0.25]},
+        "missing_upper": {"dtype": "float64", "shape": [2], "values": [0.5, 1.75]}
+      }
+    }"""
+    page.locator("#json-input").fill(document)
+    page.locator("#json-load").click()
+
+    for input_name in (
+        "n",
+        "n_obs",
+        "n_mis",
+        "observed_idx",
+        "missing_idx",
+        "observed_values",
+        "missing_lower",
+        "missing_upper",
+    ):
+        expect(page.locator(f'#mapping-table tr[data-input="{input_name}"]')).to_have_attribute(
+            "data-status", "bound"
+        )
+    for scalar_name in ("n_obs", "n_mis"):
+        row = page.locator(f'#mapping-table tr[data-input="{scalar_name}"]')
+        expect(row.locator("td").nth(1)).to_have_text("auto:length")
+    expect(page.locator("#compile-error")).to_be_hidden()
+    expect(page.locator("#run-button")).to_be_enabled()
+
+
 def test_cold_start_example_autoload_and_results_reveal(page: Page, base_url: str) -> None:
     open_app(page, base_url)
     expect(page.locator("#results")).to_be_hidden()

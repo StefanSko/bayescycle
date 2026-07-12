@@ -458,37 +458,36 @@ function bindJson(inputs) {
     variable.values = transformed.values;
   }
 
-  let rowCount;
-  let rowCountInput;
-  const derivedScalars = new Set();
+  const lengthGroups = new Map();
   for (const input of inputs) {
     if (input.kind !== "vector") continue;
     const variable = documentValue.variables[input.name];
     if (variable === undefined) continue;
+    const group = input.dims[0] ?? "n";
     const length = variable.values.length;
-    if (rowCount === undefined) {
-      rowCount = length;
-      rowCountInput = input.name;
-    } else if (length !== rowCount) {
+    const existing = lengthGroups.get(group);
+    if (existing !== undefined && length !== existing.length) {
       throw new Error(
-        `bound vector length mismatch: ${input.name} has ${String(length)} rows, ` +
-          `${rowCountInput} has ${String(rowCount)}`,
+        `bound vector length mismatch for group ${group}: ` +
+          `${input.name} has ${String(length)} rows, ` +
+          `${existing.input} has ${String(existing.length)}`,
       );
     }
-    for (const dim of input.dims) derivedScalars.add(dim);
+    lengthGroups.set(group, { input: input.name, length });
   }
 
   const mapping = inputs.map((input) => {
     if (input.name in documentValue.variables) {
       return { input: input.name, source: "document", status: "bound" };
     }
-    const derivesLength = input.kind === "scalar" &&
-      (input.synthetic === true || derivedScalars.has(input.name));
-    if (derivesLength && rowCount !== undefined) {
+    const lengthGroup = input.kind === "scalar"
+      ? lengthGroups.get(input.synthetic === true ? "n" : input.name)
+      : undefined;
+    if (lengthGroup !== undefined) {
       documentValue.variables[input.name] = {
         dtype: "int64",
         shape: [],
-        values: [rowCount],
+        values: [lengthGroup.length],
       };
       return { input: input.name, source: "auto:length", status: "bound" };
     }
