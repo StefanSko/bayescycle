@@ -124,18 +124,23 @@ export function standardize(column) {
 /** Extract declared and observed model inputs in declaration order. */
 export function requiredInputs(ir) {
   const dataInputs = ir.model.data.map((entry) => {
-    const dims = entry.value.schema.dims.map((dim) => dim.name);
+    const schema = entry.value.schema;
+    const dims = schema.dims?.map((dim) => dim.name) ?? [];
     return {
       name: entry.name,
-      kind: dims.length === 0 ? "scalar" : "vector",
+      kind: dims.length > 0 || schema.rank > 0 ? "vector" : "scalar",
       dims,
     };
   });
   const dataNames = new Set(dataInputs.map((input) => input.name));
+  const implicitRankSize =
+    ir.model.data.some((entry) => entry.value.schema.rank > 0) && !dataNames.has("n")
+      ? [{ name: "n", kind: "scalar", dims: [], synthetic: true }]
+      : [];
   const observedInputs = ir.model.observed_nodes
     .filter((entry) => !dataNames.has(entry.name))
     .map((entry) => ({ name: entry.name, kind: "vector", dims: [] }));
-  return [...dataInputs, ...observedInputs];
+  return [...dataInputs, ...implicitRankSize, ...observedInputs];
 }
 
 /** Bind typed columns to model inputs and produce an engine data document. */
@@ -190,6 +195,8 @@ export function bind(inputs, columns) {
       }
     } else if (derivedScalars.has(input.name)) {
       variables[input.name] = { dtype: "int64", shape: [], values: [rowCount] };
+      mapping.push({ input: input.name, source: "auto:length", status: "bound" });
+    } else if (input.synthetic === true && rowCount !== undefined) {
       mapping.push({ input: input.name, source: "auto:length", status: "bound" });
     } else {
       mapping.push({ input: input.name, source: null, status: "missing" });

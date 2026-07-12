@@ -3,9 +3,17 @@ import { compile } from "../compile/index.mjs";
 import {
   renderDensityOverlay,
   renderPriorPosteriorOverlay,
+  renderPriorPredictiveDensity,
 } from "../critique/render.mjs";
+import {
+  defaultTruth,
+  designDefaults,
+  designDocument,
+  truthDocument,
+} from "./design.mjs";
 import { bind, importCsv, importJson, requiredInputs, standardize } from "../data/index.mjs";
 import {
+  quantile,
   readDashboardData,
   renderEssRhat,
   renderPrecis,
@@ -18,6 +26,7 @@ import {
   posteriorPredictive,
   priorPredictive,
   sample,
+  simulate,
 } from "../engine/verbs.mjs";
 
 const UTF8 = new TextDecoder();
@@ -28,6 +37,13 @@ const mappingBody = element("#mapping-table tbody");
 const runButton = element("#run-button");
 const progress = element("#progress");
 const plotMode = element("#plot-mode");
+const observedPanel = element("#observed-panel");
+const designPanel = element("#design-panel");
+const designRunControls = element("#design-run-controls");
+const designBody = element("#design-values tbody");
+const truthBody = element("#truth-values tbody");
+const priorPredictiveButton = element("#run-prior-predictive");
+const simulateButton = element("#run-simulate");
 
 let compileTimer;
 let compileGeneration = 0;
@@ -40,6 +56,11 @@ let lastRun = null;
 let dashboardData = null;
 let fitDownload = null;
 let diagnosticsDownload = null;
+let dataMode = "observed";
+let simulated = false;
+let simulatedDocument = null;
+let simulatedTruth = null;
+let recovery = null;
 
 const editor = new EditorView({
   doc: "",
@@ -69,12 +90,19 @@ window.__playground = {
       mappingComplete,
       running,
       lastRun: lastRun === null ? null : { ...lastRun },
+      dataMode,
+      simulated,
+      recovery: recovery === null ? null : structuredClone(recovery),
     };
   },
 };
 
 element("#json-load").addEventListener("click", loadJson);
 element("#csv-input").addEventListener("change", loadCsv);
+element("#data-mode-observed").addEventListener("change", changeDataMode);
+element("#data-mode-design").addEventListener("change", changeDataMode);
+priorPredictiveButton.addEventListener("click", () => void runPriorPredictive());
+simulateButton.addEventListener("click", () => void runSimulation());
 element("#sampler-settings").addEventListener("submit", (event) => {
   event.preventDefault();
   void runStudy();
@@ -98,6 +126,11 @@ function scheduleCompile() {
   compiled = null;
   mappingComplete = false;
   boundDocument = null;
+  simulated = false;
+  simulatedDocument = null;
+  simulatedTruth = null;
+  recovery = null;
+  runButton.textContent = "Run sampler";
   hashChip.textContent = "";
   compileError.hidden = true;
   renderMapping([]);
@@ -121,8 +154,18 @@ async function compileSource(generation) {
   const ir = JSON.parse(UTF8.decode(result.irBytes));
   compiled = { ...result, ir };
   hashChip.textContent = result.irHash;
+  renderDesignTables(ir);
   compileError.textContent = "";
   compileError.hidden = true;
+  rebindData();
+}
+
+function changeDataMode(event) {
+  if (!event.target.checked) return;
+  dataMode = event.target.value;
+  observedPanel.hidden = dataMode !== "observed";
+  designPanel.hidden = dataMode !== "design";
+  designRunControls.hidden = dataMode !== "design";
   rebindData();
 }
 
@@ -157,7 +200,25 @@ async function loadCsv(event) {
 }
 
 function rebindData() {
-  if (compiled === null || dataSource === null) {
+  if (compiled === null) {
+    boundDocument = null;
+    mappingComplete = false;
+    renderMapping([]);
+    updateRunButton();
+    return;
+  }
+  if (dataMode === "design") {
+    if (simulatedDocument === null) {
+      boundDocument = null;
+      mappingComplete = false;
+      renderMapping([]);
+    } else {
+      bindSimulated(requiredInputs(compiled.ir));
+    }
+    updateRunButton();
+    return;
+  }
+  if (dataSource === null) {
     boundDocument = null;
     mappingComplete = false;
     renderMapping([]);
@@ -168,6 +229,23 @@ function rebindData() {
   if (dataSource.kind === "json") bindJson(inputs);
   else bindCsv(inputs);
   updateRunButton();
+}
+
+function bindSimulated(inputs) {
+  const variables = simulatedDocument.variables;
+  const missing = inputs.filter(
+    (input) => input.synthetic !== true && variables[input.name] === undefined,
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `Simulated data is missing required inputs: ${missing.map((input) => input.name).join(", ")}`,
+    );
+  }
+  boundDocument = simulatedDocument;
+  mappingComplete = true;
+  renderMapping(
+    inputs.map((input) => ({ input: input.name, source: "simulated", status: "bound" })),
+  );
 }
 
 function bindJson(inputs) {
@@ -210,6 +288,163 @@ function numericJsonVariables(documentValue) {
   return Object.entries(documentValue.variables)
     .filter(([, variable]) => variable.dtype !== "string" && variable.values.length > 1)
     .map(([name]) => ({ name }));
+}
+
+function renderDesignTables(ir) {
+  designBody.replaceChildren();
+  for (const [name, defaults] of Object.entries(designDefaults(ir))) {
+    const row = document.createElement("tr");
+    row.dataset.designName = name;
+    row.append(
+      tableCell(name),
+      numberInputCell(`design-${name}-low`, `Low for ${name}`, "low", defaults.low),
+      numberInputCell(`design-${name}-high`, `High for ${name}`, "high", defaults.high),
+      numberInputCell(`design-${name}-n`, `Rows for ${name}`, "n", defaults.n, true),
+    );
+    designBody.append(row);
+  }
+
+  truthBody.replaceChildren();
+  for (const [name, value] of Object.entries(defaultTruth(ir))) {
+    const row = document.createElement("tr");
+    row.dataset.truthName = name;
+    const valueCell = numberInputCell(
+      `truth-${name}`,
+      `Truth for ${name}`,
+      undefined,
+      value,
+    );
+    valueCell.querySelector("input").dataset.truthValue = "";
+    row.append(tableCell(name), valueCell);
+    truthBody.append(row);
+  }
+}
+
+function numberInputCell(id, labelText, field, value, integer = false) {
+  const cell = document.createElement("td");
+  const label = document.createElement("label");
+  label.className = "visually-hidden";
+  label.htmlFor = id;
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.id = id;
+  input.type = "number";
+  input.value = String(value);
+  input.step = integer ? "1" : "any";
+  if (integer) input.min = "1";
+  if (field !== undefined) input.dataset.designField = field;
+  cell.append(label, input);
+  return cell;
+}
+
+function currentDesign() {
+  return Object.fromEntries(
+    [...designBody.querySelectorAll("tr[data-design-name]")].map((row) => [
+      row.dataset.designName,
+      {
+        low: Number(row.querySelector('[data-design-field="low"]').value),
+        high: Number(row.querySelector('[data-design-field="high"]').value),
+        n: Number(row.querySelector('[data-design-field="n"]').value),
+      },
+    ]),
+  );
+}
+
+function currentTruth() {
+  return Object.fromEntries(
+    [...truthBody.querySelectorAll("tr[data-truth-name]")].map((row) => [
+      row.dataset.truthName,
+      Number(row.querySelector("input[type=number]").value),
+    ]),
+  );
+}
+
+function boundDesignDocument() {
+  const generated = designDocument(currentDesign());
+  const columns = Object.entries(generated.variables).map(([name, variable]) => ({
+    name,
+    dtype: variable.dtype,
+    values: variable.values,
+  }));
+  return bind(requiredInputs(compiled.ir), columns).document;
+}
+
+function simulatedDataDocument(bytes) {
+  let parsed;
+  try {
+    parsed = JSON.parse(UTF8.decode(bytes));
+  } catch {
+    throw new Error("Simulate output is not valid JSON");
+  }
+  let candidate;
+  if (jsonObject(parsed) && jsonObject(parsed.variables)) {
+    candidate = {
+      format: parsed.format ?? "bayescycle.data.json.v1",
+      variables: parsed.variables,
+    };
+  } else if (
+    jsonObject(parsed) &&
+    Object.values(parsed).every((value) => dataVariable(value))
+  ) {
+    candidate = { format: "bayescycle.data.json.v1", variables: parsed };
+  } else {
+    throw new Error(
+      "Simulate output must be a data-document envelope or a variables object",
+    );
+  }
+  try {
+    return importJson(JSON.stringify(candidate));
+  } catch (error) {
+    throw new Error(
+      `Simulate output is not a valid bayescycle data document: ${error.message}`,
+    );
+  }
+}
+
+function completeDerivedScalars(documentValue, inputs) {
+  const completed = structuredClone(documentValue);
+  for (const input of inputs.filter((candidate) => candidate.kind === "vector")) {
+    const variable = completed.variables[input.name];
+    if (variable === undefined) continue;
+    for (const dimension of input.dims) {
+      completed.variables[dimension] ??= {
+        dtype: "int64",
+        shape: [],
+        values: [variable.values.length],
+      };
+    }
+  }
+  return completed;
+}
+
+function priorPredictiveReplicates(ir, bytes) {
+  const names = ir.model.observed_nodes.map((node) => node.name);
+  return ndjsonDraws(bytes).map((draw) =>
+    names.flatMap((name) => arrayValue(draw.values?.[name])),
+  );
+}
+
+function recoverySummary(data, truth) {
+  return Object.fromEntries(
+    Object.entries(truth).map(([name, value]) => {
+      const parameter = data.parameters.find((candidate) => candidate.label === name);
+      if (parameter === undefined) {
+        throw new Error(`Posterior draws are missing truth parameter ${name}`);
+      }
+      const draws = parameter.chains.flat();
+      const low = quantile(draws, 0.055);
+      const high = quantile(draws, 0.945);
+      return [name, { truth: value, low, high, inside: value >= low && value <= high }];
+    }),
+  );
+}
+
+function jsonObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function dataVariable(value) {
+  return jsonObject(value) && Array.isArray(value.shape) && Array.isArray(value.values);
 }
 
 function renderMapping(mapping, numericValues = []) {
@@ -260,11 +495,86 @@ function tableCell(text, className = "") {
 
 function updateRunButton() {
   runButton.disabled = running || compiled === null || !mappingComplete;
+  const designDisabled = running || compiled === null || dataMode !== "design";
+  priorPredictiveButton.disabled = designDisabled;
+  simulateButton.disabled = designDisabled;
+}
+
+async function runPriorPredictive() {
+  if (compiled === null || running || dataMode !== "design") return;
+  running = true;
+  recovery = null;
+  element("#plot-ppc").replaceChildren();
+  updateRunButton();
+  try {
+    const executor = new WorkerEngine();
+    const output = requireResult(
+      await priorPredictive({
+        model: compiled.ir,
+        data: boundDesignDocument(),
+        settings: { num_draws: 200 },
+        seed: integerValue("#seed"),
+        executor,
+      }),
+    )[0];
+    element("#plot-ppc").innerHTML = renderPriorPredictiveDensity(
+      priorPredictiveReplicates(compiled.ir, output.rawBytes),
+    );
+  } catch (error) {
+    showApplicationError(error);
+  } finally {
+    running = false;
+    updateRunButton();
+  }
+}
+
+async function runSimulation() {
+  if (compiled === null || running || dataMode !== "design") return;
+  running = true;
+  recovery = null;
+  simulated = false;
+  simulatedDocument = null;
+  simulatedTruth = null;
+  boundDocument = null;
+  mappingComplete = false;
+  renderMapping([]);
+  resetResults();
+  updateRunButton();
+  try {
+    const truth = currentTruth();
+    const executor = new WorkerEngine();
+    const output = requireResult(
+      await simulate({
+        model: compiled.ir,
+        data: boundDesignDocument(),
+        truth: truthDocument(truth),
+        seed: integerValue("#seed"),
+        executor,
+      }),
+    )[0];
+    simulatedDocument = completeDerivedScalars(
+      simulatedDataDocument(output.rawBytes),
+      requiredInputs(compiled.ir),
+    );
+    simulatedTruth = truth;
+    simulated = true;
+    runButton.textContent = "Sample on simulated data";
+    bindSimulated(requiredInputs(compiled.ir));
+  } catch (error) {
+    showApplicationError(error);
+  } finally {
+    running = false;
+    updateRunButton();
+  }
 }
 
 async function runStudy() {
   if (compiled === null || boundDocument === null || !mappingComplete || running) return;
   const settings = samplerSettings();
+  const truthForRecovery =
+    dataMode === "design" && simulated && simulatedTruth !== null
+      ? structuredClone(simulatedTruth)
+      : null;
   const executor = new WorkerEngine();
   const counts = Array.from({ length: settings.chains }, () => ({ draws: 0, divergences: 0 }));
   running = true;
@@ -275,6 +585,7 @@ async function runStudy() {
     divergences: 0,
   };
   resetResults();
+  recovery = null;
   renderProgress(counts);
   updateRunButton();
 
@@ -324,7 +635,7 @@ async function runStudy() {
         executor,
       }),
     )[0];
-    renderResults(fitTexts, diagnosed, predictive, prior);
+    renderResults(fitTexts, diagnosed, predictive, prior, truthForRecovery);
   } catch (error) {
     showApplicationError(error);
   } finally {
@@ -355,11 +666,13 @@ function renderProgress(counts) {
   }
 }
 
-function renderResults(fitTexts, diagnosed, predictive, prior) {
+function renderResults(fitTexts, diagnosed, predictive, prior, truth) {
   dashboardData = readDashboardData({ fits: fitTexts, diagnose: diagnosed.rawBytes });
+  recovery = truth === null ? null : recoverySummary(dashboardData, truth);
   renderChainPlot();
   element("#plot-esshat").innerHTML = renderEssRhat(dashboardData);
-  element("#plot-precis").innerHTML = renderPrecis(dashboardData);
+  element("#plot-precis").innerHTML =
+    truth === null ? renderPrecis(dashboardData) : renderPrecis(dashboardData, truth);
   element("#plot-ppc").innerHTML = renderDensityOverlay(
     predictivePlotData(compiled.ir, boundDocument, predictive.rawBytes),
   );

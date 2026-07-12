@@ -23,15 +23,34 @@
 
       <section id="pane-data">
         <h2>Data</h2>
-        <div class="field">
-          <label for="csv-input">CSV file</label>
-          <input id="csv-input" type="file" accept=".csv,text/csv">
+        <fieldset class="mode-switch">
+          <legend>Data mode</legend>
+          <label for="data-mode-observed"><input id="data-mode-observed" name="data-mode" type="radio" value="observed" checked> Observed</label>
+          <label for="data-mode-design"><input id="data-mode-design" name="data-mode" type="radio" value="design"> Design</label>
+        </fieldset>
+        <div id="observed-panel">
+          <div class="field">
+            <label for="csv-input">CSV file</label>
+            <input id="csv-input" type="file" accept=".csv,text/csv">
+          </div>
+          <div class="field">
+            <label for="json-input">Bayesite data document</label>
+            <textarea id="json-input" rows="8" spellcheck="false"></textarea>
+          </div>
+          <button id="json-load" type="button">Load JSON</button>
         </div>
-        <div class="field">
-          <label for="json-input">Bayesite data document</label>
-          <textarea id="json-input" rows="8" spellcheck="false"></textarea>
+        <div id="design-panel" hidden>
+          <h3>Design values</h3>
+          <table id="design-values">
+            <thead><tr><th>Input</th><th>Low</th><th>High</th><th>Rows</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <h3>Parameter truth</h3>
+          <table id="truth-values">
+            <thead><tr><th>Parameter</th><th>Truth</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
-        <button id="json-load" type="button">Load JSON</button>
         <table id="mapping-table">
           <thead><tr><th>Input</th><th>Source</th><th>Status</th><th>Transform</th></tr></thead>
           <tbody></tbody>
@@ -49,6 +68,10 @@
           <div class="field"><label for="max-treedepth">Max treedepth</label><input id="max-treedepth" type="number" min="1" value="10"></div>
           <button id="run-button" type="submit" disabled>Run sampler</button>
         </form>
+        <div id="design-run-controls" hidden>
+          <button id="run-prior-predictive" type="button" disabled>Run prior predictive</button>
+          <button id="run-simulate" type="button" disabled>Simulate data</button>
+        </div>
         <div id="progress" aria-live="polite"></div>
         <div id="results">
           <div class="result-controls">

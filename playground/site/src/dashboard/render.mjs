@@ -143,7 +143,7 @@ export function renderTrank(data, mode = "rank") {
   );
 }
 
-export function renderPrecis(data) {
+export function renderPrecis(data, truth) {
   const rows = data.parameters
     .map((parameter) => ({ parameter, values: parameter.chains.flat() }))
     .filter((row) => row.values.length > 0);
@@ -153,8 +153,14 @@ export function renderPrecis(data) {
     low: quantile(values, 0.055),
     high: quantile(values, 0.945),
   }));
-  const minimum = Math.min(0, ...summaries.map((summary) => summary.low));
-  const maximum = Math.max(0, ...summaries.map((summary) => summary.high));
+  const truthValues =
+    truth === undefined
+      ? []
+      : summaries
+          .filter((summary) => Object.hasOwn(truth, summary.label))
+          .map((summary) => truth[summary.label]);
+  const minimum = Math.min(0, ...summaries.map((summary) => summary.low), ...truthValues);
+  const maximum = Math.max(0, ...summaries.map((summary) => summary.high), ...truthValues);
   const span = maximum - minimum || 1;
   const x = (value) => 150 + ((value - minimum) / span) * 350;
   const height = 55 + summaries.length * 28;
@@ -165,7 +171,11 @@ export function renderPrecis(data) {
     "Precis",
     `<text x="18.00" y="22.00" fill="${ink}">Precis · mean and 89% interval</text><line x1="${f(zero)}" y1="35.00" x2="${f(zero)}" y2="${f(height - 15)}" stroke="${axis}"/>${summaries.map((summary, index) => {
       const y = 52 + index * 28;
-      return `<text x="18.00" y="${f(y + 4)}" fill="${ink}">${escape(summary.label)}</text><line x1="${f(x(summary.low))}" y1="${f(y)}" x2="${f(x(summary.high))}" y2="${f(y)}" stroke="${accent}" stroke-width="2"/><circle cx="${f(x(summary.mean))}" cy="${f(y)}" r="4.00" fill="${accent}"/><text x="${f(x(summary.high) + 5)}" y="${f(y + 4)}" fill="${muted}">${summary.mean.toPrecision(3)} [${summary.low.toPrecision(3)}, ${summary.high.toPrecision(3)}]</text>`;
+      const marker =
+        truth !== undefined && Object.hasOwn(truth, summary.label)
+          ? `<line class="truth-marker" data-parameter="${escape(summary.label)}" x1="${f(x(truth[summary.label]))}" y1="${f(y - 8)}" x2="${f(x(truth[summary.label]))}" y2="${f(y + 8)}" stroke="${danger}" stroke-width="2"/>`
+          : "";
+      return `<text x="18.00" y="${f(y + 4)}" fill="${ink}">${escape(summary.label)}</text><line x1="${f(x(summary.low))}" y1="${f(y)}" x2="${f(x(summary.high))}" y2="${f(y)}" stroke="${accent}" stroke-width="2"/><circle cx="${f(x(summary.mean))}" cy="${f(y)}" r="4.00" fill="${accent}"/><text x="${f(x(summary.high) + 5)}" y="${f(y + 4)}" fill="${muted}">${summary.mean.toPrecision(3)} [${summary.low.toPrecision(3)}, ${summary.high.toPrecision(3)}]</text>${marker}`;
     }).join("")}`,
   );
 }

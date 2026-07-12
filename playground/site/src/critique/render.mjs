@@ -8,6 +8,31 @@ const MUTED = "var(--muted)";
 const LINE = "var(--line-strong)";
 const ACCENT = "var(--accent)";
 
+export function renderPriorPredictiveDensity(replicates) {
+  if (replicates.length === 0 || replicates.some((values) => values.length === 0)) {
+    throw new Error("Prior predictive draws are required");
+  }
+  const densities = replicates.map((values) => gaussianKde(values));
+  const xs = densities.flatMap((density) => density.map((point) => point.x));
+  const ys = densities.flatMap((density) => density.map((point) => point.density));
+  const [minX, maxX] = extent(xs);
+  const maxY = Math.max(...ys, 0.001);
+  const px = scale(minX, maxX, 48, 520);
+  const py = scale(0, maxY, 220, 34);
+  const paths = densities
+    .map(
+      (density) =>
+        `<path d="${path(density.map((point) => [px(point.x), py(point.density)]))}" fill="none" stroke="${ACCENT}" opacity="0.24"/>`,
+    )
+    .join("");
+  return svg(
+    540,
+    260,
+    "Prior predictive density",
+    `<text x="12.00" y="20.00" fill="${INK}">prior predictive densities</text><line x1="48.00" y1="220.00" x2="520.00" y2="220.00" stroke="${LINE}"/>${paths}<text x="48.00" y="242.00" fill="${MUTED}">${minX.toPrecision(3)}</text><text x="478.00" y="242.00" fill="${MUTED}">${maxX.toPrecision(3)}</text>`,
+  );
+}
+
 export function renderDensityOverlay(data) {
   validatePredictive(data);
   const observed = gaussianKde(data.observed);
