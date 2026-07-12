@@ -2,7 +2,12 @@
 
 import { BayesiteAbi } from "./abi.mjs";
 import { artifactBytes, parseEngineOutput } from "./stream.mjs";
-import { EngineError } from "./types.mjs";
+import {
+  ENGINE_METADATA_URL,
+  ENGINE_VERSION,
+  ENGINE_WASM_URL,
+  EngineError,
+} from "./types.mjs";
 
 export class InProcessEngine {
   constructor(abi) {
@@ -38,6 +43,67 @@ export class InProcessEngine {
       isStreamCommand(request.command),
       request.command === "sample" ? options.onDrawBatch : undefined,
     );
+  }
+}
+
+export class WorkerEngine {
+  constructor(
+    engineVersion = ENGINE_VERSION,
+    wasmUrl = ENGINE_WASM_URL,
+    metadataUrl = ENGINE_METADATA_URL,
+  ) {
+    this.engineVersion = engineVersion;
+    this.wasmUrl = wasmUrl;
+    this.metadataUrl = metadataUrl;
+  }
+
+  /**
+   * @param {Record<string, unknown> & {command: string}} request
+   * @param {{chainId?: number, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void}} [options]
+   * @returns {Promise<import("./types.mjs").EngineOutput>}
+   */
+  execute(request, options = {}) {
+    const worker = new Worker(new URL("./worker/engine-worker.mjs", import.meta.url), {
+      type: "module",
+    });
+    const id = globalThis.crypto.randomUUID();
+    const message = {
+      type: "run",
+      id,
+      wasmUrl: this.wasmUrl,
+      metadataUrl: this.metadataUrl,
+      request,
+      chainId: options.chainId ?? 0,
+    };
+    return new Promise((resolve, reject) => {
+      worker.onmessage = (event) => {
+        const response = event.data;
+        if (response.id !== id) return;
+        if (response.type === "batch") {
+          options.onDrawBatch?.({ chainId: response.chainId, draws: response.draws });
+          return;
+        }
+        if (response.type === "started") return;
+        worker.terminate();
+        if (response.type === "error") {
+          reject(new EngineError(response.error.error, response.error.message));
+          return;
+        }
+        resolve({
+          rawBytes: response.rawBytes,
+          ...(response.header === undefined ? {} : { header: response.header }),
+          ...(response.trailer === undefined ? {} : { trailer: response.trailer }),
+          ...(response.modelDataFingerprint === undefined
+            ? {}
+            : { modelDataFingerprint: response.modelDataFingerprint }),
+        });
+      };
+      worker.onerror = (event) => {
+        worker.terminate();
+        reject(new EngineError("WorkerFailure", event.message));
+      };
+      worker.postMessage(message);
+    });
   }
 }
 

@@ -164,7 +164,7 @@ export async function sbc(inputs) {
   });
 }
 
-function mergeChainFits(fits) {
+export function mergeChainFits(fits) {
   const parsed = fits.map((fit, fitIndex) => {
     const lines = fit.trimEnd().split("\n");
     if (lines.length < 3) {
