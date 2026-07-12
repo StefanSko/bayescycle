@@ -144,11 +144,17 @@ export function requiredInputs(ir) {
 }
 
 /** Bind typed columns to model inputs and produce an engine data document. */
-export function bind(inputs, columns) {
+export function bind(inputs, columns, assignments = {}) {
+  const selectedColumn = (input) => {
+    const columnName = Object.hasOwn(assignments, input.name)
+      ? assignments[input.name]
+      : input.name;
+    return columns.find((candidate) => candidate.name === columnName);
+  };
   const vectorBindings = new Map();
   for (const input of inputs) {
     if (input.kind !== "vector") continue;
-    const column = columns.find((candidate) => candidate.name === input.name);
+    const column = selectedColumn(input);
     if (column !== undefined && column.dtype !== "string") vectorBindings.set(input.name, column);
   }
 
@@ -180,7 +186,7 @@ export function bind(inputs, columns) {
   const mapping = [];
   for (const input of inputs) {
     if (input.kind === "vector") {
-      const column = columns.find((candidate) => candidate.name === input.name);
+      const column = selectedColumn(input);
       if (column === undefined) {
         mapping.push({ input: input.name, source: null, status: "missing" });
       } else if (column.dtype === "string") {

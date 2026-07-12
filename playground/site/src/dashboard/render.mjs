@@ -24,14 +24,13 @@ export function renderEssRhat(data) {
     .sort((a, b) => compare(a.name, b.name));
   const height = Math.max(260, 78 + (available.length + missing.length) * rowGap);
   const bottom = height - 50;
-  const maxEss = Math.max(
-    data.drawCount,
-    ...available.map((parameter) => parameter.ess ?? 0),
-    1,
+  const maxEss = maximum(
+    available.map((parameter) => parameter.ess ?? 0),
+    Math.max(data.drawCount, 1),
   );
   const rhats = available.map((parameter) => parameter.rhat ?? 1);
-  const minRhat = Math.min(0.98, ...rhats);
-  const maxRhat = Math.max(1.05, ...rhats);
+  const minRhat = minimum(rhats, 0.98);
+  const maxRhat = maximum(rhats, 1.05);
   const x = (value) => left + (value / maxEss) * (right - left);
   const y = (value) =>
     bottom - ((value - minRhat) / (maxRhat - minRhat)) * (bottom - top);
@@ -74,11 +73,7 @@ export function renderEnergy(data) {
         ({ x }) =>
           Math.exp(-0.5 * ((x - mean) / sd) ** 2) / (sd * Math.sqrt(2 * Math.PI)),
       );
-      const maxY = Math.max(
-        ...kde.map((point) => point.density),
-        ...normal,
-        0.001,
-      );
+      const maxY = maximum(normal, maximum(kde.map((point) => point.density), 0.001));
       const y0 = 55 + chain * row;
       const plotBottom = y0 + 100;
       const px = (value) => 58 + ((value - minX) / (maxX - minX)) * 450;
@@ -123,14 +118,14 @@ export function renderTrank(data, mode = "rank") {
       const label = `<text x="18.00" y="${f(top + 10)}" fill="${ink}">${escape(parameter.label)} · n_eff ${parameter.ess === null ? "—" : String(Math.round(parameter.ess))}</text>`;
       if (mode === "trace") {
         const pooled = parameter.chains.flat();
-        const min = Math.min(...pooled);
-        const max = Math.max(...pooled);
+        const min = minimum(pooled);
+        const max = maximum(pooled);
         const span = max - min || 1;
-        const maxLength = Math.max(...parameter.chains.map((chain) => chain.length));
+        const maxLength = maximum(parameter.chains.map((chain) => chain.length));
         return `${label}<line x1="58.00" y1="${f(bottom)}" x2="510.00" y2="${f(bottom)}" stroke="${axis}"/>${parameter.chains.map((chain, chainIndex) => `<path d="${path(chain.map((value, draw) => [58 + (draw / Math.max(maxLength - 1, 1)) * 452, bottom - ((value - min) / span) * 66]))}" fill="none" stroke="${chainIndex === 0 ? accent : danger}" opacity="0.80"/>`).join("")}`;
       }
       const histograms = rankHistogram(parameter.chains);
-      const maxCount = Math.max(...histograms.flat(), 1);
+      const maxCount = maximum(histograms.flat(), 1);
       const binWidth = 452 / 20;
       return `${label}<line x1="58.00" y1="${f(bottom)}" x2="510.00" y2="${f(bottom)}" stroke="${axis}"/>${histograms.map((counts, chain) => counts.map((count, bin) => `<rect x="${f(58 + bin * binWidth + (chain * binWidth) / data.chainCount)}" y="${f(bottom - (count / maxCount) * 66)}" width="${f(binWidth / data.chainCount)}" height="${f((count / maxCount) * 66)}" fill="${chain === 0 ? accent : danger}" opacity="0.72"/>`).join("")).join("")}`;
     })
@@ -159,10 +154,16 @@ export function renderPrecis(data, truth) {
       : summaries
           .filter((summary) => Object.hasOwn(truth, summary.label))
           .map((summary) => truth[summary.label]);
-  const minimum = Math.min(0, ...summaries.map((summary) => summary.low), ...truthValues);
-  const maximum = Math.max(0, ...summaries.map((summary) => summary.high), ...truthValues);
-  const span = maximum - minimum || 1;
-  const x = (value) => 150 + ((value - minimum) / span) * 350;
+  const minimumValue = minimum(
+    truthValues,
+    minimum(summaries.map((summary) => summary.low), 0),
+  );
+  const maximumValue = maximum(
+    truthValues,
+    maximum(summaries.map((summary) => summary.high), 0),
+  );
+  const span = maximumValue - minimumValue || 1;
+  const x = (value) => 150 + ((value - minimumValue) / span) * 350;
   const height = 55 + summaries.length * 28;
   const zero = x(0);
   return svg(
@@ -186,6 +187,18 @@ function svg(width, height, label, content) {
 
 function f(value) {
   return value.toFixed(2);
+}
+
+function minimum(values, initial = Infinity) {
+  let result = initial;
+  for (const value of values) result = Math.min(result, value);
+  return result;
+}
+
+function maximum(values, initial = -Infinity) {
+  let result = initial;
+  for (const value of values) result = Math.max(result, value);
+  return result;
 }
 
 function path(points) {

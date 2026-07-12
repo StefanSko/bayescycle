@@ -12,6 +12,7 @@ import {
   truthDocument,
 } from "./design.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
+import { subsampleReplicates } from "./subsample.mjs";
 import { bind, importCsv, importJson, requiredInputs, standardize } from "../data/index.mjs";
 import {
   quantile,
@@ -34,6 +35,7 @@ const UTF8 = new TextDecoder();
 const editorHost = element('[data-testid="model-editor"]');
 const hashChip = element("#ir-hash-chip");
 const compileError = element("#compile-error");
+const runError = element("#run-error");
 const mappingBody = element("#mapping-table tbody");
 const runButton = element("#run-button");
 const progress = element("#progress");
@@ -55,6 +57,7 @@ let compileTimer;
 let compileGeneration = 0;
 let compiled = null;
 let dataSource = null;
+let columnAssignments = {};
 let boundDocument = null;
 let mappingComplete = false;
 let running = false;
@@ -191,6 +194,7 @@ async function shareProject() {
     const payload = preparedShare?.json === json ? preparedShare.payload : await encodeProject(project);
     window.location.hash = `project=${payload}`;
     shareUrl.value = window.location.href;
+    element(".share-output").hidden = false;
     shareWarning.hidden = payload.length <= FRAGMENT_WARN_LENGTH;
   } catch (error) {
     showApplicationError(error);
@@ -293,6 +297,7 @@ async function loadExample() {
         throw new Error(`Example data request failed: HTTP ${dataResponse.status}`);
       }
       element("#json-input").value = await dataResponse.text();
+      loadJson();
     }
   } catch (error) {
     showApplicationError(error);
@@ -383,6 +388,7 @@ async function loadCsv(event) {
       original: imported.columns,
       standardized: new Set(),
     };
+    columnAssignments = {};
     rebindData();
   } catch (error) {
     showApplicationError(error);
@@ -465,12 +471,13 @@ function bindCsv(inputs) {
   const columns = dataSource.original.map((column) =>
     dataSource.standardized.has(column.name) ? standardize(column) : column,
   );
-  const result = bind(inputs, columns);
+  const result = bind(inputs, columns, columnAssignments);
   boundDocument = result.document;
   mappingComplete = result.complete;
   renderMapping(
     result.mapping,
-    columns.filter((column) => column.dtype !== "string" && column.values.length > 1),
+    columns.filter((column) => column.dtype !== "string"),
+    inputs,
   );
 }
 
@@ -637,21 +644,57 @@ function dataVariable(value) {
   return jsonObject(value) && Array.isArray(value.shape) && Array.isArray(value.values);
 }
 
-function renderMapping(mapping, numericValues = []) {
-  const toggles = new Set(numericValues.map((value) => value.name));
+function renderMapping(mapping, numericValues = [], inputs = []) {
+  const toggles = new Set(
+    numericValues
+      .filter((value) => value.values === undefined || value.values.length > 1)
+      .map((value) => value.name),
+  );
+  const inputKinds = new Map(inputs.map((input) => [input.name, input.kind]));
   mappingBody.replaceChildren();
   for (const row of mapping) {
     const tableRow = document.createElement("tr");
     tableRow.dataset.input = row.input;
     tableRow.dataset.status = row.status;
+    const sourceName = row.source?.startsWith("column:")
+      ? row.source.slice("column:".length)
+      : row.input;
     tableRow.append(
       tableCell(row.input),
       tableCell(row.source ?? "—"),
       tableCell(row.status, `mapping-${row.status}`),
-      transformCell(row.input, toggles.has(row.input)),
+      columnPickerCell(row.input, inputKinds.get(row.input), numericValues),
+      transformCell(sourceName, toggles.has(sourceName)),
     );
     mappingBody.append(tableRow);
   }
+}
+
+function columnPickerCell(inputName, inputKind, columns) {
+  const cell = document.createElement("td");
+  if (dataSource?.kind !== "csv" || inputKind !== "vector") return cell;
+  const select = document.createElement("select");
+  select.className = "column-picker";
+  select.dataset.input = inputName;
+  select.setAttribute("aria-label", `Column for ${inputName}`);
+  const automatic = document.createElement("option");
+  automatic.value = "";
+  automatic.textContent = "match by name…";
+  select.append(automatic);
+  for (const column of columns) {
+    const option = document.createElement("option");
+    option.value = column.name;
+    option.textContent = column.name;
+    select.append(option);
+  }
+  select.value = columnAssignments[inputName] ?? "";
+  select.addEventListener("change", () => {
+    if (select.value === "") delete columnAssignments[inputName];
+    else columnAssignments[inputName] = select.value;
+    rebindData();
+  });
+  cell.append(select);
+  return cell;
 }
 
 function transformCell(name, available) {
@@ -694,6 +737,7 @@ async function runPriorPredictive() {
   if (compiled === null || running || dataMode !== "design") return;
   running = true;
   recovery = null;
+  clearRunError();
   element("#plot-ppc").replaceChildren();
   updateRunButton();
   try {
@@ -708,10 +752,11 @@ async function runPriorPredictive() {
       }),
     )[0];
     element("#plot-ppc").innerHTML = renderPriorPredictiveDensity(
-      priorPredictiveReplicates(compiled.ir, output.rawBytes),
+      subsampleReplicates(priorPredictiveReplicates(compiled.ir, output.rawBytes)),
     );
+    element("#results").hidden = false;
   } catch (error) {
-    showApplicationError(error);
+    showRunError(error);
   } finally {
     running = false;
     updateRunButton();
@@ -722,6 +767,7 @@ async function runSimulation() {
   if (compiled === null || running || dataMode !== "design") return;
   running = true;
   recovery = null;
+  clearRunError();
   simulated = false;
   simulatedDocument = null;
   simulatedTruth = null;
@@ -751,7 +797,7 @@ async function runSimulation() {
     runButton.textContent = "Sample on simulated data";
     bindSimulated(requiredInputs(compiled.ir));
   } catch (error) {
-    showApplicationError(error);
+    showRunError(error);
   } finally {
     running = false;
     updateRunButton();
@@ -776,6 +822,7 @@ async function runStudy() {
   };
   resetResults();
   recovery = null;
+  clearRunError();
   renderProgress(counts);
   updateRunButton();
 
@@ -827,7 +874,7 @@ async function runStudy() {
     )[0];
     renderResults(fitTexts, diagnosed, predictive, prior, truthForRecovery);
   } catch (error) {
-    showApplicationError(error);
+    showRunError(error);
   } finally {
     running = false;
     updateRunButton();
@@ -875,6 +922,7 @@ function renderResults(fitTexts, diagnosed, predictive, prior, truth) {
   element("#download-fit").disabled = false;
   element("#download-diagnostics").disabled = false;
   for (const button of document.querySelectorAll(".download-svg")) button.disabled = false;
+  element("#results").hidden = false;
 }
 
 function renderChainPlot() {
@@ -903,8 +951,10 @@ function predictivePlotData(ir, documentValue, bytes) {
       labels.push(`${name}[${String(index)}]`);
     }
   }
-  const replicates = ndjsonDraws(bytes).map((draw) =>
-    names.flatMap((name) => arrayValue(draw.values?.[name])),
+  const replicates = subsampleReplicates(
+    ndjsonDraws(bytes).map((draw) =>
+      names.flatMap((name) => arrayValue(draw.values?.[name])),
+    ),
   );
   return { observed, labels, replicates };
 }
@@ -954,6 +1004,16 @@ function resetResults() {
 function showApplicationError(error) {
   compileError.textContent = error instanceof Error ? error.message : String(error);
   compileError.hidden = false;
+}
+
+function clearRunError() {
+  runError.textContent = "";
+  runError.hidden = true;
+}
+
+function showRunError(error) {
+  runError.textContent = error instanceof Error ? error.message : String(error);
+  runError.hidden = false;
 }
 
 function downloadPlot(name) {

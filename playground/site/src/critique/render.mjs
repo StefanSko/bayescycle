@@ -16,7 +16,7 @@ export function renderPriorPredictiveDensity(replicates) {
   const xs = densities.flatMap((density) => density.map((point) => point.x));
   const ys = densities.flatMap((density) => density.map((point) => point.density));
   const [minX, maxX] = extent(xs);
-  const maxY = Math.max(...ys, 0.001);
+  const maxY = maximum(ys, 0.001);
   const px = scale(minX, maxX, 48, 520);
   const py = scale(0, maxY, 220, 34);
   const paths = densities
@@ -41,7 +41,7 @@ export function renderDensityOverlay(data) {
   const xs = all.flatMap((density) => density.map((point) => point.x));
   const ys = all.flatMap((density) => density.map((point) => point.density));
   const [minX, maxX] = extent(xs);
-  const maxY = Math.max(...ys, 0.001);
+  const maxY = maximum(ys, 0.001);
   const px = scale(minX, maxX, 48, 520);
   const py = scale(0, maxY, 220, 34);
   const replicatePaths = replicated
@@ -69,10 +69,9 @@ export function renderPriorPosteriorOverlay(parameters) {
       }
       const densities = overlayDensities(parameter.prior, parameter.posterior);
       const { posterior, prior, minX, maxX } = densities;
-      const maxY = Math.max(
-        ...posterior.map((point) => point.density),
-        ...prior.map((point) => point.density),
-        0.001,
+      const maxY = maximum(
+        prior.map((point) => point.density),
+        maximum(posterior.map((point) => point.density), 0.001),
       );
       const top = 43 + index * 160;
       const bottom = top + 105;
@@ -101,7 +100,7 @@ function overlayDensities(priorValue, posteriorValues) {
   const priorXs =
     sampledPrior?.map((point) => point.x) ??
     analyticGrid(analyticPrior ?? { kind: "normal" }, posteriorXs);
-  const [minX, maxX] = extent([...posteriorXs, ...priorXs]);
+  const [minX, maxX] = extent(posteriorXs.concat(priorXs));
   const xs = grid(minX, maxX);
   const prior =
     sampledPrior ??
@@ -149,8 +148,8 @@ function analyticGrid(prior, posterior) {
   const scaleValue = prior.scale ?? 1 / (prior.rate ?? 1);
   const location = prior.kind === "normal" ? (prior.location ?? 0) : 0;
   return grid(
-    Math.min(...posterior, location - (prior.kind === "normal" ? 4 : 0) * scaleValue),
-    Math.max(...posterior, location + 6 * scaleValue),
+    minimum(posterior, location - (prior.kind === "normal" ? 4 : 0) * scaleValue),
+    maximum(posterior, location + 6 * scaleValue),
   );
 }
 
@@ -210,9 +209,21 @@ function grid(min, max) {
 }
 
 function extent(values) {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = minimum(values);
+  const max = maximum(values);
   return min === max ? [min - 0.5, max + 0.5] : [min, max];
+}
+
+function minimum(values, initial = Infinity) {
+  let result = initial;
+  for (const value of values) result = Math.min(result, value);
+  return result;
+}
+
+function maximum(values, initial = -Infinity) {
+  let result = initial;
+  for (const value of values) result = Math.max(result, value);
+  return result;
 }
 
 function scale(min, max, start, end) {

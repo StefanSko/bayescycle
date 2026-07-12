@@ -25,7 +25,7 @@
           <select id="examples-menu"><option value="">Examples…</option></select>
           <button id="share-button" type="button" disabled>Share</button>
         </div>
-        <div class="share-output">
+        <div class="share-output" hidden>
           <label for="share-url">Share URL</label>
           <input id="share-url" type="url" readonly>
           <div id="share-warning" role="status" hidden>This share link is unusually long and may not work in every browser.</div>
@@ -67,14 +67,17 @@
             <tbody></tbody>
           </table>
         </div>
-        <table id="mapping-table">
-          <thead><tr><th>Input</th><th>Source</th><th>Status</th><th>Transform</th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <div class="mapping-scroll">
+          <table id="mapping-table">
+            <thead><tr><th>Input</th><th>Source</th><th>Status</th><th>Column</th><th>Transform</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
       <section id="pane-run">
         <h2>Run</h2>
+        <pre id="run-error" role="alert" hidden></pre>
         <form id="sampler-settings">
           <div class="field"><label for="chains">Chains</label><input id="chains" type="number" min="1" value="4"></div>
           <div class="field"><label for="num-warmup">Warmup</label><input id="num-warmup" type="number" min="0" value="1000"></div>
@@ -89,7 +92,7 @@
           <button id="run-simulate" type="button" disabled>Simulate data</button>
         </div>
         <div id="progress" aria-live="polite"></div>
-        <div id="results">
+        <div id="results" hidden>
           <div class="result-controls">
             <label for="plot-mode">Chain plot</label>
             <select id="plot-mode"><option value="rank">rank</option><option value="trace">trace</option></select>

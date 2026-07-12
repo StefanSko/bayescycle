@@ -74,8 +74,10 @@ textarea { width: 100%; resize: vertical; font-family: var(--mono); }
 [data-testid="model-editor"] { min-height: 32rem; border: 1px solid var(--line-strong); }
 .cm-editor { min-height: 32rem; font-family: var(--mono); }
 .cm-scroller { overflow: auto; }
-#compile-error { overflow: auto; max-height: 14rem; padding: 0.75rem; white-space: pre-wrap; color: var(--danger); background: var(--code-bg); font: 0.75rem/1.4 var(--mono); }
-#mapping-table { width: 100%; margin-top: 1rem; border-collapse: collapse; font-size: 0.85rem; }
+#compile-error, #run-error { overflow: auto; max-height: 14rem; padding: 0.75rem; white-space: pre-wrap; color: var(--danger); background: var(--code-bg); font: 0.75rem/1.4 var(--mono); }
+.mapping-scroll { margin-top: 1rem; overflow-x: auto; }
+#mapping-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+#mapping-table .column-picker { max-width: 9rem; }
 th, td { padding: 0.45rem; border-bottom: 1px solid var(--line); text-align: left; }
 .mapping-bound { color: var(--accent); }
 .mapping-missing, .mapping-incompatible { color: var(--danger); }
