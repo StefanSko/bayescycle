@@ -11,9 +11,25 @@
       <h1>Playground</h1>
       <p>Author, bind, sample, and inspect a Bayesian model in your browser.</p>
     </header>
+    <section id="share-interstitial" aria-label="Review shared project" hidden>
+      <p class="share-interstitial-title">Review shared project</p>
+      <p>this link contains model code; review before running</p>
+      <pre id="share-source"></pre>
+      <button id="share-load" type="button">Load project</button>
+    </section>
     <main>
       <section id="pane-model">
         <h2>Model</h2>
+        <div class="model-actions">
+          <label for="examples-menu">Example model</label>
+          <select id="examples-menu"><option value="">Examples…</option></select>
+          <button id="share-button" type="button" disabled>Share</button>
+        </div>
+        <div class="share-output">
+          <label for="share-url">Share URL</label>
+          <input id="share-url" type="url" readonly>
+          <div id="share-warning" role="status" hidden>This share link is unusually long and may not work in every browser.</div>
+        </div>
         <div class="compile-status">
           <span id="ir-hash-chip" aria-live="polite"></span>
         </div>

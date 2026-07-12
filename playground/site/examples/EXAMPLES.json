@@ -1,0 +1,68 @@
+[
+  {
+    "id": "linear_regression",
+    "title": "Linear regression",
+    "source_path": "linear_regression.py"
+  },
+  {
+    "id": "eight_schools_non_centered",
+    "title": "Eight schools (non-centered)",
+    "source_path": "eight_schools_non_centered.py",
+    "data_path": "eight_schools_non_centered.data.json"
+  },
+  {
+    "id": "varying_intercepts_poisson",
+    "title": "Varying intercepts (Poisson)",
+    "source_path": "varying_intercepts_poisson.py"
+  },
+  {
+    "id": "composed_measurements",
+    "title": "Composed measurements",
+    "source_path": "composed_measurements.py"
+  },
+  {
+    "id": "ordinal_regression",
+    "title": "Ordinal regression",
+    "source_path": "ordinal_regression.py"
+  },
+  {
+    "id": "partially_observed_mvn",
+    "title": "Partially observed MVN",
+    "source_path": "partially_observed_mvn.py"
+  },
+  {
+    "id": "bounded_rates",
+    "title": "Bounded rates",
+    "source_path": "bounded_rates.py"
+  },
+  {
+    "id": "censored_exponential",
+    "title": "Censored exponential",
+    "source_path": "censored_exponential.py"
+  },
+  {
+    "id": "interval_censored_normal",
+    "title": "Interval-censored normal",
+    "source_path": "interval_censored_normal.py"
+  },
+  {
+    "id": "vector_bounds_named_owner",
+    "title": "Vector bounds with named owner",
+    "source_path": "vector_bounds_named_owner.py"
+  },
+  {
+    "id": "divorce_generative",
+    "title": "Divorce (generative)",
+    "source_path": "generative.py"
+  },
+  {
+    "id": "divorce_naive",
+    "title": "Divorce (naive)",
+    "source_path": "naive.py"
+  },
+  {
+    "id": "divorce_adjusted",
+    "title": "Divorce (adjusted)",
+    "source_path": "adjusted.py"
+  }
+]

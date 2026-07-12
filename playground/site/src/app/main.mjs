@@ -11,6 +11,7 @@ import {
   designDocument,
   truthDocument,
 } from "./design.mjs";
+import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { bind, importCsv, importJson, requiredInputs, standardize } from "../data/index.mjs";
 import {
   quantile,
@@ -44,6 +45,11 @@ const designBody = element("#design-values tbody");
 const truthBody = element("#truth-values tbody");
 const priorPredictiveButton = element("#run-prior-predictive");
 const simulateButton = element("#run-simulate");
+const shareButton = element("#share-button");
+const shareUrl = element("#share-url");
+const shareWarning = element("#share-warning");
+const shareInterstitial = element("#share-interstitial");
+const examplesMenu = element("#examples-menu");
 
 let compileTimer;
 let compileGeneration = 0;
@@ -61,6 +67,11 @@ let simulated = false;
 let simulatedDocument = null;
 let simulatedTruth = null;
 let recovery = null;
+let pendingSharedForms = null;
+let sharedProject = null;
+let examples = new Map();
+let preparedShare = null;
+let sharePreparation = 0;
 
 const editor = new EditorView({
   doc: "",
@@ -69,7 +80,10 @@ const editor = new EditorView({
     python(),
     EditorView.contentAttributes.of({ "aria-label": "Model source" }),
     EditorView.updateListener.of((update) => {
-      if (update.docChanged) scheduleCompile();
+      if (!update.docChanged) return;
+      updateShareButton();
+      void prepareSharePayload();
+      scheduleCompile();
     }),
   ],
   parent: editorHost,
@@ -101,6 +115,13 @@ element("#json-load").addEventListener("click", loadJson);
 element("#csv-input").addEventListener("change", loadCsv);
 element("#data-mode-observed").addEventListener("change", changeDataMode);
 element("#data-mode-design").addEventListener("change", changeDataMode);
+shareButton.addEventListener("pointerdown", () => void prepareSharePayload());
+shareButton.addEventListener("click", () => void shareProject());
+element("#share-load").addEventListener("click", loadSharedProject);
+examplesMenu.addEventListener("change", () => void loadExample());
+element("#sampler-settings").addEventListener("input", () => void prepareSharePayload());
+designBody.addEventListener("input", () => void prepareSharePayload());
+truthBody.addEventListener("input", () => void prepareSharePayload());
 priorPredictiveButton.addEventListener("click", () => void runPriorPredictive());
 simulateButton.addEventListener("click", () => void runSimulation());
 element("#sampler-settings").addEventListener("submit", (event) => {
@@ -118,6 +139,164 @@ element("#download-diagnostics").addEventListener("click", () => {
 });
 for (const button of document.querySelectorAll(".download-svg")) {
   button.addEventListener("click", () => downloadPlot(button.dataset.plot));
+}
+
+void initializeExamples();
+void initializeSharedProject();
+
+function updateShareButton() {
+  shareButton.disabled = editor.state.doc.length === 0;
+}
+
+function currentShareProject() {
+  const settings = samplerSettings();
+  return {
+    v: 1,
+    source: editor.state.doc.toString(),
+    dataMode,
+    design: currentDesign(),
+    truth: currentTruth(),
+    sampler: {
+      chains: settings.chains,
+      num_warmup: settings.numWarmup,
+      num_draws: settings.numDraws,
+      seed: settings.seed,
+      target_accept: settings.targetAccept,
+      max_treedepth: settings.maxTreedepth,
+    },
+  };
+}
+
+async function prepareSharePayload() {
+  if (editor.state.doc.length === 0) {
+    preparedShare = null;
+    return;
+  }
+  const project = currentShareProject();
+  const json = JSON.stringify(project);
+  const generation = ++sharePreparation;
+  try {
+    const payload = await encodeProject(project);
+    if (generation === sharePreparation) preparedShare = { json, payload };
+  } catch (error) {
+    showApplicationError(error);
+  }
+}
+
+async function shareProject() {
+  if (editor.state.doc.length === 0) return;
+  try {
+    const project = currentShareProject();
+    const json = JSON.stringify(project);
+    const payload = preparedShare?.json === json ? preparedShare.payload : await encodeProject(project);
+    window.location.hash = `project=${payload}`;
+    shareUrl.value = window.location.href;
+    shareWarning.hidden = payload.length <= FRAGMENT_WARN_LENGTH;
+  } catch (error) {
+    showApplicationError(error);
+  }
+}
+
+async function initializeSharedProject() {
+  if (!window.location.hash.startsWith("#project=")) return;
+  const payload = window.location.hash.slice("#project=".length);
+  try {
+    sharedProject = await decodeProject(payload);
+    element("#share-source").textContent = sharedProject.source;
+    shareInterstitial.hidden = false;
+  } catch (error) {
+    showApplicationError(error);
+  }
+}
+
+function loadSharedProject() {
+  if (sharedProject === null) return;
+  applySamplerSettings(sharedProject.sampler);
+  setDataMode(sharedProject.dataMode);
+  pendingSharedForms = {
+    design: sharedProject.design ?? {},
+    truth: sharedProject.truth ?? {},
+  };
+  shareInterstitial.hidden = true;
+  editor.dispatch({
+    changes: {
+      from: 0,
+      to: editor.state.doc.length,
+      insert: sharedProject.source,
+    },
+  });
+  sharedProject = null;
+}
+
+function applySamplerSettings(settings) {
+  const values = {
+    "#chains": settings.chains,
+    "#num-warmup": settings.num_warmup,
+    "#num-draws": settings.num_draws,
+    "#seed": settings.seed,
+    "#target-accept": settings.target_accept,
+    "#max-treedepth": settings.max_treedepth,
+  };
+  for (const [selector, value] of Object.entries(values)) {
+    if (value !== undefined) element(selector).value = String(value);
+  }
+}
+
+function applySharedForms(forms) {
+  for (const row of designBody.querySelectorAll("tr[data-design-name]")) {
+    const values = forms.design[row.dataset.designName];
+    if (values === undefined) continue;
+    for (const field of ["low", "high", "n"]) {
+      if (values[field] !== undefined) {
+        row.querySelector(`[data-design-field="${field}"]`).value = String(values[field]);
+      }
+    }
+  }
+  for (const row of truthBody.querySelectorAll("tr[data-truth-name]")) {
+    const value = forms.truth[row.dataset.truthName];
+    if (value !== undefined) row.querySelector("input[type=number]").value = String(value);
+  }
+}
+
+async function initializeExamples() {
+  try {
+    const response = await fetch("/site/examples/EXAMPLES.json");
+    if (!response.ok) throw new Error(`Examples manifest request failed: HTTP ${response.status}`);
+    const entries = await response.json();
+    examples = new Map(entries.map((entry) => [entry.id, entry]));
+    for (const entry of entries) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.title;
+      examplesMenu.append(option);
+    }
+  } catch (error) {
+    showApplicationError(error);
+  }
+}
+
+async function loadExample() {
+  const entry = examples.get(examplesMenu.value);
+  if (entry === undefined) return;
+  try {
+    const sourceResponse = await fetch(`/site/examples/${entry.source_path}`);
+    if (!sourceResponse.ok) {
+      throw new Error(`Example source request failed: HTTP ${sourceResponse.status}`);
+    }
+    const source = await sourceResponse.text();
+    editor.dispatch({
+      changes: { from: 0, to: editor.state.doc.length, insert: source },
+    });
+    if (entry.data_path !== undefined) {
+      const dataResponse = await fetch(`/site/examples/${entry.data_path}`);
+      if (!dataResponse.ok) {
+        throw new Error(`Example data request failed: HTTP ${dataResponse.status}`);
+      }
+      element("#json-input").value = await dataResponse.text();
+    }
+  } catch (error) {
+    showApplicationError(error);
+  }
 }
 
 function scheduleCompile() {
@@ -155,6 +334,11 @@ async function compileSource(generation) {
   compiled = { ...result, ir };
   hashChip.textContent = result.irHash;
   renderDesignTables(ir);
+  if (pendingSharedForms !== null) {
+    applySharedForms(pendingSharedForms);
+    pendingSharedForms = null;
+  }
+  void prepareSharePayload();
   compileError.textContent = "";
   compileError.hidden = true;
   rebindData();
@@ -162,11 +346,17 @@ async function compileSource(generation) {
 
 function changeDataMode(event) {
   if (!event.target.checked) return;
-  dataMode = event.target.value;
+  setDataMode(event.target.value);
+}
+
+function setDataMode(mode) {
+  dataMode = mode === "design" ? "design" : "observed";
+  element(`#data-mode-${dataMode}`).checked = true;
   observedPanel.hidden = dataMode !== "observed";
   designPanel.hidden = dataMode !== "design";
   designRunControls.hidden = dataMode !== "design";
   rebindData();
+  void prepareSharePayload();
 }
 
 function loadJson() {
