@@ -101,4 +101,15 @@ export default [
       assert(result.executionContext === "worker", `unexpected context: ${result.executionContext}`);
     },
   },
+  {
+    name: "compiler timeout resets the isolated worker",
+    fn: async () => {
+      let timedOut = false;
+      try { await compile("while True:\n    pass\n", { timeoutMs: 50 }); }
+      catch (error) { timedOut = String(error).includes("timed out"); }
+      assert(timedOut, "non-terminating source did not time out");
+      const result = await compile(await fetchText("linear_regression.py"));
+      assert(result.ok, `compiler did not recover after timeout: ${result.message}`);
+    },
+  },
 ];

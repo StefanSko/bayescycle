@@ -9,6 +9,7 @@ CASES = [
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "compiler executes in a dedicated worker",
+    "compiler timeout resets the isolated worker",
 ]
 
 
