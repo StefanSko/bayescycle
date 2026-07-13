@@ -2,12 +2,16 @@ import { compile } from "../compile/index.mjs";
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
 import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
+import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { initialState, reduce } from "./state.mjs";
 
 const runtime = new BrowserRuntime();
 let state = initialState();
 let revision = 0;
+let pendingSharedProject;
+const examples = new Map();
 const objectUrls = new Set();
+const EXAMPLES_ROOT = new URL("../../examples/", import.meta.url);
 
 const source = element("#model-source");
 const observed = element("#observed-data");
@@ -24,6 +28,106 @@ element("#sample-button").addEventListener("click", () => void samplePosterior()
 element("#prior-button").addEventListener("click", () => void runPriorPredictive());
 element("#simulate-button").addEventListener("click", () => void simulateData());
 element("#sample-simulated-button").addEventListener("click", () => void sampleSimulated());
+element("#examples-menu").addEventListener("change", () => void loadExample());
+element("#share-button").addEventListener("click", () => void shareProject());
+element("#load-shared").addEventListener("click", loadSharedProject);
+
+async function initializeExamples() {
+  try {
+    const response = await fetch(new URL("EXAMPLES.json", EXAMPLES_ROOT));
+    if (!response.ok) throw new Error("Could not load examples");
+    for (const entry of await response.json()) {
+      examples.set(entry.id, entry);
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.label;
+      element("#examples-menu").append(option);
+    }
+  } catch (error) {
+    element("#compile-error").hidden = false;
+    element("#compile-error").textContent = message(error);
+  }
+}
+
+async function loadExample() {
+  const entry = examples.get(element("#examples-menu").value);
+  if (entry === undefined) return;
+  const [modelSource, observedText, designText, truthText] = await Promise.all([
+    fetchAsset(entry.source), fetchOptionalAsset(entry.observed),
+    fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
+  ]);
+  setProject({ source: modelSource, observed: observedText, design: designText, truth: truthText });
+}
+
+async function fetchAsset(path) {
+  const response = await fetch(new URL(path, EXAMPLES_ROOT));
+  if (!response.ok) throw new Error(`Could not load example asset ${path}`);
+  return response.text();
+}
+
+function fetchOptionalAsset(path) {
+  return path === undefined ? Promise.resolve("") : fetchAsset(path);
+}
+
+async function shareProject() {
+  const project = {
+    v: 1,
+    source: source.value,
+    observed: observed.value,
+    design: design.value,
+    truth: truth.value,
+    sampler: samplerSettings(),
+  };
+  const payload = await encodeProject(project);
+  const url = new URL(window.location.href);
+  url.hash = `project=${payload}`;
+  element("#share-url").value = url.href;
+  element("#share-output").hidden = false;
+  element("#share-warning").hidden = payload.length <= FRAGMENT_WARN_LENGTH;
+}
+
+async function initializeSharedProject() {
+  if (!window.location.hash.startsWith("#project=")) return;
+  try {
+    pendingSharedProject = await decodeProject(window.location.hash.slice(9));
+    element("#share-source").textContent = String(pendingSharedProject.source ?? "");
+    element("#share-review").hidden = false;
+  } catch (error) {
+    element("#share-review").hidden = false;
+    element("#share-source").textContent = message(error);
+    element("#load-shared").disabled = true;
+  }
+}
+
+function loadSharedProject() {
+  if (pendingSharedProject === undefined) return;
+  setProject({
+    source: String(pendingSharedProject.source ?? ""),
+    observed: String(pendingSharedProject.observed ?? ""),
+    design: String(pendingSharedProject.design ?? ""),
+    truth: String(pendingSharedProject.truth ?? ""),
+  });
+  applySamplerSettings(pendingSharedProject.sampler);
+  element("#share-review").hidden = true;
+}
+
+function setProject(project) {
+  for (const [control, value] of [[source, project.source], [observed, project.observed], [design, project.design], [truth, project.truth]]) {
+    control.textContent = value;
+    control.value = value;
+  }
+  dispatch({ type: "source-edited", source: project.source, revision: ++revision });
+  dispatch({ type: "documents-edited", documents: { observed: project.observed, design: project.design, truth: project.truth }, revision: ++revision });
+  element("#share-output").hidden = true;
+}
+
+function applySamplerSettings(settings) {
+  if (settings === null || typeof settings !== "object") return;
+  const fields = { chains: "#chains", num_warmup: "#warmup", num_draws: "#draws", seed: "#seed", target_accept: "#target-accept", max_treedepth: "#max-treedepth" };
+  for (const [name, selector] of Object.entries(fields)) {
+    if (typeof settings[name] === "number") element(selector).value = String(settings[name]);
+  }
+}
 
 function documentsEdited() {
   element("#progress").replaceChildren();
@@ -179,6 +283,7 @@ function render() {
   compileError.hidden = state.compile.status !== "failed";
   compileError.textContent = state.compile.status === "failed" ? state.compile.error : "";
   element("#compile-button").disabled = state.compile.status === "compiling" || state.source.trim() === "";
+  element("#share-button").disabled = state.source.trim() === "";
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
   element("#sample-button").disabled = unavailable || observed.value.trim() === "";
   element("#prior-button").disabled = unavailable || design.value.trim() === "";
@@ -255,3 +360,5 @@ function element(selector) {
 function message(error) { return error instanceof Error ? error.message : String(error); }
 
 render();
+void initializeExamples();
+void initializeSharedProject();

@@ -8,6 +8,12 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+  <aside id="share-review" class="share-review" aria-labelledby="share-review-heading" hidden>
+    <h2 id="share-review-heading">Review shared model</h2>
+    <p>This link contains Python model source. Nothing has run yet. Review it before loading, then compile explicitly.</p>
+    <pre id="share-source"></pre>
+    <button id="load-shared" class="primary" type="button">Load reviewed project</button>
+  </aside>
   <header class="page-header">
     <div><p class="eyebrow">Runs entirely in this browser</p><h1>Bayescycle Playground</h1></div>
     <p class="lede">Model source and data stay in this tab. One universal Bayesite engine runs every model.</p>
@@ -15,6 +21,12 @@
   <main>
     <section aria-labelledby="model-heading">
       <div class="section-heading"><h2 id="model-heading">1 · Model</h2><span id="ir-hash" class="hash" hidden></span></div>
+      <div class="project-actions">
+        <label for="examples-menu">Example</label>
+        <select id="examples-menu"><option value="">Choose a project…</option></select>
+        <button id="share-button" type="button" disabled>Share project</button>
+      </div>
+      <div id="share-output" hidden><label for="share-url">Reviewed share URL</label><input id="share-url" type="url" readonly><p id="share-warning" class="hint" hidden>Long URL: some applications may truncate it.</p></div>
       <label for="model-source">Bayeswire model source</label>
       <textarea id="model-source" rows="20" spellcheck="false" placeholder="Paste a @model class…"></textarea>
       <button id="compile-button" class="primary" type="button">Compile model</button>

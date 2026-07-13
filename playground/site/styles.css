@@ -21,9 +21,14 @@ main { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 1rem; padding-
 section { background: var(--paper); border: 1px solid var(--line); border-radius: .75rem; padding: 1rem; box-shadow: 0 8px 30px rgb(53 43 26 / 5%); }
 .section-heading { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
 label { display: block; margin: .75rem 0 .3rem; font-size: .82rem; font-weight: 700; }
-textarea, input { border: 1px solid #bdb5a7; border-radius: .35rem; background: #fff; color: inherit; }
+textarea, input, select { border: 1px solid #bdb5a7; border-radius: .35rem; background: #fff; color: inherit; }
 textarea { width: 100%; resize: vertical; padding: .6rem; font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 4; }
-input { width: 100%; padding: .42rem; margin-top: .25rem; font: inherit; }
+input, select { width: 100%; padding: .42rem; margin-top: .25rem; font: inherit; }
+.project-actions { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: .5rem; }
+.project-actions label { grid-column: 1 / -1; margin-bottom: -.25rem; }
+.project-actions button { white-space: nowrap; }
+.share-review { width: min(64rem, calc(100% - 2rem)); margin: 1rem auto 0; border-color: #c99736; background: #fff7df; }
+.share-review pre { max-height: 20rem; overflow: auto; padding: .75rem; background: #fff; white-space: pre-wrap; }
 button { border: 1px solid var(--green); border-radius: .4rem; padding: .58rem .8rem; background: transparent; color: var(--green); font-weight: 750; cursor: pointer; }
 button.primary { margin-top: .75rem; background: var(--green); color: white; }
 .simulation-actions { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .65rem; }
