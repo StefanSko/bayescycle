@@ -1,4 +1,4 @@
-import { compile } from "/site/src/compile/index.mjs";
+import { compile, resetCompiler } from "/site/src/compile/index.mjs";
 
 const FIXTURE_ROOT = "/tests/fixtures/corpus/";
 const UTF8 = new TextDecoder();
@@ -42,7 +42,7 @@ export default [
           fetchText(`${name}.py`),
           fetchText(`${name}.json`),
         ]);
-        const result = await compile(source);
+        const result = await compile(source, { reuseWorker: true });
         assert(result.ok, `${name} compilation failed:\n${result.traceback}`);
         assert(
           result.irHash === hashes[name],
@@ -52,6 +52,7 @@ export default [
         const golden = canonicalString(JSON.parse(goldenText));
         assert(actual === golden, `${name} IR differs from its golden document`);
       }
+      resetCompiler();
     },
   },
   {
@@ -111,6 +112,24 @@ export default [
       assert(poisoned.irHash === hashes.linear_regression, `user serializer changed hash: ${poisoned.irHash}`);
       const clean = await compile(await fetchText("linear_regression.py"));
       assert(clean.ok && clean.irHash === hashes.linear_regression, "serializer mutation leaked into the next compile");
+    },
+  },
+  {
+    name: "trusted serializer freezes helper dependencies",
+    fn: async () => {
+      const source = `import bayeswire.ir\nbayeswire.ir.meta_to_dict = lambda _meta: {}\n${await fetchText("linear_regression.py")}`;
+      const result = await compile(source);
+      const hashes = JSON.parse(await fetchText("hashes.json"));
+      assert(result.ok && result.irHash === hashes.linear_regression, `serializer helper mutation changed IR: ${result.irHash}`);
+    },
+  },
+  {
+    name: "trusted serializer freezes JSON encoder dependencies",
+    fn: async () => {
+      const source = `import json\nclass FakeEncoder:\n    def __init__(self, **_kwargs): pass\n    def encode(self, _value): return "{}"\njson.dumps.__globals__["JSONEncoder"] = FakeEncoder\n${await fetchText("linear_regression.py")}`;
+      const result = await compile(source);
+      const hashes = JSON.parse(await fetchText("hashes.json"));
+      assert(result.ok && result.irHash === hashes.linear_regression, `JSON encoder mutation changed IR: ${result.irHash}`);
     },
   },
   {
