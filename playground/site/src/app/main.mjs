@@ -335,7 +335,9 @@ function render() {
   const hash = element("#ir-hash");
   hash.hidden = state.compile.status !== "compiled";
   hash.textContent = state.compile.status === "compiled" ? `sha256:${state.compile.irHash}` : "";
-  element("#compile-status").textContent = state.compile.status === "compiling" ? "Compiling in an isolated worker…" : "";
+  element("#compile-status").textContent = state.compile.status === "compiling"
+    ? "Compiling in an isolated worker…"
+    : state.compile.status === "compiled" ? "Model compiled successfully." : "";
   const compileError = element("#compile-error");
   compileError.hidden = state.compile.status !== "failed";
   compileError.textContent = state.compile.status === "failed" ? state.compile.error : "";
