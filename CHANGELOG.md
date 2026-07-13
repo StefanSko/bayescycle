@@ -10,6 +10,14 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+### Added
+
+- Add a fully client-side Bayescycle Playground: compile Bayeswire models in
+  an isolated Pyodide worker, run the pinned Bayesite wasm engine per chain,
+  normalize explicit JSON data/design/truth documents, inspect posterior
+  diagnostics and SVG plots, simulate and check recovery, download standard
+  run-directory artifacts, and share reviewed projects without a backend.
+
 ## [0.5.0] - 2026-07-10
 
 ### Added

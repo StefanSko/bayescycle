@@ -32,6 +32,17 @@ element("#examples-menu").addEventListener("change", () => void loadExample());
 element("#share-button").addEventListener("click", () => void shareProject());
 element("#load-shared").addEventListener("click", loadSharedProject);
 
+async function initializeVersion() {
+  try {
+    const response = await fetch(new URL("../../VERSION.json", import.meta.url));
+    if (!response.ok) return;
+    const value = await response.json();
+    if (typeof value.version === "string") element("#playground-version").textContent = `v${value.version}`;
+  } catch {
+    // The static fallback remains visible when the version sidecar is unavailable.
+  }
+}
+
 async function initializeExamples() {
   try {
     const response = await fetch(new URL("EXAMPLES.json", EXAMPLES_ROOT));
@@ -361,5 +372,6 @@ function element(selector) {
 function message(error) { return error instanceof Error ? error.message : String(error); }
 
 render();
+void initializeVersion();
 void initializeExamples();
 void initializeSharedProject();

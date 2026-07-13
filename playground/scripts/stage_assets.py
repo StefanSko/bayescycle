@@ -5,6 +5,7 @@ import json
 import shutil
 import tarfile
 import tempfile
+import tomllib
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -160,10 +161,22 @@ def verify_engine() -> str:
     return actual_sha256
 
 
+def stage_version() -> str:
+    package_file = REPOSITORY_ROOT / "packages" / "bayescycle" / "pyproject.toml"
+    with package_file.open("rb") as file:
+        version = tomllib.load(file)["project"]["version"]
+    (REPOSITORY_ROOT / "playground" / "site" / "VERSION.json").write_text(
+        json.dumps({"version": version}, separators=(",", ":")) + "\n"
+    )
+    return str(version)
+
+
 def main() -> None:
+    version = stage_version()
     bayeswire_count = stage_bayeswire()
     pyodide_status = stage_pyodide()
     engine_sha256 = verify_engine()
+    print(f"playground: staged lockstep version {version}")
     print(f"bayeswire: staged {bayeswire_count} Python files (corpus excluded)")
     print(f"pyodide: {pyodide_status}")
     print(f"engine: verified {engine_sha256}")
