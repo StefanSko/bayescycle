@@ -38,8 +38,8 @@ def assert_design_defaults(page: Page) -> None:
     }
     for name in ("M", "A"):
         row = page.locator(f'#design-values tr[data-design-name="{name}"]')
-        expect(row.locator('[data-design-field="low"]')).to_have_value("-1")
-        expect(row.locator('[data-design-field="high"]')).to_have_value("1")
+        expect(row.locator('[data-design-field="low"]')).to_have_value("0.5")
+        expect(row.locator('[data-design-field="high"]')).to_have_value("1.5")
         expect(row.locator('[data-design-field="n"]')).to_have_value("50")
 
     truth_rows = page.locator("#truth-values tr[data-truth-name]")
@@ -69,7 +69,17 @@ def test_simulate_then_recover(page: Page, base_url: str) -> None:
     select_design_mode(page)
     assert_design_defaults(page)
 
-    truth = {"alpha": 0.5, "beta_m": -1.0, "beta_a": 1.0, "sigma": 1.0}
+    # This test's subject is slope identifiability under decorrelated designs,
+    # not the default ranges — set a centered design explicitly (centered
+    # covariates keep alpha decoupled from the slopes), and pick truths the
+    # model's own priors (alpha ~ N(0, 0.2), betas ~ N(0, 0.5)) can reach
+    # without fighting shrinkage.
+    for name in ("M", "A"):
+        row = page.locator(f'#design-values tr[data-design-name="{name}"]')
+        row.locator('[data-design-field="low"]').fill("-1")
+        row.locator('[data-design-field="high"]').fill("1")
+
+    truth = {"alpha": 0.2, "beta_m": -0.5, "beta_a": 0.5, "sigma": 1.0}
     for name, value in truth.items():
         page.locator(f'#truth-values tr[data-truth-name="{name}"] input[type="number"]').fill(
             str(value)

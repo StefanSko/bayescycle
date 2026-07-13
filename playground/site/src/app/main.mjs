@@ -48,6 +48,7 @@ const designBody = element("#design-values tbody");
 const truthBody = element("#truth-values tbody");
 const priorPredictiveButton = element("#run-prior-predictive");
 const simulateButton = element("#run-simulate");
+const simulateReason = element("#simulate-reason");
 const shareButton = element("#share-button");
 const shareUrl = element("#share-url");
 const shareWarning = element("#share-warning");
@@ -71,6 +72,8 @@ let simulated = false;
 let simulatedDocument = null;
 let simulatedTruth = null;
 let recovery = null;
+let resolvedTruthSizes = {};
+let truthSizeError = null;
 let pendingSharedForms = null;
 let sharedProject = null;
 let examples = new Map();
@@ -316,6 +319,8 @@ function scheduleCompile() {
   simulatedDocument = null;
   simulatedTruth = null;
   recovery = null;
+  resolvedTruthSizes = {};
+  truthSizeError = null;
   runButton.textContent = "Run sampler";
   resetResults();
   hashChip.textContent = "";
@@ -346,6 +351,7 @@ async function compileSource(generation) {
     applySharedForms(pendingSharedForms);
     pendingSharedForms = null;
   }
+  refreshTruthSizes();
   void prepareSharePayload();
   compileError.textContent = "";
   compileError.hidden = true;
@@ -588,9 +594,12 @@ function renderDesignTables(ir) {
   }
 
   truthBody.replaceChildren();
+  const paramsByName = new Map(ir.model.params.map((parameter) => [parameter.name, parameter]));
   for (const [name, value] of Object.entries(defaultTruth(ir))) {
     const row = document.createElement("tr");
     row.dataset.truthName = name;
+    const sizeName = paramsByName.get(name)?.value.size?.name;
+    if (sizeName !== undefined) row.dataset.truthSize = sizeName;
     const valueCell = numberInputCell(
       `truth-${name}`,
       `Truth for ${name}`,
@@ -598,7 +607,7 @@ function renderDesignTables(ir) {
       value,
     );
     valueCell.querySelector("input").dataset.truthValue = "";
-    row.append(tableCell(name), valueCell);
+    row.append(tableCell(sizeName === undefined ? name : `${name} × ${sizeName}`), valueCell);
     truthBody.append(row);
   }
 }
@@ -651,6 +660,7 @@ function currentTruth() {
 }
 
 function designInputsChanged() {
+  refreshTruthSizes();
   void prepareSharePayload();
   simulated = false;
   simulatedDocument = null;
@@ -663,8 +673,39 @@ function designInputsChanged() {
   rebindData();
 }
 
+function refreshTruthSizes() {
+  resolvedTruthSizes = {};
+  truthSizeError = null;
+  if (compiled === null) return;
+  try {
+    const documentValue = boundDesignDocument();
+    for (const parameter of compiled.ir.model.params) {
+      const size = parameter.value.size;
+      if (size === null || size === undefined) continue;
+      if (size.node !== "DataRef") {
+        throw new Error(`cannot resolve truth size for ${parameter.name}`);
+      }
+      const value = documentValue.variables[size.name]?.values?.[0];
+      if (!Number.isInteger(value) || value < 1) {
+        throw new Error(
+          `cannot resolve truth size ${size.name} for ${parameter.name} from design values`,
+        );
+      }
+      resolvedTruthSizes[parameter.name] = value;
+    }
+  } catch (error) {
+    truthSizeError = error instanceof Error ? error.message : String(error);
+  }
+}
+
 function boundDesignDocument() {
   const generated = designDocument(currentDesign());
+  for (const name of indexDataNames(compiled.ir.model)) {
+    const variable = generated.variables[name];
+    if (variable === undefined || variable.shape.length === 0) continue;
+    variable.dtype = "int64";
+    variable.values = Array(variable.values.length).fill(0);
+  }
   const columns = Object.entries(generated.variables)
     .filter(([, variable]) => variable.shape.length > 0)
     .map(([name, variable]) => ({
@@ -677,6 +718,18 @@ function boundDesignDocument() {
     if (variable.shape.length === 0) documentValue.variables[name] = variable;
   }
   return documentValue;
+}
+
+function indexDataNames(value, names = new Set()) {
+  if (Array.isArray(value)) {
+    for (const entry of value) indexDataNames(entry, names);
+  } else if (value !== null && typeof value === "object") {
+    if (value.node === "ScalarIndex" && value.expr?.node === "DataRef") {
+      names.add(value.expr.name);
+    }
+    for (const entry of Object.values(value)) indexDataNames(entry, names);
+  }
+  return names;
 }
 
 function simulatedDataDocument(bytes) {
@@ -731,6 +784,20 @@ function priorPredictiveReplicates(ir, bytes) {
   const names = ir.model.observed_nodes.map((node) => node.name);
   return ndjsonDraws(bytes).map((draw) =>
     names.flatMap((name) => arrayValue(draw.values?.[name])),
+  );
+}
+
+function expandedRecoveryTruth(data, truth) {
+  return Object.fromEntries(
+    Object.entries(truth).flatMap(([name, value]) => {
+      const parameters = data.parameters.filter(
+        (candidate) => candidate.name === name || candidate.label === name,
+      );
+      if (parameters.length === 0) {
+        throw new Error(`Posterior draws are missing truth parameter ${name}`);
+      }
+      return parameters.map((parameter) => [parameter.label, value]);
+    }),
   );
 }
 
@@ -843,7 +910,9 @@ function updateRunButton() {
   runButton.disabled = running || compiled === null || !mappingComplete;
   const designDisabled = running || compiled === null || dataMode !== "design";
   priorPredictiveButton.disabled = designDisabled;
-  simulateButton.disabled = designDisabled;
+  simulateButton.disabled = designDisabled || truthSizeError !== null;
+  simulateReason.textContent = truthSizeError === null ? "" : truthSizeError;
+  simulateReason.hidden = truthSizeError === null || dataMode !== "design";
 }
 
 async function runPriorPredictive() {
@@ -896,7 +965,7 @@ async function runSimulation() {
       await simulate({
         model: compiled.ir,
         data: boundDesignDocument(),
-        truth: truthDocument(truth),
+        truth: truthDocument(truth, resolvedTruthSizes),
         seed: integerValue("#seed"),
         executor,
       }),
@@ -1019,11 +1088,13 @@ function renderProgress(counts) {
 
 function renderResults(fitTexts, downloadableFit, diagnosed, predictive, prior, truth) {
   dashboardData = readDashboardData({ fits: fitTexts, diagnose: diagnosed.rawBytes });
-  recovery = truth === null ? null : recoverySummary(dashboardData, truth);
+  const expandedTruth = truth === null ? null : expandedRecoveryTruth(dashboardData, truth);
+  recovery = expandedTruth === null ? null : recoverySummary(dashboardData, expandedTruth);
   renderChainPlot();
   element("#plot-esshat").innerHTML = renderEssRhat(dashboardData);
-  element("#plot-precis").innerHTML =
-    truth === null ? renderPrecis(dashboardData) : renderPrecis(dashboardData, truth);
+  element("#plot-precis").innerHTML = expandedTruth === null
+    ? renderPrecis(dashboardData)
+    : renderPrecis(dashboardData, expandedTruth);
   element("#plot-ppc").innerHTML = renderDensityOverlay(
     predictivePlotData(compiled.ir, boundDocument, predictive.rawBytes),
   );

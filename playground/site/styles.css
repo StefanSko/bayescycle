@@ -88,6 +88,7 @@ th, td { padding: 0.45rem; border-bottom: 1px solid var(--line); text-align: lef
 #run-button { grid-column: 1 / -1; background: var(--accent); color: var(--card); }
 #design-run-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.6rem; }
 #run-prior-predictive, #run-simulate { background: var(--accent); color: var(--card); }
+#simulate-reason { grid-column: 1 / -1; margin: 0; color: var(--danger); font-size: 0.85rem; }
 #progress { margin: 0.75rem 0; font: 0.8rem/1.6 var(--mono); }
 .result-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 #results article { overflow: auto; margin-top: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }

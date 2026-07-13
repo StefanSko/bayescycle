@@ -33,13 +33,23 @@ export function designDocument(design) {
   return { format: DATA_FORMAT, variables };
 }
 
-export function truthDocument(truth) {
+export function truthDocument(truth, sizes = {}) {
   const variables = Object.fromEntries(
     Object.entries(truth).map(([name, value]) => {
       if (!Number.isFinite(value)) {
         throw new Error(`Truth value for ${name} must be finite`);
       }
-      return [name, { dtype: "float64", shape: [], values: [value] }];
+      const size = sizes[name];
+      if (size === undefined) {
+        return [name, { dtype: "float64", shape: [], values: [value] }];
+      }
+      if (!Number.isInteger(size) || size < 1) {
+        throw new Error(`Truth size for ${name} must be a positive integer`);
+      }
+      return [
+        name,
+        { dtype: "float64", shape: [size], values: Array(size).fill(value) },
+      ];
     }),
   );
   return { format: DATA_FORMAT, variables };
@@ -55,7 +65,6 @@ export function defaultTruth(ir) {
 }
 
 export function designDefaults(ir) {
-  const indexInputs = indexDataNames(ir.model);
   const vectors = ir.model.data.filter((input) => {
     const schema = input.value.schema;
     return schema.dims?.length === 1 || schema.rank === 1;
@@ -73,25 +82,9 @@ export function designDefaults(ir) {
       })
       .map((input) => [
         input.name,
-        vectors.includes(input)
-          ? indexInputs.has(input.name)
-            ? { low: 0, high: 0, n: 50 }
-            : { low: -1, high: 1, n: 50 }
-          : { value: 2 },
+        vectors.includes(input) ? { low: 0.5, high: 1.5, n: 50 } : { value: 2 },
       ]),
   );
-}
-
-function indexDataNames(value, names = new Set()) {
-  if (Array.isArray(value)) {
-    for (const entry of value) indexDataNames(entry, names);
-  } else if (value !== null && typeof value === "object") {
-    if (value.node === "ScalarIndex" && value.expr?.node === "DataRef") {
-      names.add(value.expr.name);
-    }
-    for (const entry of Object.values(value)) indexDataNames(entry, names);
-  }
-  return names;
 }
 
 function fnv1a(value) {

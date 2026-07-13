@@ -121,9 +121,12 @@ export default [
         { alpha: 0, beta_m: 0, beta_a: 0, sigma: 1 },
         "constraint-aware truth defaults differ",
       );
+      // Positive default range: design values feed arbitrary data slots —
+      // including scale parameters like eight-schools sigma — and negative
+      // scales make the engine reject the out-of-the-box run.
       assertJson(
         designDefaults(ir),
-        { M: { low: -1, high: 1, n: 50 }, A: { low: -1, high: 1, n: 50 } },
+        { M: { low: 0.5, high: 1.5, n: 50 }, A: { low: 0.5, high: 1.5, n: 50 } },
         "vector design defaults differ",
       );
     },
