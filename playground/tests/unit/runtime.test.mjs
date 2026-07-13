@@ -15,7 +15,7 @@ export default [
       assert(result.artifacts.length === 1, `unexpected artifacts: ${result.artifacts.length}`);
       assert(result.artifacts[0].name === "diagnostics.json", `unexpected name: ${result.artifacts[0].name}`);
       const report = JSON.parse(UTF8.decode(result.artifacts[0].bytes));
-      assert(report.format === "bayesite.diagnostics.v0", `unexpected report: ${report.format}`);
+      assert(report.diagnostics_format === "v0-provisional", `unexpected report: ${report.diagnostics_format}`);
     },
   },
   {
