@@ -19,6 +19,24 @@ export default [
     },
   },
   {
+    name: "prior predictive ignores sampler-only settings",
+    fn: async () => {
+      const runtime = new BrowserRuntime();
+      const model = await (await fetch("/tests/fixtures/corpus/linear_regression.json")).text();
+      const data = JSON.stringify({
+        format: "bayescycle.data.json.v1",
+        variables: { x: { dtype: "float64", shape: [3], values: [-1, 0, 1] } },
+      });
+      const result = await runtime.run({
+        operation: "prior-predictive",
+        modelIr: model,
+        data,
+        settings: { num_draws: 4, num_warmup: 10, max_treedepth: 8, target_accept: 0.9, seed: 3 },
+      });
+      assert(result.artifacts[0]?.name === "prior_predictive.ndjson", "prior artifact missing");
+    },
+  },
+  {
     name: "runtime sampling returns valid merged posterior and progress",
     fn: async () => {
       const runtime = new BrowserRuntime();
