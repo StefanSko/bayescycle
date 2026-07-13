@@ -102,6 +102,9 @@ operation cannot erase an already completed posterior.
 
 ## Security and trust
 
+[`playground/invariants.md`](../playground/invariants.md) is the normative
+browser trust boundary and lists its explicit non-guarantees.
+
 User model source executes only in a dedicated compiler worker. That worker is
 sent source but never data, truth, posterior draws, or other project artifacts;
 it is terminated after success, failure, or timeout. Worker messages are

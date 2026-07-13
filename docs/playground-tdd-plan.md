@@ -1,6 +1,7 @@
 # Playground v0 — red→green execution plan
 
-Companion to [`playground-plan.md`](playground-plan.md). Each work order has a
+Companion to [`playground-plan.md`](playground-plan.md) and the normative
+[`playground/invariants.md`](../playground/invariants.md). Each work order has a
 RED commit containing reviewed tests and importable stubs, followed by a GREEN
 commit that does not modify the frozen tests. A discovered specification defect
 stops the green pass and is corrected in a separate test-review commit.
@@ -45,3 +46,47 @@ uv run pytest tests -q
 
 At every green gate the running app is inspected with Rodney in addition to the
 automated browser suite. Findings become a new RED test before a fix.
+
+## Disposable-compiler consolidation
+
+The initial vertical slice is complete. The following work orders consolidate
+its security boundary without claiming source-to-IR attestation. They adapt the
+existing implementation; they do not rebuild the playground.
+
+10. **R9 freeze the boundary.** Add `playground/invariants.md`, reconcile the
+    runtime protocol and PR wording with its trust model, and stop automatic
+    review fixes that would expand the security claim without first changing
+    the invariant document.
+11. **R10 runtime-owned compilation.** RED architecture and lifecycle tests
+    require the UI to call `runtime.compile(source)`, prohibit direct compiler
+    and engine imports from application code, require source-only requests, and
+    cover worker termination after startup failure, success, compile failure,
+    malformed response, worker error, timeout, and cancellation. GREEN moves
+    compilation behind `BrowserRuntime`, injects test doubles at its narrow
+    boundary, and removes production worker reuse.
+12. **R11 untrusted compile artifact.** RED tests require a later golden corpus
+    compile to survive earlier module poisoning, require the client to ignore a
+    false worker digest and hash exact received bytes, and bound malformed and
+    oversized output. GREEN replaces serializer cloning and the custom JSON
+    encoder with Bayeswire's ordinary canonical serializer, computes SHA-256 in
+    the trusted client, and treats returned IR as user-controlled bytes.
+13. **R12 engine handoff.** RED browser tests prove that no project document is
+    sent to the compiler, compilation terminates before engine work begins,
+    external-origin requests remain blocked, and malformed IR cannot become a
+    successful inference operation. GREEN makes only the minimum protocol and
+    error-surface changes needed at those boundaries; it does not introduce an
+    import allowlist or new sandbox claim.
+14. **R13 execute each test once.** RED harness accounting proves each named
+    JavaScript case runs once per validation invocation. GREEN removes the
+    pytest pattern that reruns a complete JavaScript suite for every case and
+    replaces the production `reuseWorker` test shortcut with test isolation
+    that does not weaken lifecycle invariants.
+15. **R14 reconcile and dogfood.** Update `playground-plan.md`,
+    `playground-runtime-v0.md`, UI security copy, and the PR description. Run
+    format/lint, all 60+ browser checks, root guards, fresh-browser observed and
+    simulation Rodney walks, and publication-path checks. Any behavioral defect
+    gets its own new RED/GREEN pair.
+16. **R15 bounded final review.** Request one final review against the explicit
+    invariant document. Fix in-scope correctness defects with RED/GREEN pairs;
+    document or decline suggestions that assume a stronger non-goal. Merge only
+    after the final head has complete CI and no unresolved in-scope finding.
