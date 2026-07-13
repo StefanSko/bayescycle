@@ -118,6 +118,7 @@ function setProject(project) {
   }
   dispatch({ type: "source-edited", source: project.source, revision: ++revision });
   dispatch({ type: "documents-edited", documents: { observed: project.observed, design: project.design, truth: project.truth }, revision: ++revision });
+  element("#simulation-documents").open = project.design.trim() !== "" || project.truth.trim() !== "";
   element("#share-output").hidden = true;
 }
 
