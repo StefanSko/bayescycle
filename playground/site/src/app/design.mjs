@@ -5,6 +5,12 @@ const DATA_FORMAT = "bayescycle.data.json.v1";
 export function designDocument(design) {
   const variables = Object.fromEntries(
     Object.entries(design).map(([name, row]) => {
+      if (Object.hasOwn(row, "value")) {
+        if (!Number.isInteger(row.value) || row.value < 1) {
+          throw new Error(`Design scalar ${name} must be a positive integer`);
+        }
+        return [name, { dtype: "int64", shape: [], values: [row.value] }];
+      }
       const n = row.n ?? 50;
       if (
         !Number.isFinite(row.low) ||
@@ -49,14 +55,43 @@ export function defaultTruth(ir) {
 }
 
 export function designDefaults(ir) {
+  const indexInputs = indexDataNames(ir.model);
+  const vectors = ir.model.data.filter((input) => {
+    const schema = input.value.schema;
+    return schema.dims?.length === 1 || schema.rank === 1;
+  });
+  const derivedScalars = new Set(
+    vectors.flatMap((input) => input.value.schema.dims?.map((dim) => dim.name) ?? []),
+  );
   return Object.fromEntries(
     ir.model.data
       .filter((input) => {
+        if (vectors.includes(input)) return true;
         const schema = input.value.schema;
-        return schema.dims?.length === 1 || schema.rank === 1;
+        const scalar = (schema.dims?.length ?? 0) === 0 && !(schema.rank > 0);
+        return scalar && !derivedScalars.has(input.name);
       })
-      .map((input) => [input.name, { low: -1, high: 1, n: 50 }]),
+      .map((input) => [
+        input.name,
+        vectors.includes(input)
+          ? indexInputs.has(input.name)
+            ? { low: 0, high: 0, n: 50 }
+            : { low: -1, high: 1, n: 50 }
+          : { value: 2 },
+      ]),
   );
+}
+
+function indexDataNames(value, names = new Set()) {
+  if (Array.isArray(value)) {
+    for (const entry of value) indexDataNames(entry, names);
+  } else if (value !== null && typeof value === "object") {
+    if (value.node === "ScalarIndex" && value.expr?.node === "DataRef") {
+      names.add(value.expr.name);
+    }
+    for (const entry of Object.values(value)) indexDataNames(entry, names);
+  }
+  return names;
 }
 
 function fnv1a(value) {

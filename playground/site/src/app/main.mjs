@@ -124,8 +124,8 @@ shareButton.addEventListener("click", () => void shareProject());
 element("#share-load").addEventListener("click", loadSharedProject);
 examplesMenu.addEventListener("change", () => void loadExample());
 element("#sampler-settings").addEventListener("input", () => void prepareSharePayload());
-designBody.addEventListener("input", () => void prepareSharePayload());
-truthBody.addEventListener("input", () => void prepareSharePayload());
+designBody.addEventListener("input", designInputsChanged);
+truthBody.addEventListener("input", designInputsChanged);
 priorPredictiveButton.addEventListener("click", () => void runPriorPredictive());
 simulateButton.addEventListener("click", () => void runSimulation());
 element("#sampler-settings").addEventListener("submit", (event) => {
@@ -251,7 +251,8 @@ function applySharedForms(forms) {
   for (const row of designBody.querySelectorAll("tr[data-design-name]")) {
     const values = forms.design[row.dataset.designName];
     if (values === undefined) continue;
-    for (const field of ["low", "high", "n"]) {
+    const fields = row.dataset.designKind === "scalar" ? ["value"] : ["low", "high", "n"];
+    for (const field of fields) {
       if (values[field] !== undefined) {
         row.querySelector(`[data-design-field="${field}"]`).value = String(values[field]);
       }
@@ -316,6 +317,7 @@ function scheduleCompile() {
   simulatedTruth = null;
   recovery = null;
   runButton.textContent = "Run sampler";
+  resetResults();
   hashChip.textContent = "";
   compileError.hidden = true;
   renderMapping([]);
@@ -534,15 +536,54 @@ function numericJsonVariables(documentValue) {
 
 function renderDesignTables(ir) {
   designBody.replaceChildren();
-  for (const [name, defaults] of Object.entries(designDefaults(ir))) {
+  const defaultsByName = designDefaults(ir);
+  for (const [name, defaults] of Object.entries(defaultsByName)) {
     const row = document.createElement("tr");
     row.dataset.designName = name;
-    row.append(
-      tableCell(name),
-      numberInputCell(`design-${name}-low`, `Low for ${name}`, "low", defaults.low),
-      numberInputCell(`design-${name}-high`, `High for ${name}`, "high", defaults.high),
-      numberInputCell(`design-${name}-n`, `Rows for ${name}`, "n", defaults.n, true),
-    );
+    if (Object.hasOwn(defaults, "value")) {
+      row.dataset.designKind = "scalar";
+      row.append(
+        tableCell(name),
+        tableCell("—"),
+        tableCell("—"),
+        numberInputCell(
+          `design-${name}-value`,
+          `Scalar value for ${name}`,
+          "value",
+          defaults.value,
+          true,
+        ),
+      );
+    } else {
+      row.dataset.designKind = "vector";
+      row.append(
+        tableCell(name),
+        numberInputCell(`design-${name}-low`, `Low for ${name}`, "low", defaults.low),
+        numberInputCell(`design-${name}-high`, `High for ${name}`, "high", defaults.high),
+        numberInputCell(`design-${name}-n`, `Rows for ${name}`, "n", defaults.n, true),
+      );
+    }
+    designBody.append(row);
+  }
+  const designedNames = new Set(Object.keys(defaultsByName));
+  const inputs = requiredInputs(ir);
+  for (const input of inputs) {
+    if (input.kind !== "scalar" || designedNames.has(input.name)) continue;
+    const derived = input.synthetic === true ||
+      inputs.some(
+        (candidate) => candidate.kind === "vector" && candidate.dims.includes(input.name),
+      );
+    if (!derived) continue;
+    const row = document.createElement("tr");
+    row.dataset.designAutoName = input.name;
+    const automaticCell = document.createElement("td");
+    const automatic = document.createElement("input");
+    automatic.type = "text";
+    automatic.value = "auto";
+    automatic.readOnly = true;
+    automatic.setAttribute("aria-label", `Automatic value for ${input.name}`);
+    automaticCell.append(automatic);
+    row.append(tableCell(input.name), tableCell("auto"), tableCell("auto"), automaticCell);
     designBody.append(row);
   }
 
@@ -581,14 +622,22 @@ function numberInputCell(id, labelText, field, value, integer = false) {
 
 function currentDesign() {
   return Object.fromEntries(
-    [...designBody.querySelectorAll("tr[data-design-name]")].map((row) => [
-      row.dataset.designName,
-      {
-        low: Number(row.querySelector('[data-design-field="low"]').value),
-        high: Number(row.querySelector('[data-design-field="high"]').value),
-        n: Number(row.querySelector('[data-design-field="n"]').value),
-      },
-    ]),
+    [...designBody.querySelectorAll("tr[data-design-name]")].map((row) => {
+      if (row.dataset.designKind === "scalar") {
+        return [
+          row.dataset.designName,
+          { value: Number(row.querySelector('[data-design-field="value"]').value) },
+        ];
+      }
+      return [
+        row.dataset.designName,
+        {
+          low: Number(row.querySelector('[data-design-field="low"]').value),
+          high: Number(row.querySelector('[data-design-field="high"]').value),
+          n: Number(row.querySelector('[data-design-field="n"]').value),
+        },
+      ];
+    }),
   );
 }
 
@@ -601,14 +650,33 @@ function currentTruth() {
   );
 }
 
+function designInputsChanged() {
+  void prepareSharePayload();
+  simulated = false;
+  simulatedDocument = null;
+  simulatedTruth = null;
+  recovery = null;
+  boundDocument = null;
+  mappingComplete = false;
+  runButton.textContent = "Run sampler";
+  resetResults();
+  rebindData();
+}
+
 function boundDesignDocument() {
   const generated = designDocument(currentDesign());
-  const columns = Object.entries(generated.variables).map(([name, variable]) => ({
-    name,
-    dtype: variable.dtype,
-    values: variable.values,
-  }));
-  return bind(requiredInputs(compiled.ir), columns).document;
+  const columns = Object.entries(generated.variables)
+    .filter(([, variable]) => variable.shape.length > 0)
+    .map(([name, variable]) => ({
+      name,
+      dtype: variable.dtype,
+      values: variable.values,
+    }));
+  const documentValue = bind(requiredInputs(compiled.ir), columns).document;
+  for (const [name, variable] of Object.entries(generated.variables)) {
+    if (variable.shape.length === 0) documentValue.variables[name] = variable;
+  }
+  return documentValue;
 }
 
 function simulatedDataDocument(bytes) {
@@ -1039,6 +1107,7 @@ function resetResults() {
   dashboardData = null;
   fitDownload = null;
   diagnosticsDownload = null;
+  element("#results").hidden = true;
   for (const id of ["trank", "esshat", "precis", "ppc", "overlay"]) {
     element(`#plot-${id}`).replaceChildren();
   }
