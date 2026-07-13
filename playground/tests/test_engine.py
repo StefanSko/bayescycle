@@ -10,6 +10,7 @@ CASES = [
     "sample yields one output per chain and streams draws",
     "diagnose merges the two chain fits",
     "malformed IR returns a typed engine error",
+    "exports all nine verbs",
 ]
 
 

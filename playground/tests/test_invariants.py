@@ -14,6 +14,8 @@ VENDOR_ROOT = SITE_ROOT / "vendor"
 
 def test_javascript_cases_are_not_parameterized_as_repeated_suites() -> None:
     for path in (PLAYGROUND_ROOT / "tests").glob("test_*.py"):
+        if path == Path(__file__):
+            continue
         source = path.read_text()
         if "run_suite" in source:
             assert "@pytest.mark.parametrize" not in source, path
