@@ -7,6 +7,7 @@ CASES = [
     "runtime returns named diagnostic artifacts",
     "prior predictive ignores sampler-only settings",
     "runtime preserves exact model bytes and returns enveloped run inputs",
+    "runtime serializes accepted object data into the sample artifact",
     "runtime sampling returns valid merged posterior and progress",
 ]
 

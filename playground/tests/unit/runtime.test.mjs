@@ -63,6 +63,26 @@ export default [
     },
   },
   {
+    name: "runtime serializes accepted object data into the sample artifact",
+    fn: async () => {
+      const data = {
+        format: "bayescycle.data.json.v1",
+        variables: { x: { dtype: "int64", shape: [], values: [1] } },
+      };
+      const executor = {
+        execute: async () => ({ rawBytes: new TextEncoder().encode('{"kind":"header"}\n{"x":1}\n{"kind":"trailer"}\n') }),
+      };
+      const result = await new BrowserRuntime(executor).run({
+        type: "run", id: "object-data", operation: "sample",
+        modelIr: new TextEncoder().encode('{"bayeswire_ir":1}'), data,
+        settings: { chains: 1, num_warmup: 0, num_draws: 4, seed: 1, max_treedepth: 4, target_accept: 0.8 },
+      });
+      const artifact = result.artifacts.find((entry) => entry.name === "data.json");
+      assert(artifact !== undefined, "object data did not produce data.json");
+      assert(JSON.parse(UTF8.decode(artifact.bytes)).variables.x.values[0] === 1, "object data artifact changed");
+    },
+  },
+  {
     name: "runtime sampling returns valid merged posterior and progress",
     fn: async () => {
       const runtime = new BrowserRuntime();
