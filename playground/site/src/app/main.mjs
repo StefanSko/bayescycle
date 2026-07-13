@@ -223,7 +223,7 @@ async function sampleData(dataBytes, recoveryTruth) {
       operation: "sample",
       modelIr: state.compile.irBytes,
       data: dataBytes,
-      settings: samplerSettings(),
+      settings: sampleSettings(),
     }, (event) => renderActiveProgress(requestId, projectRevision, event));
     const posterior = sampled.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
     if (posterior === undefined) throw new Error("Runtime returned no posterior artifact");
@@ -281,6 +281,24 @@ function documentBytes(text) {
   return new TextEncoder().encode(serializeDocument(parseDocument(text)));
 }
 
+function sampleSettings() {
+  const settings = samplerSettings();
+  if (!validSampleSettings(settings)) {
+    throw new Error("Sampling requires at least 1 chain and 4 retained draws with valid settings");
+  }
+  return settings;
+}
+
+function validSampleSettings(settings = samplerSettings()) {
+  return Number.isInteger(settings.chains) && settings.chains >= 1 &&
+    Number.isInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
+    Number.isInteger(settings.num_draws) && settings.num_draws >= 4 &&
+    Number.isInteger(settings.seed) && settings.seed >= 0 &&
+    Number.isInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
+    Number.isFinite(settings.target_accept) && settings.target_accept > 0 &&
+    settings.target_accept < 1;
+}
+
 function samplerSettings() {
   return {
     chains: integerValue("#chains"),
@@ -325,10 +343,11 @@ function render() {
   element("#compile-button").disabled = state.compile.status === "compiling" || state.source.trim() === "";
   element("#share-button").disabled = state.source.trim() === "";
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
-  element("#sample-button").disabled = unavailable || observed.value.trim() === "";
+  const sampleUnavailable = unavailable || !validSampleSettings();
+  element("#sample-button").disabled = sampleUnavailable || observed.value.trim() === "";
   element("#prior-button").disabled = unavailable || design.value.trim() === "";
   element("#simulate-button").disabled = unavailable || design.value.trim() === "" || truth.value.trim() === "";
-  element("#sample-simulated-button").disabled = unavailable ||
+  element("#sample-simulated-button").disabled = sampleUnavailable ||
     !state.artifacts.some((artifact) => artifact.name === "simulated_data.json") || truth.value.trim() === "";
 
   const runError = element("#run-error");
