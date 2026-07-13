@@ -38,6 +38,12 @@ export default [{
   fn: async () => {
     await rejectsBounded(() => null);
     await rejectsBounded((request) => ({ type: "bogus", id: request.id }));
+    await rejectsBounded((request) => ({
+      type: "future-result",
+      id: request.id,
+      chainId: 0,
+      rawBytes: new Uint8Array([1]),
+    }));
     await rejectsBounded((request) => ({ type: "result", id: request.id, rawBytes: "not bytes" }));
     await rejectsBounded((request) => ({ type: "error", id: request.id, error: { message: "missing kind" } }));
     await rejectsBounded((request) => ({ type: "batch", id: request.id, chainId: 0, draws: "not draws" }));
