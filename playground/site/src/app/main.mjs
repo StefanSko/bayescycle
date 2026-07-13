@@ -1,4 +1,3 @@
-import { compile } from "../compile/index.mjs";
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
 import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
@@ -171,7 +170,7 @@ async function compileModel() {
   const sourceRevision = state.sourceRevision;
   dispatch({ type: "compile-started", requestId, revision: sourceRevision });
   try {
-    const result = await compile(state.source);
+    const result = await runtime.compile(state.source);
     if (result.ok) {
       dispatch({ type: "compile-succeeded", requestId, revision: sourceRevision, irBytes: result.irBytes, irHash: result.irHash });
     } else {

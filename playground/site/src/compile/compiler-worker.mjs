@@ -6,7 +6,7 @@ let runtime;
 try {
   runtime = await initializeRuntime();
   lockDownNetwork();
-  self.postMessage({ type: "ready" });
+  self.postMessage({ type: "ready", protocol: 1 });
 } catch (error) {
   setTimeout(() => { throw error; });
 }
@@ -66,7 +66,7 @@ function lockDownNetwork() {
 
 function validRequest(value) {
   return value !== null && typeof value === "object" && value.type === "compile" &&
-    typeof value.id === "string" && typeof value.source === "string";
+    value.protocol === 1 && typeof value.id === "string" && typeof value.source === "string";
 }
 
 async function initializeRuntime() {

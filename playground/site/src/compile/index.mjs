@@ -1,94 +1,163 @@
+const PROTOCOL_VERSION = 1;
+const DEFAULT_STARTUP_TIMEOUT_MS = 120_000;
+const DEFAULT_COMPILE_TIMEOUT_MS = 30_000;
+export const MAX_IR_BYTES = 8 * 1024 * 1024;
+
 /**
- * Source-only compiler client. The worker never receives project documents or run artifacts.
- * @typedef {{ok: true, irBytes: Uint8Array, irHash: string, executionContext: "worker"} |
- *   {ok: false, exceptionType: string, message: string, traceback: string,
- *    executionContext: "worker"}} CompileResult
+ * Source-only disposable compiler client. Every call owns one worker and the
+ * worker is terminated before the returned promise settles.
  */
-let worker;
-let ready;
-const pending = new Map();
+export class CompilerClient {
+  constructor({
+    workerFactory = () => new Worker(new URL("./compiler-worker.mjs", import.meta.url), { type: "module" }),
+    startupTimeoutMs = DEFAULT_STARTUP_TIMEOUT_MS,
+    timeoutMs = DEFAULT_COMPILE_TIMEOUT_MS,
+    maxOutputBytes = MAX_IR_BYTES,
+  } = {}) {
+    this.workerFactory = workerFactory;
+    this.startupTimeoutMs = startupTimeoutMs;
+    this.timeoutMs = timeoutMs;
+    this.maxOutputBytes = maxOutputBytes;
+  }
 
-function compilerWorker() {
-  if (worker !== undefined) return worker;
-  worker = new Worker(new URL("./compiler-worker.mjs", import.meta.url), { type: "module" });
-  ready = new Promise((resolve, reject) => {
-    const startup = setTimeout(() => reject(new Error("Compiler worker startup timed out")), 120_000);
-    worker.addEventListener("message", function onReady(event) {
-      if (event.data?.type !== "ready") return;
-      clearTimeout(startup);
-      worker.removeEventListener("message", onReady);
-      resolve();
-    });
-    worker.addEventListener("error", (event) => reject(new Error(event.message)), { once: true });
-  });
-  worker.addEventListener("message", (event) => {
-    const message = event.data;
-    if (!validResponse(message)) return;
-    const request = pending.get(message.id);
-    if (request === undefined) return;
-    pending.delete(message.id);
-    clearTimeout(request.timeout);
-    if (message.type === "compiled") {
-      request.resolve({
-        ok: true,
-        irBytes: new Uint8Array(message.irBytes),
-        irHash: message.irHash,
-        executionContext: "worker",
-      });
-    } else {
-      request.resolve({
-        ok: false,
-        exceptionType: message.exceptionType,
-        message: message.message,
-        traceback: message.traceback,
-        executionContext: "worker",
-      });
+  /** @param {string} source @param {{timeoutMs?: number, signal?: AbortSignal}} [options] */
+  compile(source, options = {}) {
+    if (typeof source !== "string") return Promise.reject(new TypeError("model source must be a string"));
+
+    let worker;
+    try {
+      worker = this.workerFactory();
+    } catch (error) {
+      return Promise.reject(error);
     }
-    if (request.reuseWorker !== true) disposeCompilerWorker();
-  });
-  return worker;
-}
 
-/** @param {string} source @param {{timeoutMs?: number, reuseWorker?: boolean}} [options] @returns {Promise<CompileResult>} */
-export async function compile(source, options = {}) {
-  if (typeof source !== "string") throw new TypeError("model source must be a string");
-  const activeWorker = compilerWorker();
-  await ready;
-  if (pending.size !== 0) throw new Error("Compiler worker is busy");
-  const id = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error("Model compilation timed out"));
-      resetCompiler();
-    }, options.timeoutMs ?? 30_000);
-    pending.set(id, { resolve, reject, timeout, reuseWorker: options.reuseWorker === true });
-    activeWorker.postMessage({ type: "compile", id, source });
-  });
-}
+    const id = crypto.randomUUID();
+    const signal = options.signal;
+    const timeoutMs = options.timeoutMs ?? this.timeoutMs;
 
-export function resetCompiler() {
-  disposeCompilerWorker();
-  for (const request of pending.values()) {
-    clearTimeout(request.timeout);
-    request.reject(new Error("Compiler worker was reset"));
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let disposed = false;
+      let startupTimer;
+      let compileTimer;
+
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        clearTimeout(startupTimer);
+        clearTimeout(compileTimer);
+        signal?.removeEventListener("abort", onAbort);
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+        worker.terminate();
+      };
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        dispose();
+        reject(error);
+      };
+      const succeed = (value) => {
+        if (settled) return;
+        settled = true;
+        dispose();
+        resolve(value);
+      };
+      const onAbort = () => fail(new Error("Model compilation was cancelled"));
+      const onError = (event) => fail(new Error(boundedMessage(event.message, "Compiler worker failed")));
+      const onMessage = (event) => {
+        const message = event.data;
+        if (isReady(message)) {
+          clearTimeout(startupTimer);
+          compileTimer = setTimeout(
+            () => fail(new Error("Model compilation timed out")),
+            timeoutMs,
+          );
+          try {
+            worker.postMessage({ type: "compile", protocol: PROTOCOL_VERSION, id, source });
+          } catch (error) {
+            fail(error);
+          }
+          return;
+        }
+        if (message === null || typeof message !== "object" || message.id !== id) return;
+        if (validSuccess(message)) {
+          const irBytes = new Uint8Array(message.irBytes);
+          if (irBytes.byteLength > this.maxOutputBytes) {
+            fail(new Error(`Compiler output exceeds ${this.maxOutputBytes} bytes`));
+            return;
+          }
+          // Dispose the mutable interpreter before performing trusted hashing.
+          dispose();
+          void sha256(irBytes).then(
+            (irHash) => succeed({ ok: true, irBytes, irHash, executionContext: "worker" }),
+            fail,
+          );
+          return;
+        }
+        if (validFailure(message)) {
+          succeed({
+            ok: false,
+            exceptionType: message.exceptionType,
+            message: boundedMessage(message.message, "Compilation failed"),
+            traceback: boundedMessage(message.traceback, "Compilation failed"),
+            executionContext: "worker",
+          });
+          return;
+        }
+        fail(new Error("Compiler worker returned a malformed response"));
+      };
+
+      worker.addEventListener("message", onMessage);
+      worker.addEventListener("error", onError);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted === true) {
+        onAbort();
+        return;
+      }
+      startupTimer = setTimeout(
+        () => fail(new Error("Compiler worker startup timed out")),
+        this.startupTimeoutMs,
+      );
+    });
   }
-  pending.clear();
 }
 
-function disposeCompilerWorker() {
-  worker?.terminate();
-  worker = undefined;
-  ready = undefined;
+/** @param {string} source @param {{timeoutMs?: number, signal?: AbortSignal}} [options] */
+export function compile(source, options) {
+  return new CompilerClient().compile(source, options);
 }
 
-function validResponse(value) {
-  if (value === null || typeof value !== "object" || typeof value.id !== "string") return false;
-  if (value.type === "compiled") {
-    return value.irBytes instanceof ArrayBuffer && typeof value.irHash === "string";
-  }
+// Kept temporarily for the pre-consolidation corpus harness; there is no
+// shared production worker to reset.
+export function resetCompiler() {}
+
+function isReady(value) {
+  return value !== null && typeof value === "object" && value.type === "ready" &&
+    value.protocol === PROTOCOL_VERSION;
+}
+
+function validSuccess(value) {
+  const keys = Object.keys(value);
+  return value.type === "compiled" && value.irBytes instanceof ArrayBuffer &&
+    keys.every((key) => ["type", "id", "irBytes", "irHash"].includes(key));
+}
+
+function validFailure(value) {
+  const keys = Object.keys(value);
   return value.type === "compile-error" &&
     typeof value.exceptionType === "string" &&
     typeof value.message === "string" &&
-    typeof value.traceback === "string";
+    typeof value.traceback === "string" &&
+    keys.every((key) => ["type", "id", "exceptionType", "message", "traceback"].includes(key));
+}
+
+async function sha256(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function boundedMessage(value, fallback) {
+  const text = typeof value === "string" && value !== "" ? value : fallback;
+  return text.length <= 16_384 ? text : `${text.slice(0, 16_384)}…`;
 }

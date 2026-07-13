@@ -1,3 +1,4 @@
+import { CompilerClient } from "../compile/index.mjs";
 import {
   WorkerEngine,
   diagnose,
@@ -14,8 +15,14 @@ const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
 
 export class BrowserRuntime {
-  constructor(executor = new WorkerEngine()) {
+  constructor(executor = new WorkerEngine(), compiler = new CompilerClient()) {
     this.executor = executor;
+    this.compiler = compiler;
+  }
+
+  /** @param {string} source @param {{timeoutMs?: number, signal?: AbortSignal}} [options] */
+  compile(source, options) {
+    return this.compiler.compile(source, options);
   }
 
   /** @param {Record<string, unknown> & {operation: string}} request @param {(event: Record<string, unknown>) => void} [onProgress] */
