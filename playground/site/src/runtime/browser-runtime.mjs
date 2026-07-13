@@ -36,7 +36,7 @@ export class BrowserRuntime {
           requireOutput(await priorPredictive({
             model: asObject(request.modelIr, "model IR"),
             data: asObject(request.data, "data"),
-            settings: engineSettings(request.settings),
+            settings: predictiveSettings(request.settings),
             seed: integerSetting(request.settings, "seed", 0),
             executor: this.executor,
           })),
@@ -166,6 +166,10 @@ function integerSetting(settings, name, fallback) {
   const value = settings?.[name] ?? fallback;
   if (!Number.isInteger(value)) throw new RuntimeError("InvalidSettings", `${name} must be an integer`);
   return value;
+}
+
+function predictiveSettings(settings = {}) {
+  return { num_draws: integerSetting(settings, "num_draws", 200) };
 }
 
 function engineSettings(settings = {}) {
