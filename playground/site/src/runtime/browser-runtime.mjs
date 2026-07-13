@@ -101,11 +101,12 @@ export class BrowserRuntime {
 
   async #sample(request, onProgress) {
     const settings = request.settings ?? {};
+    const dataBytes = asDocumentBytes(request.data);
     const chains = integerSetting(settings, "chains", 4);
     const counts = Array.from({ length: chains }, () => ({ retainedDraws: 0, divergences: 0 }));
     const result = await sample({
       model: asIrBytes(request.modelIr),
-      data: asObject(request.data, "data"),
+      data: asObject(dataBytes, "data"),
       settings: engineSettings(settings),
       seed: integerSetting(settings, "seed", 0),
       chains,
@@ -124,7 +125,7 @@ export class BrowserRuntime {
     return {
       artifacts: [
         artifact("model.ir.json", "application/json", asIrBytes(request.modelIr)),
-        artifact("data.json", "application/json", asBytes(request.data, "data")),
+        artifact("data.json", "application/json", dataBytes),
         artifact("posterior.ndjson", "application/x-ndjson", ENCODE.encode(merged)),
       ],
     };
@@ -178,6 +179,13 @@ function asBytes(value, label) {
   if (value instanceof Uint8Array) return Uint8Array.from(value);
   if (typeof value === "string") return ENCODE.encode(value);
   throw new RuntimeError("InvalidRequest", `${label} must be text or bytes`);
+}
+
+function asDocumentBytes(value) {
+  if (value !== null && typeof value === "object" && !(value instanceof Uint8Array)) {
+    return ENCODE.encode(serializeDocument(normalizeDocument(value)));
+  }
+  return asBytes(value, "data");
 }
 
 function asIrBytes(value) {

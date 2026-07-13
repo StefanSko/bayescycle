@@ -147,9 +147,14 @@ function setProject(project) {
 function applySamplerSettings(settings) {
   if (settings === null || typeof settings !== "object") return;
   const fields = { chains: "#chains", num_warmup: "#warmup", num_draws: "#draws", seed: "#seed", target_accept: "#target-accept", max_treedepth: "#max-treedepth" };
+  let applied = false;
   for (const [name, selector] of Object.entries(fields)) {
-    if (typeof settings[name] === "number") element(selector).value = String(settings[name]);
+    if (typeof settings[name] === "number") {
+      element(selector).value = String(settings[name]);
+      applied = true;
+    }
   }
+  if (applied) settingsEdited();
 }
 
 function launchRun(operation) {
@@ -200,7 +205,7 @@ async function runPriorPredictive() {
     operation: "prior-predictive",
     modelIr: compiledBytes(),
     data: documentBytes(design.value),
-    settings: samplerSettings(),
+    settings: safeSeedSettings(),
   });
 }
 
@@ -213,7 +218,7 @@ async function runPosteriorPredictive() {
     modelIr: compiledBytes(),
     data: data.bytes,
     fit: posterior.bytes,
-    settings: samplerSettings(),
+    settings: safeSeedSettings(),
   });
 }
 
@@ -223,7 +228,7 @@ async function simulateData() {
     modelIr: compiledBytes(),
     data: documentBytes(design.value),
     truth: documentBytes(truth.value),
-    settings: samplerSettings(),
+    settings: safeSeedSettings(),
   });
 }
 
@@ -312,11 +317,21 @@ function sampleSettings() {
   return settings;
 }
 
+function safeSeedSettings() {
+  const settings = samplerSettings();
+  if (!validSeedSettings(settings)) throw new Error("Seed must be a nonnegative safe integer");
+  return settings;
+}
+
+function validSeedSettings(settings = samplerSettings()) {
+  return Number.isSafeInteger(settings.seed) && settings.seed >= 0;
+}
+
 function validSampleSettings(settings = samplerSettings()) {
   return Number.isSafeInteger(settings.chains) && settings.chains >= 1 &&
     Number.isSafeInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
     Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 4 &&
-    Number.isSafeInteger(settings.seed) && settings.seed >= 0 &&
+    validSeedSettings(settings) &&
     Number.isSafeInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
     Number.isFinite(settings.target_accept) && settings.target_accept > 0 &&
     settings.target_accept < 1;
@@ -369,13 +384,15 @@ function render() {
     state.run.status === "running" || state.source.trim() === "";
   element("#share-button").disabled = state.source.trim() === "";
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
+  const seedUnavailable = !validSeedSettings();
   const sampleUnavailable = unavailable || !validSampleSettings();
   element("#sample-button").disabled = sampleUnavailable || observed.value.trim() === "";
-  element("#prior-button").disabled = unavailable || design.value.trim() === "";
-  element("#simulate-button").disabled = unavailable || design.value.trim() === "" || truth.value.trim() === "";
+  element("#prior-button").disabled = unavailable || seedUnavailable || design.value.trim() === "";
+  element("#simulate-button").disabled = unavailable || seedUnavailable ||
+    design.value.trim() === "" || truth.value.trim() === "";
   element("#sample-simulated-button").disabled = sampleUnavailable ||
     !state.artifacts.some((artifact) => artifact.name === "simulated_data.json") || truth.value.trim() === "";
-  element("#posterior-button").disabled = unavailable ||
+  element("#posterior-button").disabled = unavailable || seedUnavailable ||
     !state.artifacts.some((artifact) => artifact.name === "posterior.ndjson") ||
     !state.artifacts.some((artifact) => artifact.name === "data.json");
   element("#run-status").textContent = state.run.status === "running"
