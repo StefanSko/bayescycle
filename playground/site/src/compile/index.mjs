@@ -44,12 +44,12 @@ function compilerWorker() {
         executionContext: "worker",
       });
     }
-    disposeCompilerWorker();
+    if (request.reuseWorker !== true) disposeCompilerWorker();
   });
   return worker;
 }
 
-/** @param {string} source @param {{timeoutMs?: number}} [options] @returns {Promise<CompileResult>} */
+/** @param {string} source @param {{timeoutMs?: number, reuseWorker?: boolean}} [options] @returns {Promise<CompileResult>} */
 export async function compile(source, options = {}) {
   if (typeof source !== "string") throw new TypeError("model source must be a string");
   const activeWorker = compilerWorker();
@@ -62,7 +62,7 @@ export async function compile(source, options = {}) {
       reject(new Error("Model compilation timed out"));
       resetCompiler();
     }, options.timeoutMs ?? 30_000);
-    pending.set(id, { resolve, reject, timeout });
+    pending.set(id, { resolve, reject, timeout, reuseWorker: options.reuseWorker === true });
     activeWorker.postMessage({ type: "compile", id, source });
   });
 }
