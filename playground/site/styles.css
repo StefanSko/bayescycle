@@ -42,6 +42,11 @@ details { margin-top: 1rem; }
 summary { color: var(--green); cursor: pointer; font-weight: 700; }
 a { color: var(--green); }
 .results-panel { margin-bottom: 3rem; }
+.recovery-summary { margin-bottom: 1rem; overflow: auto; }
+.recovery-summary table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.recovery-summary th, .recovery-summary td { padding: .45rem; border-bottom: 1px solid var(--line); text-align: left; }
+.recovery-inside { color: var(--green); font-weight: 750; }
+.recovery-outside { color: var(--error); font-weight: 750; }
 .plot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .plot-grid article { min-width: 0; overflow: auto; border-top: 1px solid var(--line); padding-top: .75rem; }
 .plot-grid article:last-child { grid-column: 1 / -1; }

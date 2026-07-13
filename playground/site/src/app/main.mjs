@@ -2,6 +2,7 @@ import { compile } from "../compile/index.mjs";
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
 import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
+import { renderRecoverySummary } from "./recovery.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { initialState, reduce } from "./state.mjs";
 
@@ -335,7 +336,21 @@ function renderArtifacts(artifacts) {
     item.hidden = false;
   }
   element("#artifacts").hidden = artifacts.length === 0;
+  renderRecovery(artifacts);
   renderPlots(artifacts);
+}
+
+function renderRecovery(artifacts) {
+  const recovery = artifacts.find((artifact) => artifact.name === "recovery_check.json");
+  const summary = element("#recovery-summary");
+  if (recovery === undefined) {
+    summary.hidden = true;
+    summary.querySelector("div").replaceChildren();
+    return;
+  }
+  const report = JSON.parse(new TextDecoder().decode(recovery.bytes));
+  summary.querySelector("div").innerHTML = renderRecoverySummary(report);
+  summary.hidden = false;
 }
 
 function renderPlots(artifacts) {
