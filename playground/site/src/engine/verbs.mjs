@@ -219,12 +219,22 @@ export function mergeChainFits(fits) {
     ...first.trailer,
     ...common,
     chains: parsed.flatMap((fit) => arrayValue(fit.trailer.chains)),
+    rhat: unavailableDiagnostics(first.trailer.parameter_order),
+    ess: unavailableDiagnostics(first.trailer.parameter_order),
   };
   return [header, ...draws, { trailer }].map((value) => JSON.stringify(value)).join("\n") + "\n";
 }
 
 function arrayValue(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function unavailableDiagnostics(parameterOrder) {
+  return Object.fromEntries(
+    arrayValue(parameterOrder)
+      .filter((name) => typeof name === "string")
+      .map((name) => [name, null]),
+  );
 }
 
 async function guard(operation) {

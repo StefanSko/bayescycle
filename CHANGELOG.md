@@ -20,6 +20,11 @@ formats retain their own compatibility policies.
   explicit compile uses a fresh disposable worker; the browser validates and
   hashes untrusted compiler bytes before separate engine workers consume them.
 
+### Fixed
+
+- Mark R-hat and ESS unavailable in merged browser posterior trailers instead
+  of misreporting the first chain's diagnostics as multi-chain summaries.
+
 ## [0.5.0] - 2026-07-10
 
 ### Added
