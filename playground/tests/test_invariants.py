@@ -12,6 +12,22 @@ SITE_ROOT = PLAYGROUND_ROOT / "site"
 VENDOR_ROOT = SITE_ROOT / "vendor"
 
 
+def test_javascript_cases_are_not_parameterized_as_repeated_suites() -> None:
+    for path in (PLAYGROUND_ROOT / "tests").glob("test_*.py"):
+        source = path.read_text()
+        if "run_suite" in source:
+            assert "@pytest.mark.parametrize" not in source, path
+    compiler_sources = "\n".join(
+        path.read_text()
+        for path in (
+            SITE_ROOT / "src" / "compile" / "index.mjs",
+            PLAYGROUND_ROOT / "tests" / "unit" / "compile.test.mjs",
+        )
+    )
+    assert "reuseWorker" not in compiler_sources
+    assert "resetCompiler" not in compiler_sources
+
+
 def test_playground_has_no_node_or_editor_toolchain() -> None:
     assert not list(PLAYGROUND_ROOT.rglob("package.json"))
     assert not list(PLAYGROUND_ROOT.rglob("*.ts"))
