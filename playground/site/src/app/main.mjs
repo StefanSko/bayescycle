@@ -548,6 +548,7 @@ function renderDesignTables(ir) {
     row.dataset.designName = name;
     if (Object.hasOwn(defaults, "value")) {
       row.dataset.designKind = "scalar";
+      row.dataset.designCountLike = String(defaults.countLike !== false);
       row.append(
         tableCell(name),
         tableCell("—"),
@@ -557,7 +558,7 @@ function renderDesignTables(ir) {
           `Scalar value for ${name}`,
           "value",
           defaults.value,
-          true,
+          defaults.countLike !== false,
         ),
       );
     } else {
@@ -598,8 +599,11 @@ function renderDesignTables(ir) {
   for (const [name, value] of Object.entries(defaultTruth(ir))) {
     const row = document.createElement("tr");
     row.dataset.truthName = name;
-    const sizeName = paramsByName.get(name)?.value.size?.name;
+    const parameter = paramsByName.get(name);
+    const sizeName = parameter?.value.size?.name;
+    const ordered = parameter?.value.constraint?.node === "Ordered";
     if (sizeName !== undefined) row.dataset.truthSize = sizeName;
+    if (ordered) row.dataset.truthOrdered = "true";
     const valueCell = numberInputCell(
       `truth-${name}`,
       `Truth for ${name}`,
@@ -607,7 +611,12 @@ function renderDesignTables(ir) {
       value,
     );
     valueCell.querySelector("input").dataset.truthValue = "";
-    row.append(tableCell(sizeName === undefined ? name : `${name} × ${sizeName}`), valueCell);
+    const truthLabel = ordered
+      ? `${name} (ordered around v)`
+      : sizeName === undefined
+        ? name
+        : `${name} × ${sizeName}`;
+    row.append(tableCell(truthLabel), valueCell);
     truthBody.append(row);
   }
 }
@@ -635,7 +644,10 @@ function currentDesign() {
       if (row.dataset.designKind === "scalar") {
         return [
           row.dataset.designName,
-          { value: Number(row.querySelector('[data-design-field="value"]').value) },
+          {
+            value: Number(row.querySelector('[data-design-field="value"]').value),
+            countLike: row.dataset.designCountLike !== "false",
+          },
         ];
       }
       return [
@@ -691,7 +703,9 @@ function refreshTruthSizes() {
           `cannot resolve truth size ${size.name} for ${parameter.name} from design values`,
         );
       }
-      resolvedTruthSizes[parameter.name] = value;
+      resolvedTruthSizes[parameter.name] = parameter.value.constraint?.node === "Ordered"
+        ? { size: value, ordered: true }
+        : value;
     }
   } catch (error) {
     truthSizeError = error instanceof Error ? error.message : String(error);

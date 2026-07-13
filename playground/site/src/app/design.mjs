@@ -6,10 +6,16 @@ export function designDocument(design) {
   const variables = Object.fromEntries(
     Object.entries(design).map(([name, row]) => {
       if (Object.hasOwn(row, "value")) {
-        if (!Number.isInteger(row.value) || row.value < 1) {
-          throw new Error(`Design scalar ${name} must be a positive integer`);
+        if (row.countLike !== false) {
+          if (!Number.isInteger(row.value) || row.value < 1) {
+            throw new Error(`Design scalar ${name} must be a positive integer`);
+          }
+          return [name, { dtype: "int64", shape: [], values: [row.value] }];
         }
-        return [name, { dtype: "int64", shape: [], values: [row.value] }];
+        if (!Number.isFinite(row.value)) {
+          throw new Error(`Design scalar ${name} must be finite`);
+        }
+        return [name, { dtype: "float64", shape: [], values: [row.value] }];
       }
       const n = row.n ?? 50;
       if (
@@ -39,17 +45,21 @@ export function truthDocument(truth, sizes = {}) {
       if (!Number.isFinite(value)) {
         throw new Error(`Truth value for ${name} must be finite`);
       }
-      const size = sizes[name];
-      if (size === undefined) {
+      const sizeSpec = sizes[name];
+      if (sizeSpec === undefined) {
         return [name, { dtype: "float64", shape: [], values: [value] }];
       }
+      const size = typeof sizeSpec === "number" ? sizeSpec : sizeSpec.size;
       if (!Number.isInteger(size) || size < 1) {
         throw new Error(`Truth size for ${name} must be a positive integer`);
       }
-      return [
-        name,
-        { dtype: "float64", shape: [size], values: Array(size).fill(value) },
-      ];
+      const values = typeof sizeSpec === "object" && sizeSpec.ordered === true
+        ? Array.from(
+            { length: size },
+            (_, index) => value + index - (size - 1) / 2,
+          )
+        : Array(size).fill(value);
+      return [name, { dtype: "float64", shape: [size], values }];
     }),
   );
   return { format: DATA_FORMAT, variables };
@@ -72,6 +82,15 @@ export function designDefaults(ir) {
   const derivedScalars = new Set(
     vectors.flatMap((input) => input.value.schema.dims?.map((dim) => dim.name) ?? []),
   );
+  const countLikeScalars = new Set(
+    ir.model.data.flatMap(
+      (input) => input.value.schema.dims?.map((dim) => dim.name) ?? [],
+    ),
+  );
+  for (const parameter of ir.model.params) {
+    const size = parameter.value.size;
+    if (size?.node === "DataRef") countLikeScalars.add(size.name);
+  }
   return Object.fromEntries(
     ir.model.data
       .filter((input) => {
@@ -82,7 +101,11 @@ export function designDefaults(ir) {
       })
       .map((input) => [
         input.name,
-        vectors.includes(input) ? { low: 0.5, high: 1.5, n: 50 } : { value: 2 },
+        vectors.includes(input)
+          ? { low: 0.5, high: 1.5, n: 50 }
+          : countLikeScalars.has(input.name)
+            ? { value: 2, countLike: true }
+            : { value: 1, countLike: false },
       ]),
   );
 }

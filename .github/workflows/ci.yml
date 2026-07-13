@@ -52,11 +52,11 @@ jobs:
       - name: Sync (root dev group only)
         run: uv sync --only-dev
       - name: Stage assets
-        run: uv run python playground/scripts/stage_assets.py
+        run: uv run --no-sync python playground/scripts/stage_assets.py
       - name: Install Chromium
-        run: uv run playwright install --with-deps chromium
+        run: uv run --no-sync playwright install --with-deps chromium
       - name: Tests
-        run: uv run pytest playground/tests -q
+        run: uv run --no-sync pytest playground/tests -q
 
   # bayeswire: stdlib-only wire format and model language. Its own gates
   # (no-JAX module walk, produce-conformance) run inside its pytest suite;
