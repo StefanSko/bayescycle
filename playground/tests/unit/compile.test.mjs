@@ -103,42 +103,14 @@ export default [
     },
   },
   {
-    name: "user source cannot replace the trusted IR serializer",
+    name: "module poisoning cannot affect the next compiler worker",
     fn: async () => {
       const source = `import bayeswire.ir\nbayeswire.ir.canonical_bytes = lambda _meta: b"{}"\n${await fetchText("linear_regression.py")}`;
       const poisoned = await compile(source);
       assert(poisoned.ok, `poisoning fixture failed: ${poisoned.message}`);
       const hashes = JSON.parse(await fetchText("hashes.json"));
-      assert(poisoned.irHash === hashes.linear_regression, `user serializer changed hash: ${poisoned.irHash}`);
       const clean = await compile(await fetchText("linear_regression.py"));
-      assert(clean.ok && clean.irHash === hashes.linear_regression, "serializer mutation leaked into the next compile");
-    },
-  },
-  {
-    name: "trusted serializer freezes helper dependencies",
-    fn: async () => {
-      const source = `import bayeswire.ir\nbayeswire.ir.meta_to_dict = lambda _meta: {}\n${await fetchText("linear_regression.py")}`;
-      const result = await compile(source);
-      const hashes = JSON.parse(await fetchText("hashes.json"));
-      assert(result.ok && result.irHash === hashes.linear_regression, `serializer helper mutation changed IR: ${result.irHash}`);
-    },
-  },
-  {
-    name: "trusted serializer freezes JSON encoder dependencies",
-    fn: async () => {
-      const source = `import json\nclass FakeEncoder:\n    def __init__(self, **_kwargs): pass\n    def encode(self, _value): return "{}"\njson.dumps.__globals__["JSONEncoder"] = FakeEncoder\n${await fetchText("linear_regression.py")}`;
-      const result = await compile(source);
-      const hashes = JSON.parse(await fetchText("hashes.json"));
-      assert(result.ok && result.irHash === hashes.linear_regression, `JSON encoder mutation changed IR: ${result.irHash}`);
-    },
-  },
-  {
-    name: "trusted serializer is absent from user-visible globals",
-    fn: async () => {
-      const source = `import __main__\n__main__._trusted_canonical_bytes = lambda _meta: b"{}"\n${await fetchText("linear_regression.py")}`;
-      const result = await compile(source);
-      const hashes = JSON.parse(await fetchText("hashes.json"));
-      assert(result.ok && result.irHash === hashes.linear_regression, `__main__ replaced trusted serializer: ${result.irHash}`);
+      assert(clean.ok && clean.irHash === hashes.linear_regression, "module mutation leaked into the next compiler worker");
     },
   },
   {

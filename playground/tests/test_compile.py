@@ -9,10 +9,7 @@ CASES = [
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "compiler executes in a dedicated worker",
-    "user source cannot replace the trusted IR serializer",
-    "trusted serializer freezes helper dependencies",
-    "trusted serializer freezes JSON encoder dependencies",
-    "trusted serializer is absent from user-visible globals",
+    "module poisoning cannot affect the next compiler worker",
     "compiler timeout resets the isolated worker",
 ]
 

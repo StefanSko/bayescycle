@@ -67,6 +67,13 @@ def test_svg_renderer_theme_variables_are_defined() -> None:
     assert referenced <= defined, f"undefined SVG theme variables: {sorted(referenced - defined)}"
 
 
+def test_compiler_uses_ordinary_bayeswire_serializer() -> None:
+    worker_source = (SITE_ROOT / "src" / "compile" / "compiler-worker.mjs").read_text()
+    assert "bayeswire.ir.canonical_bytes(" in worker_source
+    for cloned_implementation in ("types.FunctionType", "_ir_codes", "encode_json"):
+        assert cloned_implementation not in worker_source
+
+
 def test_engine_manifest_matches_wasm() -> None:
     manifest_path = VENDOR_ROOT / "bayesite" / "ENGINE.json"
     wasm_path = VENDOR_ROOT / "bayesite" / "bayesite_core.wasm"

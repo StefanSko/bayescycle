@@ -101,7 +101,12 @@ export default [
       ]) {
         let worker;
         const compiler = client({ workerFactory: () => { worker = readyThen(response)(); return worker; } });
-        await compiler.compile("source").then(() => assert(worker.terminated, "compile settled before termination"));
+        await compiler.compile("source").then((result) => {
+          assert(worker.terminated, "compile settled before termination");
+          if (result.ok) {
+            assert(result.irHash === "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", `worker digest was trusted: ${result.irHash}`);
+          }
+        });
       }
     },
   },
@@ -131,6 +136,20 @@ export default [
       let message = "";
       try { await thrown.compile("source"); } catch (error) { message = String(error); }
       assert(message.includes("constructor failed"), `worker constructor failure disappeared: ${message}`);
+    },
+  },
+  {
+    name: "oversized compiler output is bounded before use",
+    fn: async () => {
+      let worker;
+      const compiler = client({
+        workerFactory: () => {
+          worker = readyThen((request) => ({ type: "compiled", id: request.id, irBytes: new Uint8Array([1, 2]).buffer }))();
+          return worker;
+        },
+        maxOutputBytes: 1,
+      });
+      await rejectedAfterTermination(compiler.compile("source"), worker, "exceeds 1 byte");
     },
   },
   {
