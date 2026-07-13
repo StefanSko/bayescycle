@@ -1073,7 +1073,7 @@ async function runStudy() {
     const fitTexts = sampled.map((output) => UTF8.decode(output.rawBytes));
     const mergedFit = mergeChainFits(fitTexts);
     const diagnosed = requireResult(await diagnose({ fits: fitTexts, executor }))[0];
-    const predictive = compiled.ir.model.observed_nodes.length === 0
+    const predictive = partiallyObserved || compiled.ir.model.observed_nodes.length === 0
       ? null
       : requireResult(
           await posteriorPredictive({
@@ -1084,7 +1084,7 @@ async function runStudy() {
             executor,
           }),
         )[0];
-    const prior = compiled.ir.model.observed_nodes.length === 0
+    const prior = partiallyObserved || compiled.ir.model.observed_nodes.length === 0
       ? null
       : requireResult(
           await priorPredictive({

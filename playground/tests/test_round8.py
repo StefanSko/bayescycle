@@ -98,3 +98,74 @@ def test_partially_observed_gates_and_observed_run(page: Page, base_url: str) ->
         "Prior to posterior display is not available for partially observed models yet."
     )
     expect(page.locator("#run-error")).to_be_hidden()
+
+
+MIXED_SOURCE = """from bayeswire import Data, Observed, Param, PartiallyObserved, model
+from bayeswire.distributions import Normal
+
+
+@model
+class MixedObservation:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+
+    mu = Param(Normal(0.0, 1.0))
+    y = PartiallyObserved.vector(
+        Normal(mu, 1.0),
+        length=n,
+        observed=observed_values,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+    )
+    z = Observed(Normal(mu, 1.0))
+"""
+
+MIXED_DOCUMENT = """{
+  "format": "bayescycle.data.json.v1",
+  "variables": {
+    "n": {"dtype": "int64", "shape": [], "values": [5]},
+    "n_obs": {"dtype": "int64", "shape": [], "values": [3]},
+    "n_mis": {"dtype": "int64", "shape": [], "values": [2]},
+    "observed_idx": {"dtype": "int64", "shape": [3], "values": [0, 2, 4]},
+    "missing_idx": {"dtype": "int64", "shape": [2], "values": [1, 3]},
+    "observed_values": {"dtype": "float64", "shape": [3], "values": [-0.3, 0.8, 1.1]},
+    "z": {"dtype": "float64", "shape": [4], "values": [0.1, -0.4, 0.9, 0.3]}
+  }
+}"""
+
+
+def test_mixed_partially_observed_gates_predictive_calls(page: Page, base_url: str) -> None:
+    """A PartiallyObserved vector plus a regular Observed node must still gate
+    the predictive verbs: observed_nodes is non-empty, so the gate has to key
+    on the partially-observed flag, not the observed-node count."""
+    page.goto(f"{base_url}/site/index.html")
+    page.wait_for_function("window.__playground !== undefined")
+    page.evaluate("source => window.__playground.setSource(source)", MIXED_SOURCE)
+    page.wait_for_function(
+        "window.__playground.state().irHash !== ''",
+        timeout=COMPILE_TIMEOUT,
+    )
+    page.locator("#json-input").fill(MIXED_DOCUMENT)
+    page.locator("#json-load").click()
+    expect(page.locator("#run-button")).to_be_enabled()
+    for selector, value in {"#chains": "1", "#num-warmup": "10", "#num-draws": "10"}.items():
+        page.locator(selector).fill(value)
+    page.locator("#run-button").click()
+    page.wait_for_function(
+        "window.__playground.state().running === false && "
+        "window.__playground.state().lastRun !== null",
+        timeout=RUN_TIMEOUT,
+    )
+    expect(page.locator("#run-error")).to_be_hidden()
+    for plot_id in ("plot-trank", "plot-esshat", "plot-precis"):
+        expect(page.locator(f'#{plot_id} svg[role="img"]')).to_have_count(1)
+    expect(page.locator("#plot-ppc")).to_have_text(
+        "Posterior predictive display is not available for partially observed models yet."
+    )
+    expect(page.locator("#plot-overlay")).to_have_text(
+        "Prior to posterior display is not available for partially observed models yet."
+    )
