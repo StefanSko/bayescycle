@@ -51,10 +51,14 @@ export class WorkerEngine {
     engineVersion = ENGINE_VERSION,
     wasmUrl = ENGINE_WASM_URL,
     metadataUrl = ENGINE_METADATA_URL,
+    workerFactory = () => new Worker(new URL("./worker/engine-worker.mjs", import.meta.url), {
+      type: "module",
+    }),
   ) {
     this.engineVersion = engineVersion;
     this.wasmUrl = wasmUrl;
     this.metadataUrl = metadataUrl;
+    this.workerFactory = workerFactory;
   }
 
   /**
@@ -63,9 +67,7 @@ export class WorkerEngine {
    * @returns {Promise<import("./types.mjs").EngineOutput>}
    */
   execute(request, options = {}) {
-    const worker = new Worker(new URL("./worker/engine-worker.mjs", import.meta.url), {
-      type: "module",
-    });
+    const worker = this.workerFactory();
     const id = globalThis.crypto.randomUUID();
     const message = {
       type: "run",
@@ -76,19 +78,43 @@ export class WorkerEngine {
       chainId: options.chainId ?? 0,
     };
     return new Promise((resolve, reject) => {
+      const malformed = () => {
+        worker.terminate();
+        reject(new EngineError("MalformedEngineResponse", "Engine worker returned a malformed response"));
+      };
       worker.onmessage = (event) => {
         const response = event.data;
+        if (response === null || typeof response !== "object") {
+          malformed();
+          return;
+        }
         if (response.id !== id) return;
         if (response.type === "batch") {
+          if (!validBatch(response)) {
+            malformed();
+            return;
+          }
           options.onDrawBatch?.({ chainId: response.chainId, draws: response.draws });
           return;
         }
-        if (response.type === "started") return;
-        worker.terminate();
+        if (response.type === "started") {
+          if (!validStarted(response)) malformed();
+          return;
+        }
         if (response.type === "error") {
+          worker.terminate();
+          if (!validError(response)) {
+            reject(new EngineError("MalformedEngineResponse", "Engine worker returned a malformed error"));
+            return;
+          }
           reject(new EngineError(response.error.error, response.error.message));
           return;
         }
+        if (!validResult(response)) {
+          malformed();
+          return;
+        }
+        worker.terminate();
         resolve({
           rawBytes: response.rawBytes,
           ...(response.header === undefined ? {} : { header: response.header }),
@@ -105,6 +131,36 @@ export class WorkerEngine {
       worker.postMessage(message);
     });
   }
+}
+
+function validStarted(value) {
+  return Number.isInteger(value.chainId) && exactKeys(value, ["type", "id", "chainId"]);
+}
+
+function validBatch(value) {
+  return Number.isInteger(value.chainId) && Array.isArray(value.draws) &&
+    value.draws.every((draw) => draw !== null && typeof draw === "object" && !Array.isArray(draw)) &&
+    exactKeys(value, ["type", "id", "chainId", "draws"]);
+}
+
+function validError(value) {
+  const error = value.error;
+  return Number.isInteger(value.chainId) && error !== null && typeof error === "object" &&
+    typeof error.error_format === "string" && typeof error.error === "string" &&
+    typeof error.message === "string" && exactKeys(error, ["error_format", "error", "message"]) &&
+    exactKeys(value, ["type", "id", "chainId", "error"]);
+}
+
+function validResult(value) {
+  if (!(value.rawBytes instanceof Uint8Array) || !Number.isInteger(value.chainId)) return false;
+  if (value.header !== undefined && (value.header === null || typeof value.header !== "object" || Array.isArray(value.header))) return false;
+  if (value.trailer !== undefined && (value.trailer === null || typeof value.trailer !== "object" || Array.isArray(value.trailer))) return false;
+  if (value.modelDataFingerprint !== undefined && typeof value.modelDataFingerprint !== "string") return false;
+  return exactKeys(value, ["type", "id", "chainId", "rawBytes", "header", "trailer", "modelDataFingerprint"]);
+}
+
+function exactKeys(value, allowed) {
+  return Object.keys(value).every((key) => allowed.includes(key));
 }
 
 /** @param {string} command */

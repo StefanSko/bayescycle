@@ -25,7 +25,7 @@ export class BayesiteAbi {
 
   /** @param {Record<string, unknown>} request */
   run(request) {
-    const requestBytes = UTF8.encode(JSON.stringify(request));
+    const requestBytes = encodeEngineRequest(request);
     const requestPointer = this.wasm.bayesite_alloc(requestBytes.byteLength);
     const lengthPointer = this.wasm.bayesite_alloc(4);
     let responsePointer;
@@ -75,6 +75,18 @@ export class BayesiteAbi {
       );
     }
   }
+}
+
+/** Preserve exact model IR bytes while framing the outer engine request. */
+export function encodeEngineRequest(request) {
+  const fields = Object.entries(request).map(([name, value]) => {
+    const encoded = name === "model" && value instanceof Uint8Array
+      ? decodeUtf8(value)
+      : JSON.stringify(value);
+    if (encoded === undefined) throw new EngineError("InvalidRequest", `request field ${name} is not serializable`);
+    return `${JSON.stringify(name)}:${encoded}`;
+  });
+  return UTF8.encode(`{${fields.join(",")}}`);
 }
 
 /** @param {Uint8Array} bytes */

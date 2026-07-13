@@ -21,7 +21,7 @@ export class EngineError extends Error {
   /** @param {string} error @param {string} message */
   constructor(error, message) {
     super(message);
-    this.name = "EngineError";
+    this.name = error;
     this.error_format = "v0-provisional";
     this.error = error;
   }

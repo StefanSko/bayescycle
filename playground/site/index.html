@@ -65,16 +65,21 @@
         <button id="prior-button" type="button" disabled>Prior predictive</button>
         <button id="simulate-button" type="button" disabled>Simulate data</button>
         <button id="sample-simulated-button" type="button" disabled>Sample simulated data</button>
+        <button id="posterior-button" type="button" disabled>Posterior predictive</button>
       </div>
+      <output id="run-status" class="status" aria-live="polite"></output>
       <div id="progress" class="progress" aria-live="polite"></div>
       <pre id="run-error" class="error" role="alert" hidden></pre>
       <div id="artifacts" hidden>
         <h3>Run artifacts</h3>
         <p>These are the same artifact names used by a Bayescycle run directory.</p>
         <ul>
+          <li id="artifact-model" hidden><a download="model.ir.json">model.ir.json</a></li>
+          <li id="artifact-data" hidden><a download="data.json">data.json</a></li>
           <li id="artifact-posterior" hidden><a download="posterior.ndjson">posterior.ndjson</a></li>
           <li id="artifact-diagnostics" hidden><a download="diagnostics.json">diagnostics.json</a></li>
           <li id="artifact-prior" hidden><a download="prior_predictive.ndjson">prior_predictive.ndjson</a></li>
+          <li id="artifact-posterior-predictive" hidden><a download="posterior_predictive.ndjson">posterior_predictive.ndjson</a></li>
           <li id="artifact-simulated" hidden><a download="simulated_data.json">simulated_data.json</a></li>
           <li id="artifact-recovery" hidden><a download="recovery_check.json">recovery_check.json</a></li>
         </ul>

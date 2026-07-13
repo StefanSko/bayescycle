@@ -27,57 +27,63 @@ export class BrowserRuntime {
 
   /** @param {Record<string, unknown> & {operation: string}} request @param {(event: Record<string, unknown>) => void} [onProgress] */
   async run(request, onProgress = () => {}) {
+    let result;
     switch (request.operation) {
       case "sample":
-        return this.#sample(request, onProgress);
+        result = await this.#sample(request, onProgress);
+        break;
       case "diagnose":
-        return oneArtifact(
+        result = oneArtifact(
           "diagnostics.json",
           "application/json",
           requireOutput(await diagnose({ fits: [asText(request.fit, "fit")], executor: this.executor })),
         );
+        break;
       case "prior-predictive":
-        return oneArtifact(
+        result = oneArtifact(
           "prior_predictive.ndjson",
           "application/x-ndjson",
           requireOutput(await priorPredictive({
-            model: asObject(request.modelIr, "model IR"),
+            model: asIrBytes(request.modelIr),
             data: asObject(request.data, "data"),
             settings: predictiveSettings(request.settings),
             seed: integerSetting(request.settings, "seed", 0),
             executor: this.executor,
           })),
         );
+        break;
       case "posterior-predictive":
-        return oneArtifact(
+        result = oneArtifact(
           "posterior_predictive.ndjson",
           "application/x-ndjson",
           requireOutput(await posteriorPredictive({
-            model: asObject(request.modelIr, "model IR"),
+            model: asIrBytes(request.modelIr),
             data: asObject(request.data, "data"),
             fit: asText(request.fit, "fit"),
             seed: integerSetting(request.settings, "seed", 0),
             executor: this.executor,
           })),
         );
+        break;
       case "simulate": {
         const output = requireOutput(await simulate({
-          model: asObject(request.modelIr, "model IR"),
+          model: asIrBytes(request.modelIr),
           data: asObject(request.data, "data"),
           truth: asObject(request.truth, "truth"),
           seed: integerSetting(request.settings, "seed", 0),
           executor: this.executor,
         }));
-        return {
+        result = {
           artifacts: [artifact(
             "simulated_data.json",
             "application/json",
             canonicalSimulatedBytes(output.rawBytes),
           )],
         };
+        break;
       }
       case "recover-check":
-        return oneArtifact(
+        result = oneArtifact(
           "recovery_check.json",
           "application/json",
           requireOutput(await recoverCheck({
@@ -86,9 +92,11 @@ export class BrowserRuntime {
             executor: this.executor,
           })),
         );
+        break;
       default:
         throw new RuntimeError("UnsupportedOperation", `Unsupported operation ${request.operation}`);
     }
+    return { type: "artifacts", id: request.id, artifacts: result.artifacts };
   }
 
   async #sample(request, onProgress) {
@@ -96,7 +104,7 @@ export class BrowserRuntime {
     const chains = integerSetting(settings, "chains", 4);
     const counts = Array.from({ length: chains }, () => ({ retainedDraws: 0, divergences: 0 }));
     const result = await sample({
-      model: asObject(request.modelIr, "model IR"),
+      model: asIrBytes(request.modelIr),
       data: asObject(request.data, "data"),
       settings: engineSettings(settings),
       seed: integerSetting(settings, "seed", 0),
@@ -107,13 +115,19 @@ export class BrowserRuntime {
         if (count === undefined) return;
         count.retainedDraws += draws.length;
         count.divergences += draws.filter((draw) => draw.diverging === true).length;
-        onProgress({ type: "progress", chainId, ...count });
+        onProgress({ type: "progress", id: request.id, chainId, ...count });
       },
     });
     if (!result.ok) throw runtimeError(result.error);
     const streams = result.outputs.map((output) => UTF8.decode(output.rawBytes));
     const merged = streams.length === 1 ? streams[0] : mergeChainFits(streams);
-    return { artifacts: [artifact("posterior.ndjson", "application/x-ndjson", ENCODE.encode(merged))] };
+    return {
+      artifacts: [
+        artifact("model.ir.json", "application/json", asIrBytes(request.modelIr)),
+        artifact("data.json", "application/json", asBytes(request.data, "data")),
+        artifact("posterior.ndjson", "application/x-ndjson", ENCODE.encode(merged)),
+      ],
+    };
   }
 }
 
@@ -158,6 +172,19 @@ function asText(value, label) {
   if (typeof value === "string") return value;
   if (value instanceof Uint8Array) return UTF8.decode(value);
   throw new RuntimeError("InvalidRequest", `${label} must be text or bytes`);
+}
+
+function asBytes(value, label) {
+  if (value instanceof Uint8Array) return Uint8Array.from(value);
+  if (typeof value === "string") return ENCODE.encode(value);
+  throw new RuntimeError("InvalidRequest", `${label} must be text or bytes`);
+}
+
+function asIrBytes(value) {
+  if (value !== null && typeof value === "object" && !(value instanceof Uint8Array)) {
+    return ENCODE.encode(JSON.stringify(value));
+  }
+  return asBytes(value, "model IR");
 }
 
 function asObject(value, label) {

@@ -9,6 +9,7 @@ const runtime = new BrowserRuntime();
 let state = initialState();
 let revision = 0;
 let pendingSharedProject;
+let exampleLoadRevision = 0;
 const examples = new Map();
 const objectUrls = new Set();
 const EXAMPLES_ROOT = new URL("../../examples/", import.meta.url);
@@ -19,6 +20,7 @@ const design = element("#design-data");
 const truth = element("#truth-data");
 
 source.addEventListener("input", () => {
+  exampleLoadRevision += 1;
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
@@ -31,6 +33,7 @@ element("#sample-button").addEventListener("click", () => launchRun(samplePoster
 element("#prior-button").addEventListener("click", () => launchRun(runPriorPredictive));
 element("#simulate-button").addEventListener("click", () => launchRun(simulateData));
 element("#sample-simulated-button").addEventListener("click", () => launchRun(sampleSimulated));
+element("#posterior-button").addEventListener("click", () => launchRun(runPosteriorPredictive));
 element("#examples-menu").addEventListener("change", () => void loadExample());
 element("#share-button").addEventListener("click", () => void shareProject());
 element("#load-shared").addEventListener("click", loadSharedProject);
@@ -64,12 +67,15 @@ async function initializeExamples() {
 }
 
 async function loadExample() {
-  const entry = examples.get(element("#examples-menu").value);
+  const selectedId = element("#examples-menu").value;
+  const entry = examples.get(selectedId);
   if (entry === undefined) return;
+  const loadRevision = ++exampleLoadRevision;
   const [modelSource, observedText, designText, truthText] = await Promise.all([
     fetchAsset(entry.source), fetchOptionalAsset(entry.observed),
     fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
   ]);
+  if (loadRevision !== exampleLoadRevision || element("#examples-menu").value !== selectedId) return;
   setProject({ source: modelSource, observed: observedText, design: designText, truth: truthText });
 }
 
@@ -126,6 +132,8 @@ function loadSharedProject() {
 }
 
 function setProject(project) {
+  exampleLoadRevision += 1;
+  element("#progress").replaceChildren();
   for (const [control, value] of [[source, project.source], [observed, project.observed], [design, project.design], [truth, project.truth]]) {
     control.textContent = value;
     control.value = value;
@@ -157,6 +165,7 @@ function settingsEdited() {
 }
 
 function documentsEdited() {
+  exampleLoadRevision += 1;
   element("#progress").replaceChildren();
   dispatch({
     type: "documents-edited",
@@ -195,6 +204,19 @@ async function runPriorPredictive() {
   });
 }
 
+async function runPosteriorPredictive() {
+  const posterior = state.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
+  const data = state.artifacts.find((artifact) => artifact.name === "data.json");
+  if (posterior === undefined || data === undefined) return;
+  await runSingle({
+    operation: "posterior-predictive",
+    modelIr: compiledBytes(),
+    data: data.bytes,
+    fit: posterior.bytes,
+    settings: samplerSettings(),
+  });
+}
+
 async function simulateData() {
   await runSingle({
     operation: "simulate",
@@ -216,9 +238,11 @@ async function sampleData(dataBytes, recoveryTruth) {
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
   element("#progress").replaceChildren();
-  dispatch({ type: "run-started", requestId, revision: projectRevision });
+  dispatch({ type: "run-started", requestId, revision: projectRevision, operation: "sample" });
   try {
     const sampled = await runtime.run({
+      type: "run",
+      id: requestId,
       operation: "sample",
       modelIr: state.compile.irBytes,
       data: dataBytes,
@@ -229,14 +253,14 @@ async function sampleData(dataBytes, recoveryTruth) {
     let artifacts = [...sampled.artifacts];
     const warnings = [];
     try {
-      const diagnosed = await runtime.run({ operation: "diagnose", fit: posterior.bytes });
+      const diagnosed = await runtime.run({ type: "run", id: crypto.randomUUID(), operation: "diagnose", fit: posterior.bytes });
       artifacts = [...artifacts, ...diagnosed.artifacts];
     } catch (error) {
       warnings.push(`Posterior completed; diagnostics unavailable: ${message(error)}`);
     }
     if (recoveryTruth !== undefined) {
       try {
-        const recovery = await runtime.run({ operation: "recover-check", fit: posterior.bytes, truth: recoveryTruth });
+        const recovery = await runtime.run({ type: "run", id: crypto.randomUUID(), operation: "recover-check", fit: posterior.bytes, truth: recoveryTruth });
         artifacts = [...artifacts, ...recovery.artifacts];
       } catch (error) {
         warnings.push(`Posterior completed; recovery check unavailable: ${message(error)}`);
@@ -259,10 +283,10 @@ async function runSingle(request) {
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
   element("#progress").replaceChildren();
-  dispatch({ type: "run-started", requestId, revision: projectRevision });
+  dispatch({ type: "run-started", requestId, revision: projectRevision, operation: request.operation });
   try {
     const result = await runtime.run(
-      request,
+      { type: "run", id: requestId, ...request },
       (event) => renderActiveProgress(requestId, projectRevision, event),
     );
     dispatch({ type: "run-succeeded", requestId, revision: projectRevision, artifacts: result.artifacts });
@@ -350,6 +374,12 @@ function render() {
   element("#simulate-button").disabled = unavailable || design.value.trim() === "" || truth.value.trim() === "";
   element("#sample-simulated-button").disabled = sampleUnavailable ||
     !state.artifacts.some((artifact) => artifact.name === "simulated_data.json") || truth.value.trim() === "";
+  element("#posterior-button").disabled = unavailable ||
+    !state.artifacts.some((artifact) => artifact.name === "posterior.ndjson") ||
+    !state.artifacts.some((artifact) => artifact.name === "data.json");
+  element("#run-status").textContent = state.run.status === "running"
+    ? `${operationLabel(state.run.operation)} is running…`
+    : "";
 
   const runError = element("#run-error");
   if (state.run.status === "failed") {
@@ -369,9 +399,12 @@ function renderArtifacts(artifacts) {
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls.clear();
   const mapping = {
+    "model.ir.json": "#artifact-model",
+    "data.json": "#artifact-data",
     "posterior.ndjson": "#artifact-posterior",
     "diagnostics.json": "#artifact-diagnostics",
     "prior_predictive.ndjson": "#artifact-prior",
+    "posterior_predictive.ndjson": "#artifact-posterior-predictive",
     "simulated_data.json": "#artifact-simulated",
     "recovery_check.json": "#artifact-recovery",
   };
@@ -425,6 +458,16 @@ function renderPlots(artifacts) {
     element("#run-error").hidden = false;
     element("#run-error").textContent = `Artifacts downloaded, but plots could not render: ${message(error)}`;
   }
+}
+
+function operationLabel(operation) {
+  const labels = {
+    sample: "Sampling",
+    "prior-predictive": "Prior predictive sampling",
+    "posterior-predictive": "Posterior predictive sampling",
+    simulate: "Simulation",
+  };
+  return labels[operation] ?? "Operation";
 }
 
 function integerValue(selector) { return Number.parseInt(element(selector).value, 10); }
