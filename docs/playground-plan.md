@@ -105,15 +105,26 @@ operation cannot erase an already completed posterior.
 [`playground/invariants.md`](../playground/invariants.md) is the normative
 browser trust boundary and lists its explicit non-guarantees.
 
-User model source executes only in a dedicated compiler worker. That worker is
-sent source but never data, truth, posterior draws, or other project artifacts;
-it is terminated after success, failure, or timeout. Worker messages are
-validated at the boundary.
+Each explicit compile creates a fresh Pyodide compiler worker. That worker is
+sent protocol metadata and source, but never data, truth, sampler settings,
+posterior draws, or other project artifacts. It is unconditionally terminated
+before the compile promise settles on success, declaration failure, malformed
+response, worker error, startup failure, timeout, or cancellation. A later
+compile cannot inherit the prior worker's Python modules, heap, or filesystem.
 
-An import policy may improve error messages but is not described as a Python
-sandbox. Shared source is displayed first and executes only after an explicit
-compile action. Documentation distinguishes application-originated network
-isolation from arbitrary Python sandboxing.
+The worker uses Bayeswire's ordinary canonical serializer. Compiler output is
+user-controlled: source may alter its own interpreter and therefore its own
+compile result. The trusted browser client validates and bounds the exact
+returned bytes, ignores any worker digest, computes SHA-256 with Web Crypto,
+and sends the unchanged bytes to the separate engine boundary, whose decoder
+rejects malformed IR.
+
+External-origin requests from compiler source are blocked by browser policy;
+defense-in-depth worker API restrictions are not described as a Python sandbox
+or import policy. Same-origin assets are public static files. Shared source is
+displayed first and executes only after an explicit compile action. Browser v0
+does not provide source-to-IR attestation, a general hostile-Python sandbox, or
+guaranteed erasure of browser storage explicitly written by hostile source.
 
 ## Testing and publication
 

@@ -16,7 +16,9 @@ formats retain their own compatibility policies.
   an isolated Pyodide worker, run the pinned Bayesite wasm engine per chain,
   normalize explicit JSON data/design/truth documents, inspect posterior
   diagnostics and SVG plots, simulate and check recovery, download standard
-  run-directory artifacts, and share reviewed projects without a backend.
+  run-directory artifacts, and share reviewed projects without a backend. Each
+  explicit compile uses a fresh disposable worker; the browser validates and
+  hashes untrusted compiler bytes before separate engine workers consume them.
 
 ## [0.5.0] - 2026-07-10
 

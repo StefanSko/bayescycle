@@ -12,14 +12,29 @@ unknown message types and malformed fields.
 
 ## Compile
 
+The UI-facing operation is `runtime.compile(source)`. In `BrowserRuntime`, one
+call creates one fresh compiler worker and sends only:
+
 ```text
-CompileRequest  {type: "compile", id, source}
-CompileSuccess  {type: "compiled", id, irBytes, irHash}
-CompileFailure  {type: "compile-error", id, error: {kind, message, traceback}}
+WorkerCompileRequest  {type: "compile", protocol, id, source}
+WorkerCompileSuccess  {type: "compiled", id, irBytes}
+WorkerCompileFailure  {type: "compile-error", id, exceptionType, message, traceback}
 ```
 
-`irBytes` are the canonical bytes produced by bayeswire. `irHash` is SHA-256 of
-those received bytes. Compilation executes only after an explicit user action.
+The worker returns the exact bytes produced by Bayeswire's ordinary canonical
+serializer; those bytes are untrusted compiler output. After validating the
+response, the browser client terminates the compiler worker and computes
+SHA-256 over the exact received bytes with Web Crypto. The UI-facing result is:
+
+```text
+CompileSuccess  {ok: true, irBytes, irHash, executionContext: "worker"}
+CompileFailure  {ok: false, exceptionType, message, traceback, executionContext: "worker"}
+```
+
+A worker-provided digest is not required or trusted. Compilation executes only
+after an explicit user action. Timeout, startup failure, worker error,
+malformed response, oversized output, and cancellation all terminate that
+attempt's worker before the promise settles.
 
 ## Run
 

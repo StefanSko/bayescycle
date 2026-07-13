@@ -17,7 +17,7 @@
   </aside>
   <header class="page-header">
     <div><p class="eyebrow">Runs entirely in this browser · <span id="playground-version">v0.5.0</span></p><h1>Bayescycle Playground</h1></div>
-    <p class="lede">Model source and data stay in this tab. One universal Bayesite engine runs every model.</p>
+    <p class="lede">No compilation backend: a disposable browser worker compiles source, then separate Bayesite workers run inference.</p>
   </header>
   <main>
     <section aria-labelledby="model-heading">
@@ -30,6 +30,7 @@
       <div id="share-output" hidden><label for="share-url">Reviewed share URL</label><input id="share-url" type="url" readonly><p id="share-warning" class="hint" hidden>Long URL: some applications may truncate it.</p></div>
       <label for="model-source">Bayeswire model source</label>
       <textarea id="model-source" rows="20" spellcheck="false" placeholder="Paste a @model class…"></textarea>
+      <p class="hint">Model source is arbitrary Python, not a general sandbox. External-origin requests are blocked; review shared source before compiling.</p>
       <button id="compile-button" class="primary" type="button">Compile model</button>
       <output id="compile-status" class="status" for="model-source compile-button" aria-live="polite"></output>
       <pre id="compile-error" class="error" role="alert" hidden></pre>
