@@ -152,7 +152,7 @@ function validError(value) {
 }
 
 function validResult(value) {
-  if (!(value.rawBytes instanceof Uint8Array) || !Number.isInteger(value.chainId)) return false;
+  if (value.type !== "result" || !(value.rawBytes instanceof Uint8Array) || !Number.isInteger(value.chainId)) return false;
   if (value.header !== undefined && (value.header === null || typeof value.header !== "object" || Array.isArray(value.header))) return false;
   if (value.trailer !== undefined && (value.trailer === null || typeof value.trailer !== "object" || Array.isArray(value.trailer))) return false;
   if (value.modelDataFingerprint !== undefined && typeof value.modelDataFingerprint !== "string") return false;
