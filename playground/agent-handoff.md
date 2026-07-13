@@ -80,7 +80,7 @@ freezing behavioral tests.
 
 ## Execution discipline
 
-Execute work orders R10 through R16 in `docs/playground-tdd-plan.md` using
+Execute work orders R10 through R17 in `docs/playground-tdd-plan.md` using
 strict RED → GREEN discipline:
 
 - Each behavioral work order begins with a RED commit containing reviewed tests
@@ -161,9 +161,53 @@ uv run pytest tests -q
 Also follow all repository/package validation instructions relevant to changed
 files. Keep the branch pushed at meaningful GREEN checkpoints.
 
+## Safe boundary red-team
+
+At R14 completion, implement and explicitly invoke the project-local skill:
+
+```text
+.pi/skills/playground-boundary-red-team/SKILL.md
+```
+
+Give it `disable-model-invocation: true`; it must never run implicitly. The skill
+must start a fresh `openai-codex/gpt-5.6-sol` Pi session at `xhigh`, disable
+child skill loading to prevent recursion, and grant only `read` and `bash`.
+Repository modification remains prohibited by its authority contract even
+though browser automation and temporary local processes require `bash`.
+
+Commit a reviewable attack catalog and report template beside the skill. Run
+only against a temporary localhost Playground with synthetic canaries and a
+second localhost origin as the external-request sink. Keep browser profiles,
+screenshots, logs, payloads, and reports beneath `/tmp`. Never use real data,
+secrets, credentials, deployed Pages, third-party targets, destructive resource
+exhaustion, host escape techniques, or browser/Pyodide vulnerability research.
+Always clean up Rodney, browser profiles, sinks, and servers, then prove the
+worktree is unchanged.
+
+The catalog must safely probe:
+
+- source-only compiler messaging with a synthetic data canary;
+- `fetch`, XHR, WebSocket, and EventSource toward the local external-origin
+  sink;
+- spoofed, malformed, unknown, and stale worker messages;
+- module poisoning followed by a fresh golden corpus compile;
+- declaration failure, throw, worker close/error, startup failure, timeout, and
+  bounded non-termination recovery;
+- ignored worker digests and trusted-client hashing of exact bytes;
+- malformed and oversized compiler output;
+- compiler termination before engine handoff and rejection of malformed IR.
+
+Classify every result as `RESISTED`, `ESCAPED`, `EXPECTED CAPABILITY`, or
+`UNTESTED`, citing the exact clause in `playground/invariants.md`. In particular,
+current-compile mutation, public same-origin static fetches, and explicitly
+excluded persistence behavior are not escapes by themselves. The child reports
+only; it never fixes code. Verify each alleged escape, add a RED regression,
+make the narrow GREEN fix, and rerun a fresh child audit until no in-scope
+escape remains.
+
 ## Independent Pi review
 
-At R14 completion, invoke the global `pi-review` skill:
+At R15 completion, invoke the global `pi-review` skill:
 
 ```text
 /Users/stefansko/.pi/agent/skills/pi-review/SKILL.md
@@ -186,7 +230,7 @@ clean or clean with only explicit residual risks allowed by the invariants.
 
 ## Final PR preparation
 
-At R15 completion:
+At R16 completion:
 
 - ensure the worktree is clean;
 - push the final implementation;
@@ -196,7 +240,7 @@ At R15 completion:
 
 ## Codex review loop
 
-Then execute R16 using the `codex-pr-review-loop` skill:
+Then execute R17 using the `codex-pr-review-loop` skill:
 
 ```text
 /Users/stefansko/.pi/agent/skills/codex-pr-review-loop/SKILL.md
@@ -231,6 +275,7 @@ Report:
 - the final commit;
 - validation results;
 - Rodney flows completed;
+- safe boundary red-team verdict and report path;
 - independent Pi review verdict and report path;
 - PR URL;
 - clean current-head Codex review evidence;
