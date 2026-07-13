@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -44,6 +45,18 @@ def test_application_does_not_infer_raw_ir_semantics() -> None:
     )
     for token in forbidden:
         assert token not in application_source
+
+
+def test_svg_renderer_theme_variables_are_defined() -> None:
+    renderer_source = "\n".join(
+        path.read_text()
+        for directory in (SITE_ROOT / "src" / "dashboard", SITE_ROOT / "src" / "critique")
+        for path in directory.glob("*.mjs")
+    )
+    stylesheet = (SITE_ROOT / "styles.css").read_text()
+    referenced = set(re.findall(r"var\((--[a-z-]+)", renderer_source))
+    defined = set(re.findall(r"(--[a-z-]+)\s*:", stylesheet))
+    assert referenced <= defined, f"undefined SVG theme variables: {sorted(referenced - defined)}"
 
 
 def test_engine_manifest_matches_wasm() -> None:
