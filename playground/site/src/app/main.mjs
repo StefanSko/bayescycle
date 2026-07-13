@@ -74,6 +74,7 @@ let simulatedTruth = null;
 let recovery = null;
 let resolvedTruthSizes = {};
 let truthSizeError = null;
+let partiallyObserved = false;
 let pendingSharedForms = null;
 let sharedProject = null;
 let examples = new Map();
@@ -321,6 +322,7 @@ function scheduleCompile() {
   recovery = null;
   resolvedTruthSizes = {};
   truthSizeError = null;
+  partiallyObserved = false;
   runButton.textContent = "Run sampler";
   resetResults();
   hashChip.textContent = "";
@@ -345,6 +347,7 @@ async function compileSource(generation) {
   }
   const ir = JSON.parse(UTF8.decode(result.irBytes));
   compiled = { ...result, ir };
+  partiallyObserved = containsNode(ir.model, "VectorScatterOp");
   hashChip.textContent = result.irHash;
   renderDesignTables(ir);
   if (pendingSharedForms !== null) {
@@ -746,6 +749,13 @@ function indexDataNames(value, names = new Set()) {
   return names;
 }
 
+function containsNode(value, node) {
+  if (Array.isArray(value)) return value.some((entry) => containsNode(entry, node));
+  if (value === null || typeof value !== "object") return false;
+  if (value.node === node) return true;
+  return Object.values(value).some((entry) => containsNode(entry, node));
+}
+
 function simulatedDataDocument(bytes) {
   let parsed;
   try {
@@ -810,7 +820,10 @@ function expandedRecoveryTruth(data, truth) {
       if (parameters.length === 0) {
         throw new Error(`Posterior draws are missing truth parameter ${name}`);
       }
-      return parameters.map((parameter) => [parameter.label, value]);
+      return parameters.map((parameter) => [
+        parameter.label,
+        Array.isArray(value) ? coordinateValue(value, parameter.coordinate) : value,
+      ]);
     }),
   );
 }
@@ -923,14 +936,18 @@ function tableCell(text, className = "") {
 function updateRunButton() {
   runButton.disabled = running || compiled === null || !mappingComplete;
   const designDisabled = running || compiled === null || dataMode !== "design";
-  priorPredictiveButton.disabled = designDisabled;
-  simulateButton.disabled = designDisabled || truthSizeError !== null;
-  simulateReason.textContent = truthSizeError === null ? "" : truthSizeError;
-  simulateReason.hidden = truthSizeError === null || dataMode !== "design";
+  const partialReason = partiallyObserved
+    ? "Design mode does not support partially observed models yet — bind observed data instead."
+    : null;
+  priorPredictiveButton.disabled = designDisabled || partialReason !== null;
+  simulateButton.disabled = designDisabled || partialReason !== null || truthSizeError !== null;
+  const reason = partialReason ?? truthSizeError;
+  simulateReason.textContent = reason ?? "";
+  simulateReason.hidden = reason === null || dataMode !== "design";
 }
 
 async function runPriorPredictive() {
-  if (compiled === null || running || dataMode !== "design") return;
+  if (compiled === null || running || dataMode !== "design" || partiallyObserved) return;
   running = true;
   recovery = null;
   clearRunError();
@@ -960,7 +977,7 @@ async function runPriorPredictive() {
 }
 
 async function runSimulation() {
-  if (compiled === null || running || dataMode !== "design") return;
+  if (compiled === null || running || dataMode !== "design" || partiallyObserved) return;
   running = true;
   recovery = null;
   clearRunError();
@@ -974,12 +991,13 @@ async function runSimulation() {
   updateRunButton();
   try {
     const truth = currentTruth();
+    const resolvedTruth = truthDocument(truth, resolvedTruthSizes);
     const executor = new WorkerEngine();
     const output = requireResult(
       await simulate({
         model: compiled.ir,
         data: boundDesignDocument(),
-        truth: truthDocument(truth, resolvedTruthSizes),
+        truth: resolvedTruth,
         seed: integerValue("#seed"),
         executor,
       }),
@@ -988,7 +1006,12 @@ async function runSimulation() {
       simulatedDataDocument(output.rawBytes),
       requiredInputs(compiled.ir),
     );
-    simulatedTruth = truth;
+    simulatedTruth = Object.fromEntries(
+      Object.entries(resolvedTruth.variables).map(([name, variable]) => [
+        name,
+        variable.shape.length === 0 ? variable.values[0] : variable.values,
+      ]),
+    );
     simulated = true;
     runButton.textContent = "Sample on simulated data";
     bindSimulated(requiredInputs(compiled.ir));
@@ -1050,24 +1073,28 @@ async function runStudy() {
     const fitTexts = sampled.map((output) => UTF8.decode(output.rawBytes));
     const mergedFit = mergeChainFits(fitTexts);
     const diagnosed = requireResult(await diagnose({ fits: fitTexts, executor }))[0];
-    const predictive = requireResult(
-      await posteriorPredictive({
-        model: compiled.ir,
-        data: boundDocument,
-        fit: mergedFit,
-        seed: settings.seed + 1,
-        executor,
-      }),
-    )[0];
-    const prior = requireResult(
-      await priorPredictive({
-        model: compiled.ir,
-        data: predictiveInputs(compiled.ir, boundDocument),
-        settings: { num_draws: 200 },
-        seed: settings.seed + 2,
-        executor,
-      }),
-    )[0];
+    const predictive = compiled.ir.model.observed_nodes.length === 0
+      ? null
+      : requireResult(
+          await posteriorPredictive({
+            model: compiled.ir,
+            data: boundDocument,
+            fit: mergedFit,
+            seed: settings.seed + 1,
+            executor,
+          }),
+        )[0];
+    const prior = compiled.ir.model.observed_nodes.length === 0
+      ? null
+      : requireResult(
+          await priorPredictive({
+            model: compiled.ir,
+            data: predictiveInputs(compiled.ir, boundDocument),
+            settings: { num_draws: 200 },
+            seed: settings.seed + 2,
+            executor,
+          }),
+        )[0];
     const downloadableFit = fitTexts.length === 1 ? fitTexts[0] : mergedFit;
     renderResults(fitTexts, downloadableFit, diagnosed, predictive, prior, truthForRecovery);
   } catch (error) {
@@ -1109,18 +1136,32 @@ function renderResults(fitTexts, downloadableFit, diagnosed, predictive, prior, 
   element("#plot-precis").innerHTML = expandedTruth === null
     ? renderPrecis(dashboardData)
     : renderPrecis(dashboardData, expandedTruth);
-  element("#plot-ppc").innerHTML = renderDensityOverlay(
-    predictivePlotData(compiled.ir, boundDocument, predictive.rawBytes),
-  );
-  element("#plot-overlay").innerHTML = renderPriorPosteriorOverlay(
-    overlayPlotData(dashboardData, prior.rawBytes),
-  );
+  if (predictive === null) {
+    element("#plot-ppc").textContent =
+      "Posterior predictive display is not available for partially observed models yet.";
+  } else {
+    element("#plot-ppc").innerHTML = renderDensityOverlay(
+      predictivePlotData(compiled.ir, boundDocument, predictive.rawBytes),
+    );
+  }
+  if (prior === null) {
+    element("#plot-overlay").textContent =
+      "Prior to posterior display is not available for partially observed models yet.";
+  } else {
+    element("#plot-overlay").innerHTML = renderPriorPosteriorOverlay(
+      overlayPlotData(dashboardData, prior.rawBytes),
+    );
+  }
 
   fitDownload = new Blob([downloadableFit], { type: "application/x-ndjson" });
   diagnosticsDownload = new Blob([diagnosed.rawBytes], { type: "application/json" });
   element("#download-fit").disabled = false;
   element("#download-diagnostics").disabled = false;
-  for (const button of document.querySelectorAll(".download-svg")) button.disabled = false;
+  for (const button of document.querySelectorAll(".download-svg")) {
+    button.disabled =
+      (predictive === null && button.dataset.plot === "ppc") ||
+      (prior === null && button.dataset.plot === "overlay");
+  }
   element("#results").hidden = false;
 }
 

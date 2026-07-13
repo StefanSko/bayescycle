@@ -187,7 +187,8 @@ fresh browser with the network tab showing zero non-origin requests.**
 Service worker / true offline (port WO-9.5, incl. the F2 update-flow fix) ·
 `analysis.py` on the resident Pyodide with draws in scope · Gist +
 embed mode (the teaching channel) · additional-files tab ·
-`recover-check` UI · session save/load — **ring 1's gateway, where the
+`recover-check` UI · partially observed models in design mode + posterior
+predictive display · session save/load — **ring 1's gateway, where the
 `.bayes` file quietly returns.**
 
 ## Cadence per work order
