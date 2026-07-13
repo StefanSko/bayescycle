@@ -10,6 +10,18 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+### Added
+
+- Add the playground (top-level `playground/`, not a workspace member): a
+  fully client-side browser app that compiles bayeswire models via Pyodide,
+  samples with the vendored Bayesite 0.2.1 wasm engine in per-chain Web
+  Workers, binds CSV/JSON data with a visible mapping table, renders
+  trank/trace, ESS×R-hat, precis, posterior-predictive, and prior→posterior
+  plots, supports truth-known simulate → sample recovery with design-value
+  forms, and shares projects through reviewed, never-auto-executing URL
+  fragments. Tests run in a real browser (pytest + playwright harness); CI
+  gains a `playground` job. Model and data never leave the tab.
+
 ## [0.5.0] - 2026-07-10
 
 ### Added

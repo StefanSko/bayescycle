@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Playground</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Playground</h1>
+      <p>Author, bind, sample, and inspect a Bayesian model in your browser.</p>
+    </header>
+    <section id="share-interstitial" aria-label="Review shared project" hidden>
+      <p class="share-interstitial-title">Review shared project</p>
+      <p>this link contains model code; review before running</p>
+      <pre id="share-source"></pre>
+      <button id="share-load" type="button">Load project</button>
+    </section>
+    <main>
+      <section id="pane-model">
+        <h2>Model</h2>
+        <div class="model-actions">
+          <label for="examples-menu">Example model</label>
+          <select id="examples-menu"><option value="">Examples…</option></select>
+          <button id="share-button" type="button" disabled>Share</button>
+        </div>
+        <div class="share-output" hidden>
+          <label for="share-url">Share URL</label>
+          <input id="share-url" type="url" readonly>
+          <div id="share-warning" role="status" hidden>This share link is unusually long and may not work in every browser.</div>
+        </div>
+        <div class="compile-status">
+          <span id="ir-hash-chip" aria-live="polite"></span>
+        </div>
+        <div data-testid="model-editor"></div>
+        <pre id="compile-error" role="alert" hidden></pre>
+      </section>
+
+      <section id="pane-data">
+        <h2>Data</h2>
+        <fieldset class="mode-switch">
+          <legend>Data mode</legend>
+          <label for="data-mode-observed"><input id="data-mode-observed" name="data-mode" type="radio" value="observed" checked> Observed</label>
+          <label for="data-mode-design"><input id="data-mode-design" name="data-mode" type="radio" value="design"> Design</label>
+        </fieldset>
+        <div id="observed-panel">
+          <div class="field">
+            <label for="csv-input">CSV file</label>
+            <input id="csv-input" type="file" accept=".csv,text/csv">
+          </div>
+          <div class="field">
+            <label for="json-input">Bayesite data document</label>
+            <textarea id="json-input" rows="8" spellcheck="false"></textarea>
+          </div>
+          <button id="json-load" type="button">Load JSON</button>
+        </div>
+        <div id="design-panel" hidden>
+          <h3>Design values</h3>
+          <table id="design-values">
+            <thead><tr><th>Input</th><th>Low</th><th>High</th><th>Rows</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <h3>Parameter truth</h3>
+          <table id="truth-values">
+            <thead><tr><th>Parameter</th><th>Truth</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="mapping-scroll">
+          <table id="mapping-table">
+            <thead><tr><th>Input</th><th>Source</th><th>Status</th><th>Column</th><th>Transform</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="pane-run">
+        <h2>Run</h2>
+        <pre id="run-error" role="alert" hidden></pre>
+        <form id="sampler-settings">
+          <div class="field"><label for="chains">Chains</label><input id="chains" type="number" min="1" value="4"></div>
+          <div class="field"><label for="num-warmup">Warmup</label><input id="num-warmup" type="number" min="0" value="1000"></div>
+          <div class="field"><label for="num-draws">Draws</label><input id="num-draws" type="number" min="1" value="2000"></div>
+          <div class="field"><label for="seed">Seed</label><input id="seed" type="number" min="0" value="0"></div>
+          <div class="field"><label for="target-accept">Target accept</label><input id="target-accept" type="number" min="0" max="1" step="0.01" value="0.8"></div>
+          <div class="field"><label for="max-treedepth">Max treedepth</label><input id="max-treedepth" type="number" min="1" value="10"></div>
+          <button id="run-button" type="submit" disabled>Run sampler</button>
+        </form>
+        <div id="design-run-controls" hidden>
+          <button id="run-prior-predictive" type="button" disabled>Run prior predictive</button>
+          <button id="run-simulate" type="button" disabled>Simulate data</button>
+          <p id="simulate-reason" role="status" hidden></p>
+        </div>
+        <div id="progress" aria-live="polite"></div>
+        <div id="results" hidden>
+          <div class="result-controls">
+            <label for="plot-mode">Chain plot</label>
+            <select id="plot-mode"><option value="rank">rank</option><option value="trace">trace</option></select>
+            <button id="download-fit" type="button" disabled>Download fit</button>
+            <button id="download-diagnostics" type="button" disabled>Download diagnostics</button>
+          </div>
+          <article><h3>Rank / trace</h3><div id="plot-trank"></div><button class="download-svg" data-plot="trank" type="button" disabled>Download rank or trace SVG</button></article>
+          <article><h3>ESS × R-hat</h3><div id="plot-esshat"></div><button class="download-svg" data-plot="esshat" type="button" disabled>Download ESS and R-hat SVG</button></article>
+          <article><h3>Precis</h3><div id="plot-precis"></div><button class="download-svg" data-plot="precis" type="button" disabled>Download precis SVG</button></article>
+          <article><h3>Posterior predictive</h3><div id="plot-ppc"></div><button class="download-svg" data-plot="ppc" type="button" disabled>Download posterior predictive SVG</button></article>
+          <article><h3>Prior to posterior</h3><div id="plot-overlay"></div><button class="download-svg" data-plot="overlay" type="button" disabled>Download prior to posterior SVG</button></article>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./src/app/main.mjs"></script>
+  </body>
+</html>
