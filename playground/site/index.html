@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Compile and sample Bayeswire models entirely in your browser.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:">
+  <title>Bayescycle Playground</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <aside id="share-review" class="share-review" aria-labelledby="share-review-heading" hidden>
+    <h2 id="share-review-heading">Review shared model</h2>
+    <p>This link contains Python model source. Nothing has run yet. Review it before loading, then compile explicitly.</p>
+    <pre id="share-source"></pre>
+    <button id="load-shared" class="primary" type="button">Load reviewed project</button>
+  </aside>
+  <header class="page-header">
+    <div><p class="eyebrow">Runs entirely in this browser · <span id="playground-version">v0.5.0</span></p><h1>Bayescycle Playground</h1></div>
+    <p class="lede">No compilation backend: a disposable browser worker compiles source, then separate Bayesite workers run inference.</p>
+  </header>
+  <main>
+    <section aria-labelledby="model-heading">
+      <div class="section-heading"><h2 id="model-heading">1 · Model</h2><span id="ir-hash" class="hash" hidden></span></div>
+      <div class="project-actions">
+        <label for="examples-menu">Example</label>
+        <select id="examples-menu"><option value="">Choose a project…</option></select>
+        <button id="share-button" type="button" disabled>Share project</button>
+      </div>
+      <div id="share-output" hidden><label for="share-url">Reviewed share URL</label><input id="share-url" type="url" readonly><p id="share-warning" class="hint" hidden>Long URL: some applications may truncate it.</p></div>
+      <label for="model-source">Bayeswire model source</label>
+      <textarea id="model-source" rows="20" spellcheck="false" placeholder="Paste a @model class…"></textarea>
+      <p class="hint">Model source is arbitrary Python, not a general sandbox. External-origin requests are blocked; review shared source before compiling.</p>
+      <button id="compile-button" class="primary" type="button">Compile model</button>
+      <output id="compile-status" class="status" for="model-source compile-button" aria-live="polite"></output>
+      <pre id="compile-error" class="error" role="alert" hidden></pre>
+    </section>
+
+    <section aria-labelledby="documents-heading">
+      <h2 id="documents-heading">2 · Documents</h2>
+      <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
+      <label for="observed-data">Observed data JSON</label>
+      <textarea id="observed-data" rows="12" spellcheck="false" placeholder='{"x": [1, 2], "y": [3, 4]}'></textarea>
+      <details id="simulation-documents" open>
+        <summary>Simulation documents</summary>
+        <label for="design-data">Design data JSON</label>
+        <textarea id="design-data" rows="7" spellcheck="false" placeholder='{"x": [-1, 0, 1]}'></textarea>
+        <label for="truth-data">Parameter truth JSON</label>
+        <textarea id="truth-data" rows="7" spellcheck="false" placeholder='{"alpha": 0, "beta": 1}'></textarea>
+      </details>
+    </section>
+
+    <section aria-labelledby="run-heading">
+      <h2 id="run-heading">3 · Run</h2>
+      <div class="settings">
+        <label for="chains">Chains<input id="chains" type="number" min="1" value="4"></label>
+        <label for="warmup">Warmup<input id="warmup" type="number" min="0" value="1000"></label>
+        <label for="draws">Draws<input id="draws" type="number" min="4" value="2000"></label>
+        <label for="seed">Seed<input id="seed" type="number" min="0" value="0"></label>
+        <label for="target-accept">Target accept<input id="target-accept" type="number" min="0.01" max="0.99" step="0.01" value="0.8"></label>
+        <label for="max-treedepth">Max treedepth<input id="max-treedepth" type="number" min="1" value="10"></label>
+      </div>
+      <button id="sample-button" class="primary" type="button" disabled>Sample observed data</button>
+      <div class="simulation-actions">
+        <button id="prior-button" type="button" disabled>Prior predictive</button>
+        <button id="simulate-button" type="button" disabled>Simulate data</button>
+        <button id="sample-simulated-button" type="button" disabled>Sample simulated data</button>
+        <button id="posterior-button" type="button" disabled>Posterior predictive</button>
+      </div>
+      <output id="run-status" class="status" aria-live="polite"></output>
+      <div id="progress" class="progress" aria-live="polite"></div>
+      <pre id="run-error" class="error" role="alert" hidden></pre>
+      <div id="artifacts" hidden>
+        <h3>Run artifacts</h3>
+        <p>These are the same artifact names used by a Bayescycle run directory.</p>
+        <ul>
+          <li id="artifact-model" hidden><a download="model.ir.json">model.ir.json</a></li>
+          <li id="artifact-data" hidden><a download="data.json">data.json</a></li>
+          <li id="artifact-posterior" hidden><a download="posterior.ndjson">posterior.ndjson</a></li>
+          <li id="artifact-diagnostics" hidden><a download="diagnostics.json">diagnostics.json</a></li>
+          <li id="artifact-prior" hidden><a download="prior_predictive.ndjson">prior_predictive.ndjson</a></li>
+          <li id="artifact-posterior-predictive" hidden><a download="posterior_predictive.ndjson">posterior_predictive.ndjson</a></li>
+          <li id="artifact-simulated" hidden><a download="simulated_data.json">simulated_data.json</a></li>
+          <li id="artifact-recovery" hidden><a download="recovery_check.json">recovery_check.json</a></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+  <section id="plots" class="results-panel" aria-labelledby="plots-heading" hidden>
+    <h2 id="plots-heading">Posterior overview</h2>
+    <article id="recovery-summary" class="recovery-summary" hidden><h3>Recovery check</h3><div></div></article>
+    <div id="plot-grid" class="plot-grid">
+      <article><h3>Rank and trace</h3><div id="plot-trank"></div></article>
+      <article><h3>ESS × R-hat</h3><div id="plot-ess-rhat"></div></article>
+      <article><h3>Precis</h3><div id="plot-precis"></div></article>
+    </div>
+  </section>
+  <script type="module" src="./src/app/main.mjs"></script>
+</body>
+</html>

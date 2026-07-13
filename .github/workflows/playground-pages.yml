@@ -1,0 +1,43 @@
+name: Playground Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "playground/**"
+      - "packages/bayeswire/**"
+      - "packages/bayescycle/pyproject.toml"
+      - ".github/workflows/playground-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: playground-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync root development tools
+        run: uv sync --only-dev
+      - name: Stage pinned browser assets
+        run: uv run --no-sync python playground/scripts/stage_assets.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: playground/site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

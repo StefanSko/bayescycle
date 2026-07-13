@@ -1,0 +1,67 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #f3efe6;
+  color: #17241f;
+  --green: #24634f;
+  --line: #d5cec0;
+  --paper: #fffdf8;
+  --error: #9d2f24;
+  /* Artifact SVG renderers consume this stable theme vocabulary. */
+  --accent: var(--green);
+  --card: var(--paper);
+  --danger: var(--error);
+  --ink: #17241f;
+  --line-strong: #8f887b;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --muted: #52625b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.page-header, main, .results-panel { width: min(82rem, calc(100% - 2rem)); margin-inline: auto; }
+.page-header { display: flex; align-items: end; justify-content: space-between; gap: 2rem; padding: 2rem 0 1.25rem; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { margin-bottom: 0; font: 700 clamp(2rem, 4vw, 3.5rem)/1.05 Georgia, serif; }
+h2 { font-size: 1.05rem; letter-spacing: .025em; }
+.eyebrow { margin-bottom: .5rem; color: var(--green); font-size: .74rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.lede { max-width: 34rem; margin-bottom: .2rem; color: #52625b; }
+main { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 1rem; padding-bottom: 3rem; align-items: start; }
+section { background: var(--paper); border: 1px solid var(--line); border-radius: .75rem; padding: 1rem; box-shadow: 0 8px 30px rgb(53 43 26 / 5%); }
+.section-heading { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+label { display: block; margin: .75rem 0 .3rem; font-size: .82rem; font-weight: 700; }
+textarea, input, select { border: 1px solid #bdb5a7; border-radius: .35rem; background: #fff; color: inherit; }
+textarea { width: 100%; resize: vertical; padding: .6rem; font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 4; }
+input, select { width: 100%; padding: .42rem; margin-top: .25rem; font: inherit; }
+.project-actions { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: .5rem; }
+.project-actions label { grid-column: 1 / -1; margin-bottom: -.25rem; }
+.project-actions button { white-space: nowrap; }
+.share-review { width: min(64rem, calc(100% - 2rem)); margin: 1rem auto 0; border-color: #c99736; background: #fff7df; }
+.share-review pre { max-height: 20rem; overflow: auto; padding: .75rem; background: #fff; white-space: pre-wrap; }
+button { border: 1px solid var(--green); border-radius: .4rem; padding: .58rem .8rem; background: transparent; color: var(--green); font-weight: 750; cursor: pointer; }
+button.primary { margin-top: .75rem; background: var(--green); color: white; }
+.simulation-actions { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .65rem; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 .75rem; }
+.hash { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; color: var(--green); font: .72rem ui-monospace, monospace; }
+.status, .progress { display: block; margin-top: .75rem; color: #52625b; font-size: .82rem; }
+.error { overflow: auto; padding: .65rem; border-left: 3px solid var(--error); background: #fff1ee; color: var(--error); white-space: pre-wrap; }
+.hint, details, #artifacts { color: #52625b; font-size: .86rem; }
+details { margin-top: 1rem; }
+summary { color: var(--green); cursor: pointer; font-weight: 700; }
+a { color: var(--green); }
+.results-panel { margin-bottom: 3rem; }
+.recovery-summary { margin-bottom: 1rem; overflow: auto; }
+.recovery-summary table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.recovery-summary th, .recovery-summary td { padding: .45rem; border-bottom: 1px solid var(--line); text-align: left; }
+.recovery-inside { color: var(--green); font-weight: 750; }
+.recovery-outside { color: var(--error); font-weight: 750; }
+.plot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.plot-grid article { min-width: 0; overflow: auto; border-top: 1px solid var(--line); padding-top: .75rem; }
+.plot-grid article:last-child { grid-column: 1 / -1; }
+.plot-grid svg { display: block; width: 100%; height: auto; min-width: 34rem; }
+@media (max-width: 900px) {
+  .page-header { display: block; }
+  .lede { margin-top: 1rem; }
+  main, .plot-grid { grid-template-columns: 1fr; }
+  .plot-grid article:last-child { grid-column: auto; }
+}
