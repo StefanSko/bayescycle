@@ -20,7 +20,11 @@ def test_recovery_summary_remains_visible_when_diagnostics_fail(page: Page, base
             if (message.request?.command === "diagnose") {
               queueMicrotask(() => this.onmessage?.({ data: {
                 type: "error", id: message.id, chainId: message.chainId,
-                error: { error_format: "v0-provisional", error: "InjectedFailure", message: "diagnostics unavailable" },
+                error: {
+                  error_format: "v0-provisional",
+                  error: "InjectedFailure",
+                  message: "diagnostics unavailable",
+                },
               }}));
               return;
             }
