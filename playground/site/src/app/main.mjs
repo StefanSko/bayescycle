@@ -470,7 +470,7 @@ function operationLabel(operation) {
   return labels[operation] ?? "Operation";
 }
 
-function integerValue(selector) { return Number.parseInt(element(selector).value, 10); }
+function integerValue(selector) { return Number(element(selector).value); }
 function numberValue(selector) { return Number(element(selector).value); }
 function element(selector) {
   const value = document.querySelector(selector);
