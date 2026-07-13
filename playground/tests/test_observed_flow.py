@@ -26,6 +26,7 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     expect(page.locator("#sample-button")).to_be_enabled()
     page.locator("#sample-button").click()
     expect(page.locator("#run-status")).to_have_text("Sampling is running…")
+    expect(page.locator("#compile-button")).to_be_disabled()
 
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-diagnostics")).to_be_visible(timeout=120_000)
