@@ -16,6 +16,18 @@ class SyntheticLength:
     loc = mu + x
     y = Observed(Normal(loc, 1.0))
 """
+MATRIX_SOURCE = """from bayeswire import Data, Observed, Param, model
+from bayeswire.distributions import Normal
+
+
+@model
+class MatrixData:
+    n = Data.scalar()
+    m = Data.scalar()
+    x = Data.matrix(n, m)
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta, 1.0))
+"""
 
 
 def fixture_text(relative_path: str) -> str:
@@ -87,6 +99,49 @@ def test_json_binding_derives_synthetic_length(page: Page, base_url: str) -> Non
     # The synthetic length is UI bookkeeping only — the IR declares no "n",
     # so it must never reach the engine. Prove it by actually sampling: the
     # engine rejects undeclared data variables with a typed error.
+    for selector, value in {"#chains": "1", "#num-warmup": "10", "#num-draws": "10"}.items():
+        page.locator(selector).fill(value)
+    page.locator("#run-button").click()
+    page.wait_for_function(
+        "window.__playground.state().running === false && "
+        "window.__playground.state().lastRun !== null",
+        timeout=RUN_TIMEOUT,
+    )
+    expect(page.locator("#run-error")).to_be_hidden()
+
+
+def test_json_binding_derives_each_matrix_dimension(page: Page, base_url: str) -> None:
+    open_app(page, base_url)
+    page.evaluate(
+        "source => window.__playground.setSource(source)",
+        MATRIX_SOURCE,
+    )
+    page.wait_for_function(
+        "window.__playground.state().irHash !== ''",
+        timeout=COMPILE_TIMEOUT,
+    )
+    document = """{
+      "format": "bayescycle.data.json.v1",
+      "variables": {
+        "x": {
+          "dtype": "float64",
+          "shape": [2, 3],
+          "values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        },
+        "y": {"dtype": "float64", "shape": [2], "values": [0.5, -0.5]}
+      }
+    }"""
+    page.locator("#json-input").fill(document)
+    page.locator("#json-load").click()
+
+    for scalar_name in ("n", "m"):
+        row = page.locator(f'#mapping-table tr[data-input="{scalar_name}"]')
+        expect(row).to_have_attribute("data-status", "bound")
+        expect(row.locator("td").nth(1)).to_have_text("auto:length")
+    expect(page.locator('#mapping-table tr[data-input="x"]')).to_have_attribute(
+        "data-status", "bound"
+    )
+    expect(page.locator("#run-button")).to_be_enabled()
     for selector, value in {"#chains": "1", "#num-warmup": "10", "#num-draws": "10"}.items():
         page.locator(selector).fill(value)
     page.locator("#run-button").click()

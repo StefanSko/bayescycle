@@ -2,6 +2,7 @@
 
 const CSV_DELIMITERS = [",", ";", "\t"];
 const DATA_FORMAT = "bayescycle.data.json.v1";
+const DATA_DTYPES = new Set(["bool", "int32", "int64", "float32", "float64"]);
 
 export function sniffDelimiter(text) {
   const counts = new Map(CSV_DELIMITERS.map((delimiter) => [delimiter, 0]));
@@ -258,7 +259,7 @@ function validateVariable(key, entry) {
   if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
     throw new Error(`variable ${key} must be a data-document entry`);
   }
-  if (entry.dtype !== "int64" && entry.dtype !== "float64") {
+  if (!DATA_DTYPES.has(entry.dtype)) {
     throw new Error(`variable ${key} has invalid dtype`);
   }
   if (

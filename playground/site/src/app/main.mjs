@@ -11,6 +11,7 @@ import {
   designDocument,
   truthDocument,
 } from "./design.mjs";
+import { exampleAssetUrl } from "./examples.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { subsampleReplicates } from "./subsample.mjs";
 import { bind, importCsv, importJson, requiredInputs, standardize } from "../data/index.mjs";
@@ -264,7 +265,7 @@ function applySharedForms(forms) {
 
 async function initializeExamples() {
   try {
-    const response = await fetch("/site/examples/EXAMPLES.json");
+    const response = await fetch(exampleAssetUrl("EXAMPLES.json"));
     if (!response.ok) throw new Error(`Examples manifest request failed: HTTP ${response.status}`);
     const entries = await response.json();
     examples = new Map(entries.map((entry) => [entry.id, entry]));
@@ -283,7 +284,7 @@ async function loadExample() {
   const entry = examples.get(examplesMenu.value);
   if (entry === undefined) return;
   try {
-    const sourceResponse = await fetch(`/site/examples/${entry.source_path}`);
+    const sourceResponse = await fetch(exampleAssetUrl(entry.source_path));
     if (!sourceResponse.ok) {
       throw new Error(`Example source request failed: HTTP ${sourceResponse.status}`);
     }
@@ -292,7 +293,7 @@ async function loadExample() {
       changes: { from: 0, to: editor.state.doc.length, insert: source },
     });
     if (entry.data_path !== undefined) {
-      const dataResponse = await fetch(`/site/examples/${entry.data_path}`);
+      const dataResponse = await fetch(exampleAssetUrl(entry.data_path));
       if (!dataResponse.ok) {
         throw new Error(`Example data request failed: HTTP ${dataResponse.status}`);
       }
@@ -463,17 +464,25 @@ function bindJson(inputs) {
     if (input.kind !== "vector") continue;
     const variable = documentValue.variables[input.name];
     if (variable === undefined) continue;
-    const group = input.dims[0] ?? "n";
-    const length = variable.values.length;
-    const existing = lengthGroups.get(group);
-    if (existing !== undefined && length !== existing.length) {
-      throw new Error(
-        `bound vector length mismatch for group ${group}: ` +
-          `${input.name} has ${String(length)} rows, ` +
-          `${existing.input} has ${String(existing.length)}`,
-      );
+    const dimensions = input.dims.length === 0
+      ? [["n", variable.shape[0] ?? variable.values.length]]
+      : input.dims.map((dim, index) => [dim, variable.shape[index]]);
+    for (const [group, length] of dimensions) {
+      if (length === undefined) {
+        throw new Error(
+          `bound vector ${input.name} has no shape entry for dimension ${group}`,
+        );
+      }
+      const existing = lengthGroups.get(group);
+      if (existing !== undefined && length !== existing.length) {
+        throw new Error(
+          `bound vector length mismatch for group ${group}: ` +
+            `${input.name} has ${String(length)} rows, ` +
+            `${existing.input} has ${String(existing.length)}`,
+        );
+      }
+      lengthGroups.set(group, { input: input.name, length });
     }
-    lengthGroups.set(group, { input: input.name, length });
   }
 
   const mapping = inputs.map((input) => {
