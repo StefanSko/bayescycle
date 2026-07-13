@@ -25,8 +25,18 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     page.locator("#draws").fill("4")
     expect(page.locator("#sample-button")).to_be_enabled()
     page.locator("#sample-button").click()
+    expect(page.locator("#run-status")).to_have_text("Sampling is running…")
 
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-diagnostics")).to_be_visible(timeout=120_000)
+    expect(page.locator("#artifact-model")).to_be_visible()
+    expect(page.locator("#artifact-data")).to_be_visible()
     expect(page.locator("#progress")).to_contain_text("chain 1")
     expect(page.locator("#run-error")).to_be_hidden()
+
+    expect(page.locator("#posterior-button")).to_be_enabled()
+    page.locator("#posterior-button").click()
+    expect(page.locator("#artifact-posterior-predictive")).to_be_visible(timeout=120_000)
+
+    page.locator("#examples-menu").select_option("linear-simulation")
+    expect(page.locator("#progress")).to_be_empty()

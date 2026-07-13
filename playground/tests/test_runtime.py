@@ -6,6 +6,7 @@ from playwright.sync_api import Page
 CASES = [
     "runtime returns named diagnostic artifacts",
     "prior predictive ignores sampler-only settings",
+    "runtime preserves exact model bytes and returns enveloped run inputs",
     "runtime sampling returns valid merged posterior and progress",
 ]
 

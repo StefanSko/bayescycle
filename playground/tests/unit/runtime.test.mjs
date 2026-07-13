@@ -37,6 +37,32 @@ export default [
     },
   },
   {
+    name: "runtime preserves exact model bytes and returns enveloped run inputs",
+    fn: async () => {
+      const modelIr = new TextEncoder().encode(' { "bayeswire_ir" : 1 }\n');
+      const data = new TextEncoder().encode('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const requests = [];
+      const executor = {
+        execute: async (request) => {
+          requests.push(request);
+          return { rawBytes: new TextEncoder().encode('{"kind":"header"}\n{"x":1}\n{"kind":"trailer"}\n') };
+        },
+      };
+      const runtime = new BrowserRuntime(executor);
+      const result = await runtime.run({
+        type: "run", id: "exact-1", operation: "sample", modelIr, data,
+        settings: { chains: 1, num_warmup: 0, num_draws: 4, seed: 1, max_treedepth: 4, target_accept: 0.8 },
+      });
+      assert(requests[0].model instanceof Uint8Array, "engine request did not retain model bytes");
+      assert(UTF8.decode(requests[0].model) === UTF8.decode(modelIr), "engine request changed exact model bytes");
+      assert(result.type === "artifacts" && result.id === "exact-1", `result envelope is malformed: ${JSON.stringify(result)}`);
+      const byName = Object.fromEntries(result.artifacts.map((artifact) => [artifact.name, artifact]));
+      assert(UTF8.decode(byName["model.ir.json"].bytes) === UTF8.decode(modelIr), "model artifact changed bytes");
+      assert(UTF8.decode(byName["data.json"].bytes) === UTF8.decode(data), "data artifact changed bytes");
+      assert(byName["posterior.ndjson"] !== undefined, "posterior artifact missing");
+    },
+  },
+  {
     name: "runtime sampling returns valid merged posterior and progress",
     fn: async () => {
       const runtime = new BrowserRuntime();
