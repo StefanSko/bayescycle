@@ -9,6 +9,7 @@ CASES = [
     "sampler edits invalidate runs but retain compilation",
     "later runs clear stale follow-up notices",
     "successful follow-ups preserve earlier artifacts",
+    "a replacement posterior drops artifacts derived from the old fit",
     "stale asynchronous results are ignored",
 ]
 

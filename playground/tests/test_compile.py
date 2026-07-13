@@ -7,6 +7,7 @@ CASES = [
     "all 10 corpus models match native hashes and golden IR",
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
+    "selects the sole unreferenced composed root",
     "compiler executes in a dedicated worker",
     "module poisoning cannot affect the next compiler worker",
     "compiler timeout resets the isolated worker",

@@ -70,6 +70,29 @@ export default [
     },
   },
   {
+    name: "a replacement posterior drops artifacts derived from the old fit",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "old", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "old", revision: 1, artifacts: [
+        { name: "simulated_data.json" }, { name: "posterior.ndjson", generation: "old" },
+        { name: "diagnostics.json" }, { name: "recovery_check.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, { type: "run-started", requestId: "new", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "new", revision: 1, artifacts: [
+        { name: "model.ir.json" }, { name: "data.json" },
+        { name: "posterior.ndjson", generation: "new" },
+      ] });
+      const names = state.artifacts.map((artifact) => artifact.name);
+      assert(names.includes("simulated_data.json"), "new posterior erased independent simulated data");
+      assert(!names.includes("diagnostics.json") && !names.includes("recovery_check.json") &&
+        !names.includes("posterior_predictive.ndjson"), `old fit artifacts survived: ${names}`);
+      assert(state.artifacts.find((artifact) => artifact.name === "posterior.ndjson").generation === "new", "old posterior survived");
+    },
+  },
+  {
     name: "stale asynchronous results are ignored",
     fn: () => {
       let state = initialState();

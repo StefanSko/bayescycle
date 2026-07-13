@@ -93,6 +93,15 @@ export default [
     },
   },
   {
+    name: "selects the sole unreferenced composed root",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Param, Submodel, model\nfrom bayeswire.distributions import Normal\n\n@model\nclass Component:\n    x = Param(Normal(0.0, 1.0))\n\n@model\nclass Root:\n    component = Submodel(Component)\n`);
+      assert(result.ok, `composed root compilation failed: ${result.message}`);
+      const document = JSON.parse(UTF8.decode(result.irBytes));
+      assert(JSON.stringify(document).includes("component.x"), "compiled IR did not select the composed root");
+    },
+  },
+  {
     name: "compiler executes in a dedicated worker",
     fn: async () => {
       const source = await fetchText("linear_regression.py");
