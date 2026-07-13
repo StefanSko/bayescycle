@@ -1,0 +1,18 @@
+from playwright.sync_api import Page, expect
+
+
+def test_non_sampling_run_clears_old_chain_progress(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#examples-menu").select_option("linear-simulation")
+    page.locator("#compile-button").click()
+    expect(page.locator("#simulate-button")).to_be_enabled(timeout=120_000)
+    page.locator("#chains").fill("2")
+    page.locator("#warmup").fill("4")
+    page.locator("#draws").fill("4")
+    page.locator("#simulate-button").click()
+    expect(page.locator("#sample-simulated-button")).to_be_enabled(timeout=120_000)
+    page.locator("#sample-simulated-button").click()
+    expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
+    expect(page.locator("#progress")).to_contain_text("chain 1")
+    page.locator("#simulate-button").click()
+    expect(page.locator("#progress")).to_be_empty()
