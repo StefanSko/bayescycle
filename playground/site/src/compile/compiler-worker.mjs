@@ -104,44 +104,57 @@ import traceback
 import bayeswire.ir
 from bayeswire.model.decorator import is_model_class
 
-try:
-    # Capture trusted functions before user source can mutate their modules.
-    # The JS client discards this worker after every compilation, so module
-    # mutations cannot affect a later project.
-    _trusted_canonical_bytes = bayeswire.ir.canonical_bytes
-    _namespace = {"__name__": "__playground_editor__"}
-    exec(compile(__playground_source, "<playground-editor>", "exec"), _namespace)
-    _models = []
-    _seen = set()
-    for _value in _namespace.values():
-        if (
-            is_model_class(_value)
-            and getattr(_value, "__module__", None) == "__playground_editor__"
-            and id(_value) not in _seen
-        ):
-            _models.append(_value)
-            _seen.add(id(_value))
-    if len(_models) != 1:
-        raise ValueError(f"Expected exactly one @model class, found {len(_models)}")
-    _ir_bytes = _trusted_canonical_bytes(_models[0]._model_meta)
-    _result = {
-        "ok": True,
-        "ir_base64": base64.b64encode(_ir_bytes).decode("ascii"),
-        "ir_hash": hashlib.sha256(_ir_bytes).hexdigest(),
-    }
-except BaseException as _error:
-    _frames = traceback.extract_tb(_error.__traceback__)
-    _frames = [
-        _frame for _frame in _frames
-        if _frame.filename == "<playground-editor>" or "/bayeswire/" in _frame.filename
-    ]
-    _result = {
-        "ok": False,
-        "exception_type": f"{type(_error).__module__}.{type(_error).__qualname__}",
-        "message": str(_error),
-        "traceback": "Traceback (most recent call last):\n"
-            + "".join(traceback.format_list(_frames))
-            + "".join(traceback.format_exception_only(type(_error), _error)),
-    }
-json.dumps(_result, separators=(",", ":"))
+
+def _invoke_trusted_compile(
+    source,
+    _canonical_bytes=bayeswire.ir.canonical_bytes,
+    _is_model_class=is_model_class,
+    _base64=base64,
+    _hashlib=hashlib,
+    _json=json,
+    _traceback=traceback,
+):
+    # Remove the only global reference before user source executes. Trusted
+    # collaborators remain function locals/defaults and the worker is thrown
+    # away after this call, so __main__ cannot replace or poison them.
+    globals().pop("_invoke_trusted_compile", None)
+    try:
+        namespace = {"__name__": "__playground_editor__"}
+        exec(compile(source, "<playground-editor>", "exec"), namespace)
+        models = []
+        seen = set()
+        for value in namespace.values():
+            if (
+                _is_model_class(value)
+                and getattr(value, "__module__", None) == "__playground_editor__"
+                and id(value) not in seen
+            ):
+                models.append(value)
+                seen.add(id(value))
+        if len(models) != 1:
+            raise ValueError(f"Expected exactly one @model class, found {len(models)}")
+        ir_bytes = _canonical_bytes(models[0]._model_meta)
+        result = {
+            "ok": True,
+            "ir_base64": _base64.b64encode(ir_bytes).decode("ascii"),
+            "ir_hash": _hashlib.sha256(ir_bytes).hexdigest(),
+        }
+    except BaseException as error:
+        frames = _traceback.extract_tb(error.__traceback__)
+        frames = [
+            frame for frame in frames
+            if frame.filename == "<playground-editor>" or "/bayeswire/" in frame.filename
+        ]
+        result = {
+            "ok": False,
+            "exception_type": f"{type(error).__module__}.{type(error).__qualname__}",
+            "message": str(error),
+            "traceback": "Traceback (most recent call last):\n"
+                + "".join(_traceback.format_list(frames))
+                + "".join(_traceback.format_exception_only(type(error), error)),
+        }
+    return _json.dumps(result, separators=(",", ":"))
+
+
+_invoke_trusted_compile(__playground_source)
 `;
