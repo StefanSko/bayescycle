@@ -7,6 +7,14 @@
   --line: #d5cec0;
   --paper: #fffdf8;
   --error: #9d2f24;
+  /* Artifact SVG renderers consume this stable theme vocabulary. */
+  --accent: var(--green);
+  --card: var(--paper);
+  --danger: var(--error);
+  --ink: #17241f;
+  --line-strong: #8f887b;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --muted: #52625b;
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
