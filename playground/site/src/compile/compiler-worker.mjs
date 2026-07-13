@@ -5,6 +5,7 @@ let runtime;
 
 try {
   runtime = await initializeRuntime();
+  lockDownNetwork();
   self.postMessage({ type: "ready" });
 } catch (error) {
   setTimeout(() => { throw error; });
@@ -37,6 +38,29 @@ async function handleMessage(message) {
     }
   } finally {
     runtime.globals.delete("__playground_source");
+  }
+}
+
+function lockDownNetwork() {
+  const blockedFetch = () => Promise.reject(new TypeError("Network access is disabled while compiling model source"));
+  const blockedConstructor = function blockedNetworkApi() {
+    throw new TypeError("Network access is disabled while compiling model source");
+  };
+  for (const [name, value] of [
+    ["fetch", blockedFetch],
+    ["WebSocket", blockedConstructor],
+    ["EventSource", blockedConstructor],
+    ["XMLHttpRequest", blockedConstructor],
+    ["Worker", blockedConstructor],
+    ["SharedWorker", blockedConstructor],
+    ["importScripts", blockedConstructor],
+  ]) {
+    Object.defineProperty(globalThis, name, {
+      value,
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    });
   }
 }
 

@@ -259,6 +259,7 @@ async function runSingle(request) {
   if (state.compile.status !== "compiled" || state.run.status === "running") return;
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
+  element("#progress").replaceChildren();
   dispatch({ type: "run-started", requestId, revision: projectRevision });
   try {
     const result = await runtime.run(
