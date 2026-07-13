@@ -101,6 +101,8 @@ import json
 import traceback
 
 import bayeswire.ir
+from bayeswire import Submodel
+from bayeswire.model.core import submodel_target
 from bayeswire.model.decorator import ModelMeta
 
 
@@ -119,6 +121,16 @@ def compile_editor_source(source):
             ):
                 models.append(value)
                 seen.add(id(value))
+        if len(models) > 1:
+            referenced = {
+                submodel_target(item)
+                for model in models
+                for item in model.__dict__.values()
+                if isinstance(item, Submodel)
+            }
+            roots = [model for model in models if model not in referenced]
+            if len(roots) == 1:
+                models = roots
         if len(models) != 1:
             raise ValueError(f"Expected exactly one @model class, found {len(models)}")
         ir_bytes = bayeswire.ir.canonical_bytes(models[0]._model_meta)

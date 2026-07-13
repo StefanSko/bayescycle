@@ -66,6 +66,13 @@ export function reduce(state, event) {
 
 function mergeArtifacts(existing, added) {
   const replaced = new Set(added.map((artifact) => artifact.name));
+  if (replaced.has("posterior.ndjson")) {
+    for (const dependent of [
+      "diagnostics.json",
+      "recovery_check.json",
+      "posterior_predictive.ndjson",
+    ]) replaced.add(dependent);
+  }
   return [...existing.filter((artifact) => !replaced.has(artifact.name)), ...added];
 }
 
