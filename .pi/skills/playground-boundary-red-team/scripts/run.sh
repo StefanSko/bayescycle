@@ -25,29 +25,24 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 prompt=$(cat <<EOF
-Perform an authorized, read-only browser contract verification of the local
-Bayescycle Playground owned by this repository. This is ordinary QA against
-localhost only; do not perform vulnerability research or target any networked
-third party.
+Perform authorized read-only QA for the local browser application owned by this
+repository. Do not access external systems or modify repository files.
+
 Repository: $repo_root
 Commit: $baseline_head
-Evidence root: $evidence_root
-Final report: $report
+Temporary evidence directory: $evidence_root
+Final QA report: $report
 
-Read completely before acting:
-- playground/invariants.md (normative authority)
-- .pi/skills/playground-boundary-red-team/SKILL.md (authority contract)
+Read these four local QA documents completely and follow them exactly:
+- playground/invariants.md
+- .pi/skills/playground-boundary-red-team/SKILL.md
 - .pi/skills/playground-boundary-red-team/attack-catalog.md
 - .pi/skills/playground-boundary-red-team/report-template.md
 
-Execute every safe catalog test case against a temporary localhost Playground
-and a second localhost test server using only synthetic markers. You may use
-bash for Rodney and bounded temporary servers. Keep every artifact under /tmp.
-Repository modification is prohibited. Report only; do not fix code. Always
-clean up Rodney, browser profiles, sinks, and servers. Populate the final report
-at $report and finish with a concise verdict. If a probe cannot safely be run,
-mark UNTESTED and explain why. Classify only as RESISTED, ESCAPED, EXPECTED
-CAPABILITY, or UNTESTED, with exact invariant citations.
+Use only localhost, synthetic test values, bounded processes, and /tmp files.
+Exercise the listed browser contract checks, populate the report, clean up all
+temporary processes, and finish with a concise verdict. Report only; do not fix
+code.
 EOF
 )
 
