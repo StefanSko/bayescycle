@@ -10,6 +10,7 @@ CASES = [
     "requires exactly one model class",
     "compiler executes in a dedicated worker",
     "user source cannot replace the trusted IR serializer",
+    "trusted serializer is absent from user-visible globals",
     "compiler timeout resets the isolated worker",
 ]
 

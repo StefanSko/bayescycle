@@ -114,6 +114,15 @@ export default [
     },
   },
   {
+    name: "trusted serializer is absent from user-visible globals",
+    fn: async () => {
+      const source = `import __main__\n__main__._trusted_canonical_bytes = lambda _meta: b"{}"\n${await fetchText("linear_regression.py")}`;
+      const result = await compile(source);
+      const hashes = JSON.parse(await fetchText("hashes.json"));
+      assert(result.ok && result.irHash === hashes.linear_regression, `__main__ replaced trusted serializer: ${result.irHash}`);
+    },
+  },
+  {
     name: "compiler timeout resets the isolated worker",
     fn: async () => {
       let timedOut = false;
