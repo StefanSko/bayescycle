@@ -7,9 +7,6 @@ const INT32_MAX = 2 ** 31 - 1;
 export function normalizeDocument(value) {
   if (!isObject(value)) throw new Error("data document must be a JSON object");
   if (value.format === FORMAT) return parseCanonical(value);
-  if (Object.hasOwn(value, "format")) {
-    throw new Error(`unsupported data format ${String(value.format)}`);
-  }
   return {
     format: FORMAT,
     variables: Object.fromEntries(
