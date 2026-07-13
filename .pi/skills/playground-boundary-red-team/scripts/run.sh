@@ -25,7 +25,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 prompt=$(cat <<EOF
-Perform the explicit Bayescycle browser Playground safe boundary red-team.
+Perform an authorized, read-only browser contract verification of the local
+Bayescycle Playground owned by this repository. This is ordinary QA against
+localhost only; do not perform vulnerability research or target any networked
+third party.
 Repository: $repo_root
 Commit: $baseline_head
 Evidence root: $evidence_root
@@ -37,9 +40,9 @@ Read completely before acting:
 - .pi/skills/playground-boundary-red-team/attack-catalog.md
 - .pi/skills/playground-boundary-red-team/report-template.md
 
-Execute every safe catalog probe against a temporary localhost Playground and
-a second localhost request sink using only synthetic canaries. You may use bash
-for Rodney and bounded temporary servers. Keep every artifact under /tmp.
+Execute every safe catalog test case against a temporary localhost Playground
+and a second localhost test server using only synthetic markers. You may use
+bash for Rodney and bounded temporary servers. Keep every artifact under /tmp.
 Repository modification is prohibited. Report only; do not fix code. Always
 clean up Rodney, browser profiles, sinks, and servers. Populate the final report
 at $report and finish with a concise verdict. If a probe cannot safely be run,
