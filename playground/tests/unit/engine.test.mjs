@@ -1,6 +1,7 @@
 import {
   InProcessEngine,
   diagnose,
+  mergeChainFits,
   parseEngineMetadata,
   parseEngineOutput,
   sample,
@@ -151,6 +152,37 @@ export default [
         report !== null && typeof report === "object" && !Array.isArray(report),
         "diagnose output is not a JSON report object",
       );
+    },
+  },
+  {
+    name: "merged fits never retain first-chain diagnostics",
+    fn: async () => {
+      const fit = (chain, rhat, ess) => [
+        { chain_count: 1, chain_order: [chain], draw_count: 1 },
+        { chain, draw_index: 0, values: { alpha: chain } },
+        {
+          trailer: {
+            chain_count: 1,
+            chain_order: [chain],
+            draw_count: 1,
+            parameter_order: ["alpha"],
+            chains: [{ chain, draw_count: 1 }],
+            rhat: { alpha: rhat },
+            ess: { alpha: ess },
+          },
+        },
+      ].map((value) => JSON.stringify(value)).join("\n") + "\n";
+
+      const merged = mergeChainFits([
+        fit(0, 0.91, 101),
+        fit(1, 1.09, 202),
+      ]).trimEnd().split("\n").map((line) => JSON.parse(line));
+      const trailer = merged.at(-1)?.trailer;
+      assert(trailer?.chain_count === 2, `unexpected chain count: ${trailer?.chain_count}`);
+      assert(trailer?.draw_count === 2, `unexpected draw count: ${trailer?.draw_count}`);
+      assert(trailer?.chains.length === 2, `unexpected chain facts: ${trailer?.chains.length}`);
+      assert(trailer?.rhat.alpha === null, `retained chain R-hat: ${trailer?.rhat.alpha}`);
+      assert(trailer?.ess.alpha === null, `retained chain ESS: ${trailer?.ess.alpha}`);
     },
   },
   {

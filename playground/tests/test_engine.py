@@ -8,6 +8,7 @@ CASES = [
     "streams per_draw_v2 in batches",
     "sample yields one output per chain and streams draws",
     "diagnose merges the two chain fits",
+    "merged fits never retain first-chain diagnostics",
     "malformed IR returns a typed engine error",
     "exports all nine verbs",
 ]
