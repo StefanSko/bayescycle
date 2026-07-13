@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from typing import Any
 
-import pytest
 from playwright.sync_api import Page
 
 RENDER_CASES = [
@@ -17,15 +16,11 @@ RENDER_CASES = [
 ]
 
 
-@pytest.mark.parametrize("case_name", RENDER_CASES)
-def test_render_suite_case(
+def test_render_suite(
     page: Page,
     base_url: str,
     run_suite: Callable[..., list[dict[str, Any]]],
-    case_name: str,
 ) -> None:
     results = run_suite(page, base_url, "render", 120_000)
-    matching = [result for result in results if result["name"] == case_name]
-    assert matching, f"render harness did not report case {case_name!r}: {results}"
-    result = matching[0]
-    assert result["ok"], f"{case_name}: {result['error']}"
+    assert [result["name"] for result in results] == RENDER_CASES
+    assert all(result["ok"] for result in results), results

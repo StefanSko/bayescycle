@@ -1,4 +1,4 @@
-import { compile, resetCompiler } from "/site/src/compile/index.mjs";
+import { compile } from "/site/src/compile/index.mjs";
 
 const FIXTURE_ROOT = "/tests/fixtures/corpus/";
 const UTF8 = new TextDecoder();
@@ -42,7 +42,7 @@ export default [
           fetchText(`${name}.py`),
           fetchText(`${name}.json`),
         ]);
-        const result = await compile(source, { reuseWorker: true });
+        const result = await compile(source);
         assert(result.ok, `${name} compilation failed:\n${result.traceback}`);
         assert(
           result.irHash === hashes[name],
@@ -52,7 +52,6 @@ export default [
         const golden = canonicalString(JSON.parse(goldenText));
         assert(actual === golden, `${name} IR differs from its golden document`);
       }
-      resetCompiler();
     },
   },
   {

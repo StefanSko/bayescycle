@@ -128,10 +128,6 @@ export function compile(source, options) {
   return new CompilerClient().compile(source, options);
 }
 
-// Kept temporarily for the pre-consolidation corpus harness; there is no
-// shared production worker to reset.
-export function resetCompiler() {}
-
 function isReady(value) {
   return value !== null && typeof value === "object" && value.type === "ready" &&
     value.protocol === PROTOCOL_VERSION;
