@@ -10,7 +10,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
-.page-header, main { width: min(82rem, calc(100% - 2rem)); margin-inline: auto; }
+.page-header, main, .results-panel { width: min(82rem, calc(100% - 2rem)); margin-inline: auto; }
 .page-header { display: flex; align-items: end; justify-content: space-between; gap: 2rem; padding: 2rem 0 1.25rem; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 0; font: 700 clamp(2rem, 4vw, 3.5rem)/1.05 Georgia, serif; }
@@ -35,8 +35,14 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 details { margin-top: 1rem; }
 summary { color: var(--green); cursor: pointer; font-weight: 700; }
 a { color: var(--green); }
+.results-panel { margin-bottom: 3rem; }
+.plot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.plot-grid article { min-width: 0; overflow: auto; border-top: 1px solid var(--line); padding-top: .75rem; }
+.plot-grid article:last-child { grid-column: 1 / -1; }
+.plot-grid svg { display: block; width: 100%; height: auto; min-width: 34rem; }
 @media (max-width: 900px) {
   .page-header { display: block; }
   .lede { margin-top: 1rem; }
-  main { grid-template-columns: 1fr; }
+  main, .plot-grid { grid-template-columns: 1fr; }
+  .plot-grid article:last-child { grid-column: auto; }
 }

@@ -59,6 +59,14 @@
       </div>
     </section>
   </main>
+  <section id="plots" class="results-panel" aria-labelledby="plots-heading" hidden>
+    <h2 id="plots-heading">Posterior overview</h2>
+    <div class="plot-grid">
+      <article><h3>Rank and trace</h3><div id="plot-trank"></div></article>
+      <article><h3>ESS × R-hat</h3><div id="plot-ess-rhat"></div></article>
+      <article><h3>Precis</h3><div id="plot-precis"></div></article>
+    </div>
+  </section>
   <script type="module" src="./src/app/main.mjs"></script>
 </body>
 </html>

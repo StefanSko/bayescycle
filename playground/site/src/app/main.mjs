@@ -1,5 +1,6 @@
 import { compile } from "../compile/index.mjs";
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
+import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
 import { initialState, reduce } from "./state.mjs";
 
@@ -143,6 +144,31 @@ function renderArtifacts(artifacts) {
     item.hidden = false;
   }
   element("#artifacts").hidden = artifacts.length === 0;
+  renderPlots(artifacts);
+}
+
+function renderPlots(artifacts) {
+  const posterior = artifacts.find((artifact) => artifact.name === "posterior.ndjson");
+  const diagnostics = artifacts.find((artifact) => artifact.name === "diagnostics.json");
+  const plots = element("#plots");
+  if (posterior === undefined || diagnostics === undefined) {
+    plots.hidden = true;
+    for (const selector of ["#plot-trank", "#plot-ess-rhat", "#plot-precis"]) {
+      element(selector).replaceChildren();
+    }
+    return;
+  }
+  try {
+    const data = readDashboardData({ fits: [posterior.bytes], diagnose: diagnostics.bytes });
+    element("#plot-trank").innerHTML = renderTrank(data);
+    element("#plot-ess-rhat").innerHTML = renderEssRhat(data);
+    element("#plot-precis").innerHTML = renderPrecis(data);
+    plots.hidden = false;
+  } catch (error) {
+    plots.hidden = true;
+    element("#run-error").hidden = false;
+    element("#run-error").textContent = `Artifacts downloaded, but plots could not render: ${message(error)}`;
+  }
 }
 
 function integerValue(selector) { return Number.parseInt(element(selector).value, 10); }
