@@ -24,7 +24,7 @@ async function handleMessage(message) {
     if (result.ok === true) {
       const bytes = decodeBase64(result.ir_base64);
       self.postMessage(
-        { type: "compiled", id: message.id, irBytes: bytes.buffer, irHash: result.ir_hash },
+        { type: "compiled", id: message.id, irBytes: bytes.buffer },
         [bytes.buffer],
       );
     } else {
@@ -97,90 +97,14 @@ function decodeBase64(encoded) {
 
 const PYTHON_COMPILE = String.raw`
 import base64
-import builtins
-import hashlib
 import json
-import math
 import traceback
-import types
 
 import bayeswire.ir
 from bayeswire.model.decorator import ModelMeta
 
 
-def _invoke_trusted_compile(
-    source,
-    _ir_globals=dict(vars(bayeswire.ir)),
-    _ir_codes={
-        name: getattr(bayeswire.ir, name).__code__
-        for name in ("meta_to_dict", "_encode_value", "_encode_map", "_encode_node")
-    },
-    _ir_defaults={
-        name: getattr(bayeswire.ir, name).__defaults__
-        for name in ("meta_to_dict", "_encode_value", "_encode_map", "_encode_node")
-    },
-    _node_specs=dict(bayeswire.ir.NODE_SPECS_BY_CLASS),
-    _encode_string=json.encoder.encode_basestring,
-    _math_isfinite=math.isfinite,
-    _function_type=types.FunctionType,
-    _namespace_type=types.SimpleNamespace,
-    _builtins=dict(vars(builtins)),
-    _model_meta_type=ModelMeta,
-    _isinstance=isinstance,
-    _bool_type=bool,
-    _dict_type=dict,
-    _float_type=float,
-    _int_type=int,
-    _list_type=list,
-    _str_type=str,
-    _repr=repr,
-    _stringify=str,
-    _type=type,
-    _base64_b64encode=base64.b64encode,
-    _sha256=hashlib.sha256,
-    _extract_tb=traceback.extract_tb,
-    _format_list=traceback.format_list,
-    _format_exception_only=traceback.format_exception_only,
-):
-    # Remove the only global reference before user source executes. Build an
-    # isolated serializer function graph whose globals and mutable registry
-    # were snapshotted before user code can mutate bayeswire.ir.
-    globals().pop("_invoke_trusted_compile", None)
-    trusted_globals = dict(_ir_globals)
-    trusted_globals["__builtins__"] = _builtins
-    trusted_globals["NODE_SPECS_BY_CLASS"] = _node_specs
-    trusted_globals["math"] = _namespace_type(isfinite=_math_isfinite)
-    for name, code in _ir_codes.items():
-        trusted_globals[name] = _function_type(
-            code,
-            trusted_globals,
-            name,
-            _ir_defaults[name],
-        )
-    trusted_meta_to_dict = trusted_globals["meta_to_dict"]
-
-    def encode_json(value):
-        if value is None:
-            return "null"
-        if _isinstance(value, _bool_type):
-            return "true" if value else "false"
-        if _isinstance(value, _str_type):
-            return _encode_string(value)
-        if _isinstance(value, _int_type):
-            return _stringify(value)
-        if _isinstance(value, _float_type):
-            if not _math_isfinite(value):
-                raise ValueError("strict JSON cannot encode a non-finite float")
-            return _repr(value)
-        if _isinstance(value, _list_type):
-            return "[" + ",".join(encode_json(item) for item in value) + "]"
-        if _isinstance(value, _dict_type):
-            return "{" + ",".join(
-                _encode_string(key) + ":" + encode_json(item)
-                for key, item in value.items()
-            ) + "}"
-        raise TypeError(f"strict JSON cannot encode {_type(value).__name__}")
-
+def compile_editor_source(source):
     try:
         namespace = {"__name__": "__playground_editor__"}
         exec(compile(source, "<playground-editor>", "exec"), namespace)
@@ -188,8 +112,8 @@ def _invoke_trusted_compile(
         seen = set()
         for value in namespace.values():
             if (
-                _isinstance(value, _type)
-                and _isinstance(value.__dict__.get("_model_meta"), _model_meta_type)
+                isinstance(value, type)
+                and isinstance(value.__dict__.get("_model_meta"), ModelMeta)
                 and getattr(value, "__module__", None) == "__playground_editor__"
                 and id(value) not in seen
             ):
@@ -197,14 +121,13 @@ def _invoke_trusted_compile(
                 seen.add(id(value))
         if len(models) != 1:
             raise ValueError(f"Expected exactly one @model class, found {len(models)}")
-        ir_bytes = encode_json(trusted_meta_to_dict(models[0]._model_meta)).encode("utf-8")
+        ir_bytes = bayeswire.ir.canonical_bytes(models[0]._model_meta)
         result = {
             "ok": True,
-            "ir_base64": _base64_b64encode(ir_bytes).decode("ascii"),
-            "ir_hash": _sha256(ir_bytes).hexdigest(),
+            "ir_base64": base64.b64encode(ir_bytes).decode("ascii"),
         }
     except BaseException as error:
-        frames = _extract_tb(error.__traceback__)
+        frames = traceback.extract_tb(error.__traceback__)
         frames = [
             frame for frame in frames
             if frame.filename == "<playground-editor>" or "/bayeswire/" in frame.filename
@@ -214,11 +137,11 @@ def _invoke_trusted_compile(
             "exception_type": f"{type(error).__module__}.{type(error).__qualname__}",
             "message": str(error),
             "traceback": "Traceback (most recent call last):\n"
-                + "".join(_format_list(frames))
-                + "".join(_format_exception_only(_type(error), error)),
+                + "".join(traceback.format_list(frames))
+                + "".join(traceback.format_exception_only(type(error), error)),
         }
-    return encode_json(result)
+    return json.dumps(result, separators=(",", ":"))
 
 
-_invoke_trusted_compile(__playground_source)
+compile_editor_source(__playground_source)
 `;
