@@ -44,6 +44,7 @@ function compilerWorker() {
         executionContext: "worker",
       });
     }
+    disposeCompilerWorker();
   });
   return worker;
 }
@@ -53,6 +54,7 @@ export async function compile(source, options = {}) {
   if (typeof source !== "string") throw new TypeError("model source must be a string");
   const activeWorker = compilerWorker();
   await ready;
+  if (pending.size !== 0) throw new Error("Compiler worker is busy");
   const id = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -66,14 +68,18 @@ export async function compile(source, options = {}) {
 }
 
 export function resetCompiler() {
-  worker?.terminate();
-  worker = undefined;
-  ready = undefined;
+  disposeCompilerWorker();
   for (const request of pending.values()) {
     clearTimeout(request.timeout);
     request.reject(new Error("Compiler worker was reset"));
   }
   pending.clear();
+}
+
+function disposeCompilerWorker() {
+  worker?.terminate();
+  worker = undefined;
+  ready = undefined;
 }
 
 function validResponse(value) {

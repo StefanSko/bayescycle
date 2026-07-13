@@ -25,10 +25,10 @@ source.addEventListener("input", () => {
 });
 for (const input of [observed, design, truth]) input.addEventListener("input", documentsEdited);
 element("#compile-button").addEventListener("click", () => void compileModel());
-element("#sample-button").addEventListener("click", () => void samplePosterior());
-element("#prior-button").addEventListener("click", () => void runPriorPredictive());
-element("#simulate-button").addEventListener("click", () => void simulateData());
-element("#sample-simulated-button").addEventListener("click", () => void sampleSimulated());
+element("#sample-button").addEventListener("click", () => launchRun(samplePosterior));
+element("#prior-button").addEventListener("click", () => launchRun(runPriorPredictive));
+element("#simulate-button").addEventListener("click", () => launchRun(simulateData));
+element("#sample-simulated-button").addEventListener("click", () => launchRun(sampleSimulated));
 element("#examples-menu").addEventListener("change", () => void loadExample());
 element("#share-button").addEventListener("click", () => void shareProject());
 element("#load-shared").addEventListener("click", loadSharedProject);
@@ -140,6 +140,13 @@ function applySamplerSettings(settings) {
   for (const [name, selector] of Object.entries(fields)) {
     if (typeof settings[name] === "number") element(selector).value = String(settings[name]);
   }
+}
+
+function launchRun(operation) {
+  void operation().catch((error) => {
+    element("#run-error").hidden = false;
+    element("#run-error").textContent = message(error);
+  });
 }
 
 function documentsEdited() {

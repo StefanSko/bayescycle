@@ -81,6 +81,10 @@ import bayeswire.ir
 from bayeswire.model.decorator import is_model_class
 
 try:
+    # Capture trusted functions before user source can mutate their modules.
+    # The JS client discards this worker after every compilation, so module
+    # mutations cannot affect a later project.
+    _trusted_canonical_bytes = bayeswire.ir.canonical_bytes
     _namespace = {"__name__": "__playground_editor__"}
     exec(compile(__playground_source, "<playground-editor>", "exec"), _namespace)
     _models = []
@@ -95,7 +99,7 @@ try:
             _seen.add(id(_value))
     if len(_models) != 1:
         raise ValueError(f"Expected exactly one @model class, found {len(_models)}")
-    _ir_bytes = bayeswire.ir.canonical_bytes(_models[0]._model_meta)
+    _ir_bytes = _trusted_canonical_bytes(_models[0]._model_meta)
     _result = {
         "ok": True,
         "ir_base64": base64.b64encode(_ir_bytes).decode("ascii"),
