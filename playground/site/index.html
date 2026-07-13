@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bayescycle Playground</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header><p class="eyebrow">Runs entirely in this browser</p><h1>Bayescycle Playground</h1></header>
+  <main>
+    <section aria-labelledby="model-heading"><h2 id="model-heading">Model</h2>
+      <label for="model-source">Bayeswire model source</label>
+      <textarea id="model-source" rows="18" spellcheck="false"></textarea>
+      <button id="compile-button" type="button">Compile model</button>
+      <output id="compile-status" for="model-source compile-button"></output>
+    </section>
+    <section aria-labelledby="documents-heading"><h2 id="documents-heading">Documents</h2>
+      <label for="observed-data">Observed data JSON</label><textarea id="observed-data" rows="8" spellcheck="false"></textarea>
+      <details><summary>Simulation documents</summary>
+        <label for="design-data">Design data JSON</label><textarea id="design-data" rows="8" spellcheck="false"></textarea>
+        <label for="truth-data">Parameter truth JSON</label><textarea id="truth-data" rows="8" spellcheck="false"></textarea>
+      </details>
+    </section>
+    <section aria-labelledby="run-heading"><h2 id="run-heading">Run</h2><p>The browser runtime is loading.</p></section>
+  </main>
+  <script type="module" src="./src/app/main.mjs"></script>
+</body>
+</html>
