@@ -119,7 +119,7 @@ export class BrowserRuntime {
 
 export class RuntimeError extends Error {
   constructor(kind, message) {
-    super(message);
+    super(`${kind}: ${message}`);
     this.name = "RuntimeError";
     this.kind = kind;
   }
