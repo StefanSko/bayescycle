@@ -84,9 +84,19 @@ existing implementation; they do not rebuild the playground.
 15. **R14 reconcile and dogfood.** Update `playground-plan.md`,
     `playground-runtime-v0.md`, UI security copy, and the PR description. Run
     format/lint, all 60+ browser checks, root guards, fresh-browser observed and
-    simulation Rodney walks, and publication-path checks. Any behavioral defect
-    gets its own new RED/GREEN pair.
-16. **R15 bounded final review.** Request one final review against the explicit
-    invariant document. Fix in-scope correctness defects with RED/GREEN pairs;
-    document or decline suggestions that assume a stronger non-goal. Merge only
-    after the final head has complete CI and no unresolved in-scope finding.
+    simulation Rodney walks, and publication-path checks. Add a RED regression
+    for the independently observed missing compile-success announcement before
+    fixing it. Any other behavioral defect gets its own RED/GREEN pair.
+16. **R15 independent Pi review.** Invoke the global `pi-review` skill at
+    `xhigh` with `origin/main...HEAD`, `playground/invariants.md`, the runtime
+    protocol, and the observed/simulation/share journeys as its review angle.
+    The fresh read-only reviewer must perform both an invariant ledger and a
+    screenshot/accessibility-backed Rodney walkthrough. Verify its evidence;
+    address confirmed in-scope defects with RED/GREEN pairs, then rerun a fresh
+    independent review until it is clean or reports only explicit residual
+    risks accepted by the invariant contract.
+17. **R16 bounded Codex review.** Request one final Codex review against the
+    explicit invariant document. Fix in-scope correctness defects with
+    RED/GREEN pairs; document or decline suggestions that assume a stronger
+    non-goal. Merge only after the final head has complete CI and no unresolved
+    in-scope finding.

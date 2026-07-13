@@ -68,6 +68,11 @@ freezing behavioral tests.
 - Browser v0 does not provide source-to-IR attestation or a general Python
   sandbox.
 - Compiler output is user-controlled.
+- A smoke run of the independent `pi-review` skill already found one concrete
+  UX defect outside the expected R10 boundary failures: after compilation
+  succeeds, the live status becomes blank and users must infer success from a
+  truncated hash and enabled button. Freeze that behavior with a RED regression
+  before fixing it during R14.
 - The meaningful guarantees are source-only compilation, one disposable worker
   per production compile, unconditional termination, external-origin isolation,
   trusted-client hashing of exact bytes, strict message boundaries, and
@@ -75,7 +80,7 @@ freezing behavioral tests.
 
 ## Execution discipline
 
-Execute work orders R10 through R15 in `docs/playground-tdd-plan.md` using
+Execute work orders R10 through R16 in `docs/playground-tdd-plan.md` using
 strict RED → GREEN discipline:
 
 - Each behavioral work order begins with a RED commit containing reviewed tests
@@ -156,9 +161,32 @@ uv run pytest tests -q
 Also follow all repository/package validation instructions relevant to changed
 files. Keep the branch pushed at meaningful GREEN checkpoints.
 
+## Independent Pi review
+
+At R14 completion, invoke the global `pi-review` skill:
+
+```text
+/Users/stefansko/.pi/agent/skills/pi-review/SKILL.md
+```
+
+Use `xhigh` because this is a cross-cutting invariant audit plus Rodney UI/UX
+walkthrough. The review angle must include:
+
+- `origin/main...HEAD` plus any uncommitted state;
+- `playground/invariants.md` and `docs/playground-runtime-v0.md` as authority;
+- compiler lifecycle, untrusted-artifact, state, and runtime boundaries;
+- observed, simulation/recovery, and shared-project journeys;
+- desktop and narrow/mobile screenshots plus accessibility evidence;
+- no source-to-IR attestation or general Python sandbox as explicit non-goals.
+
+The child reviewer is read-only. Verify every finding yourself. Address each
+confirmed in-scope behavior with a RED/GREEN pair, then run a fresh independent
+review rather than reusing the reviewer session. Continue until its verdict is
+clean or clean with only explicit residual risks allowed by the invariants.
+
 ## Final PR preparation
 
-At R14 completion:
+At R15 completion:
 
 - ensure the worktree is clean;
 - push the final implementation;
@@ -168,7 +196,7 @@ At R14 completion:
 
 ## Codex review loop
 
-Then execute R15 using the `codex-pr-review-loop` skill:
+Then execute R16 using the `codex-pr-review-loop` skill:
 
 ```text
 /Users/stefansko/.pi/agent/skills/codex-pr-review-loop/SKILL.md
@@ -203,6 +231,7 @@ Report:
 - the final commit;
 - validation results;
 - Rodney flows completed;
+- independent Pi review verdict and report path;
 - PR URL;
 - clean current-head Codex review evidence;
 - any explicitly declined out-of-scope suggestions and their invariant-based
