@@ -313,11 +313,11 @@ function sampleSettings() {
 }
 
 function validSampleSettings(settings = samplerSettings()) {
-  return Number.isInteger(settings.chains) && settings.chains >= 1 &&
-    Number.isInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
-    Number.isInteger(settings.num_draws) && settings.num_draws >= 4 &&
-    Number.isInteger(settings.seed) && settings.seed >= 0 &&
-    Number.isInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
+  return Number.isSafeInteger(settings.chains) && settings.chains >= 1 &&
+    Number.isSafeInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
+    Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 4 &&
+    Number.isSafeInteger(settings.seed) && settings.seed >= 0 &&
+    Number.isSafeInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
     Number.isFinite(settings.target_accept) && settings.target_accept > 0 &&
     settings.target_accept < 1;
 }
@@ -365,7 +365,8 @@ function render() {
   const compileError = element("#compile-error");
   compileError.hidden = state.compile.status !== "failed";
   compileError.textContent = state.compile.status === "failed" ? state.compile.error : "";
-  element("#compile-button").disabled = state.compile.status === "compiling" || state.source.trim() === "";
+  element("#compile-button").disabled = state.compile.status === "compiling" ||
+    state.run.status === "running" || state.source.trim() === "";
   element("#share-button").disabled = state.source.trim() === "";
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
   const sampleUnavailable = unavailable || !validSampleSettings();
