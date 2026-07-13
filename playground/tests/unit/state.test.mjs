@@ -30,6 +30,18 @@ export default [
     },
   },
   {
+    name: "successful follow-ups preserve earlier artifacts",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "simulate", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "simulate", revision: 1, artifacts: [{ name: "simulated_data.json" }] });
+      state = reduce(state, { type: "run-started", requestId: "sample", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "sample", revision: 1, artifacts: [{ name: "posterior.ndjson" }] });
+      assert(state.artifacts.map((artifact) => artifact.name).join(",") === "simulated_data.json,posterior.ndjson", "follow-up erased an earlier artifact");
+    },
+  },
+  {
     name: "stale asynchronous results are ignored",
     fn: () => {
       let state = initialState();
