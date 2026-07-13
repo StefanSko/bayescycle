@@ -440,8 +440,10 @@ function renderPlots(artifacts) {
   const posterior = artifacts.find((artifact) => artifact.name === "posterior.ndjson");
   const diagnostics = artifacts.find((artifact) => artifact.name === "diagnostics.json");
   const plots = element("#plots");
+  const plotGrid = element("#plot-grid");
   if (posterior === undefined || diagnostics === undefined) {
-    plots.hidden = true;
+    plotGrid.hidden = true;
+    plots.hidden = !artifacts.some((artifact) => artifact.name === "recovery_check.json");
     for (const selector of ["#plot-trank", "#plot-ess-rhat", "#plot-precis"]) {
       element(selector).replaceChildren();
     }
@@ -452,9 +454,11 @@ function renderPlots(artifacts) {
     element("#plot-trank").innerHTML = renderTrank(data);
     element("#plot-ess-rhat").innerHTML = renderEssRhat(data);
     element("#plot-precis").innerHTML = renderPrecis(data);
+    plotGrid.hidden = false;
     plots.hidden = false;
   } catch (error) {
-    plots.hidden = true;
+    plotGrid.hidden = true;
+    plots.hidden = !artifacts.some((artifact) => artifact.name === "recovery_check.json");
     element("#run-error").hidden = false;
     element("#run-error").textContent = `Artifacts downloaded, but plots could not render: ${message(error)}`;
   }
