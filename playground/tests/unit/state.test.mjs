@@ -30,6 +30,34 @@ export default [
     },
   },
   {
+    name: "sampler edits invalidate runs but retain compilation",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "compile-started", requestId: "c1", revision: 1 });
+      state = reduce(state, { type: "compile-succeeded", requestId: "c1", revision: 1, irBytes: new Uint8Array([1]), irHash: "abc" });
+      state = reduce(state, { type: "run-started", requestId: "r1", revision: 1 });
+      state = reduce(state, { type: "settings-edited", revision: 2 });
+      state = reduce(state, { type: "run-succeeded", requestId: "r1", revision: 1, artifacts: [{ name: "posterior.ndjson" }] });
+      assert(state.compile.status === "compiled", "settings edit discarded compilation");
+      assert(state.run.status === "idle" && state.artifacts.length === 0, "stale run survived settings edit");
+    },
+  },
+  {
+    name: "later runs clear stale follow-up notices",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "r1", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "r1", revision: 1, artifacts: [], notice: "diagnostics unavailable" });
+      assert(state.notice === "diagnostics unavailable", "follow-up notice was not retained");
+      state = reduce(state, { type: "run-started", requestId: "r2", revision: 1 });
+      assert(state.notice === null, "run start retained stale notice");
+      state = reduce(state, { type: "run-succeeded", requestId: "r2", revision: 1, artifacts: [] });
+      assert(state.notice === null, "successful run restored stale notice");
+    },
+  },
+  {
     name: "successful follow-ups preserve earlier artifacts",
     fn: () => {
       let state = initialState();

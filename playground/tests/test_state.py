@@ -7,6 +7,8 @@ from playwright.sync_api import Page
 CASES = [
     "source edits invalidate compilation and artifacts",
     "document edits retain compilation but invalidate artifacts",
+    "sampler edits invalidate runs but retain compilation",
+    "later runs clear stale follow-up notices",
     "successful follow-ups preserve earlier artifacts",
     "stale asynchronous results are ignored",
 ]
