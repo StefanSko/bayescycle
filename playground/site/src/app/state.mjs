@@ -7,6 +7,7 @@ export function initialState() {
     compile: Object.freeze({ status: "idle" }),
     run: Object.freeze({ status: "idle" }),
     artifacts: Object.freeze([]),
+    notice: null,
   });
 }
 
@@ -21,6 +22,7 @@ export function reduce(state, event) {
         compile: { status: "idle" },
         run: { status: "idle" },
         artifacts: [],
+        notice: null,
       });
     case "documents-edited":
       return freeze({
@@ -29,6 +31,15 @@ export function reduce(state, event) {
         projectRevision: event.revision,
         run: { status: "idle" },
         artifacts: [],
+        notice: null,
+      });
+    case "settings-edited":
+      return freeze({
+        ...state,
+        projectRevision: event.revision,
+        run: { status: "idle" },
+        artifacts: [],
+        notice: null,
       });
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
@@ -41,13 +52,13 @@ export function reduce(state, event) {
       return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" }, artifacts: [] });
     case "run-started":
       if (event.revision !== state.projectRevision) return state;
-      return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision } });
+      return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision }, notice: null });
     case "run-succeeded":
       if (!matches(state.run, event, "running") || event.revision !== state.projectRevision) return state;
-      return freeze({ ...state, run: { status: "completed", revision: event.revision }, artifacts: mergeArtifacts(state.artifacts, event.artifacts) });
+      return freeze({ ...state, run: { status: "completed", revision: event.revision }, artifacts: mergeArtifacts(state.artifacts, event.artifacts), notice: event.notice ?? null });
     case "run-failed":
       if (!matches(state.run, event, "running")) return state;
-      return freeze({ ...state, run: { status: "failed", error: event.error } });
+      return freeze({ ...state, run: { status: "failed", error: event.error }, notice: null });
     default:
       return state;
   }

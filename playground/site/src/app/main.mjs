@@ -24,6 +24,9 @@ source.addEventListener("input", () => {
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
 for (const input of [observed, design, truth]) input.addEventListener("input", documentsEdited);
+for (const selector of ["#chains", "#warmup", "#draws", "#seed", "#target-accept", "#max-treedepth"]) {
+  element(selector).addEventListener("input", settingsEdited);
+}
 element("#compile-button").addEventListener("click", () => void compileModel());
 element("#sample-button").addEventListener("click", () => launchRun(samplePosterior));
 element("#prior-button").addEventListener("click", () => launchRun(runPriorPredictive));
@@ -149,6 +152,11 @@ function launchRun(operation) {
   });
 }
 
+function settingsEdited() {
+  element("#progress").replaceChildren();
+  dispatch({ type: "settings-edited", revision: ++revision });
+}
+
 function documentsEdited() {
   element("#progress").replaceChildren();
   dispatch({
@@ -216,25 +224,32 @@ async function sampleData(dataBytes, recoveryTruth) {
       modelIr: state.compile.irBytes,
       data: dataBytes,
       settings: samplerSettings(),
-    }, renderProgress);
+    }, (event) => renderActiveProgress(requestId, projectRevision, event));
     const posterior = sampled.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
     if (posterior === undefined) throw new Error("Runtime returned no posterior artifact");
     let artifacts = [...sampled.artifacts];
+    const warnings = [];
     try {
       const diagnosed = await runtime.run({ operation: "diagnose", fit: posterior.bytes });
       artifacts = [...artifacts, ...diagnosed.artifacts];
     } catch (error) {
-      showFollowupError("diagnostics", error);
+      warnings.push(`Posterior completed; diagnostics unavailable: ${message(error)}`);
     }
     if (recoveryTruth !== undefined) {
       try {
         const recovery = await runtime.run({ operation: "recover-check", fit: posterior.bytes, truth: recoveryTruth });
         artifacts = [...artifacts, ...recovery.artifacts];
       } catch (error) {
-        showFollowupError("recovery check", error);
+        warnings.push(`Posterior completed; recovery check unavailable: ${message(error)}`);
       }
     }
-    dispatch({ type: "run-succeeded", requestId, revision: projectRevision, artifacts });
+    dispatch({
+      type: "run-succeeded",
+      requestId,
+      revision: projectRevision,
+      artifacts,
+      notice: warnings.length === 0 ? null : warnings.join("\n"),
+    });
   } catch (error) {
     dispatch({ type: "run-failed", requestId, revision: projectRevision, error: message(error) });
   }
@@ -246,16 +261,14 @@ async function runSingle(request) {
   const projectRevision = state.projectRevision;
   dispatch({ type: "run-started", requestId, revision: projectRevision });
   try {
-    const result = await runtime.run(request, renderProgress);
+    const result = await runtime.run(
+      request,
+      (event) => renderActiveProgress(requestId, projectRevision, event),
+    );
     dispatch({ type: "run-succeeded", requestId, revision: projectRevision, artifacts: result.artifacts });
   } catch (error) {
     dispatch({ type: "run-failed", requestId, revision: projectRevision, error: message(error) });
   }
-}
-
-function showFollowupError(label, error) {
-  element("#run-error").textContent = `Posterior completed; ${label} unavailable: ${message(error)}`;
-  element("#run-error").hidden = false;
 }
 
 function compiledBytes() {
@@ -276,6 +289,12 @@ function samplerSettings() {
     target_accept: numberValue("#target-accept"),
     max_treedepth: integerValue("#max-treedepth"),
   };
+}
+
+function renderActiveProgress(requestId, projectRevision, event) {
+  if (state.run.status !== "running" || state.run.requestId !== requestId ||
+      state.run.revision !== projectRevision) return;
+  renderProgress(event);
 }
 
 function renderProgress(event) {
@@ -315,7 +334,10 @@ function render() {
   if (state.run.status === "failed") {
     runError.hidden = false;
     runError.textContent = state.run.error;
-  } else if (!runError.textContent.startsWith("Posterior completed")) {
+  } else if (state.notice !== null) {
+    runError.hidden = false;
+    runError.textContent = state.notice;
+  } else {
     runError.hidden = true;
     runError.textContent = "";
   }
