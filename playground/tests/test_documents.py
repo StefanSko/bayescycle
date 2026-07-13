@@ -5,6 +5,7 @@ from playwright.sync_api import Page
 
 CASES = [
     "normalizes plain scalar vector and matrix JSON",
+    "preserves plain variables named format and variables",
     "accepts and preserves every canonical dtype",
     "rejects ragged arrays and invalid canonical values",
     "serializes canonical bytes deterministically",

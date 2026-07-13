@@ -25,6 +25,16 @@ export default [
     },
   },
   {
+    name: "preserves plain variables named format and variables",
+    fn: () => {
+      const document = normalizeDocument({ format: 7, variables: [1, 2] });
+      equal(document.variables, {
+        format: { dtype: "int64", shape: [], values: [7] },
+        variables: { dtype: "int64", shape: [2], values: [1, 2] },
+      }, "plain format/variables names changed");
+    },
+  },
+  {
     name: "accepts and preserves every canonical dtype",
     fn: () => {
       const input = {
