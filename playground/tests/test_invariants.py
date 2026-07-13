@@ -32,8 +32,7 @@ def test_native_document_surfaces_are_present() -> None:
 
 def test_application_does_not_infer_raw_ir_semantics() -> None:
     application_source = "\n".join(
-        path.read_text()
-        for path in sorted((SITE_ROOT / "src" / "app").rglob("*.mjs"))
+        path.read_text() for path in sorted((SITE_ROOT / "src" / "app").rglob("*.mjs"))
     )
     forbidden = (
         "VectorScatterOp",

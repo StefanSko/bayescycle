@@ -7,9 +7,9 @@ SITE = ROOT / "playground" / "site"
 
 
 def test_version_chip_matches_lockstep_package() -> None:
-    version = tomllib.loads(
-        (ROOT / "packages" / "bayescycle" / "pyproject.toml").read_text()
-    )["project"]["version"]
+    version = tomllib.loads((ROOT / "packages" / "bayescycle" / "pyproject.toml").read_text())[
+        "project"
+    ]["version"]
     assert json.loads((SITE / "VERSION.json").read_text()) == {"version": version}
     assert 'id="playground-version"' in (SITE / "index.html").read_text()
 
