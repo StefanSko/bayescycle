@@ -41,16 +41,21 @@ export function reduce(state, event) {
       return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" }, artifacts: [] });
     case "run-started":
       if (event.revision !== state.projectRevision) return state;
-      return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision }, artifacts: [] });
+      return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision } });
     case "run-succeeded":
       if (!matches(state.run, event, "running") || event.revision !== state.projectRevision) return state;
-      return freeze({ ...state, run: { status: "completed", revision: event.revision }, artifacts: event.artifacts });
+      return freeze({ ...state, run: { status: "completed", revision: event.revision }, artifacts: mergeArtifacts(state.artifacts, event.artifacts) });
     case "run-failed":
       if (!matches(state.run, event, "running")) return state;
-      return freeze({ ...state, run: { status: "failed", error: event.error }, artifacts: [] });
+      return freeze({ ...state, run: { status: "failed", error: event.error } });
     default:
       return state;
   }
+}
+
+function mergeArtifacts(existing, added) {
+  const replaced = new Set(added.map((artifact) => artifact.name));
+  return [...existing.filter((artifact) => !replaced.has(artifact.name)), ...added];
 }
 
 function matches(active, event, status) {

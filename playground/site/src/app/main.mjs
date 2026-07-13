@@ -21,6 +21,9 @@ source.addEventListener("input", () => {
 for (const input of [observed, design, truth]) input.addEventListener("input", documentsEdited);
 element("#compile-button").addEventListener("click", () => void compileModel());
 element("#sample-button").addEventListener("click", () => void samplePosterior());
+element("#prior-button").addEventListener("click", () => void runPriorPredictive());
+element("#simulate-button").addEventListener("click", () => void simulateData());
+element("#sample-simulated-button").addEventListener("click", () => void sampleSimulated());
 
 function documentsEdited() {
   element("#progress").replaceChildren();
@@ -48,13 +51,42 @@ async function compileModel() {
 }
 
 async function samplePosterior() {
-  if (state.compile.status !== "compiled") return;
+  const dataBytes = documentBytes(observed.value);
+  await sampleData(dataBytes);
+}
+
+async function runPriorPredictive() {
+  await runSingle({
+    operation: "prior-predictive",
+    modelIr: compiledBytes(),
+    data: documentBytes(design.value),
+    settings: samplerSettings(),
+  });
+}
+
+async function simulateData() {
+  await runSingle({
+    operation: "simulate",
+    modelIr: compiledBytes(),
+    data: documentBytes(design.value),
+    truth: documentBytes(truth.value),
+    settings: samplerSettings(),
+  });
+}
+
+async function sampleSimulated() {
+  const simulated = state.artifacts.find((artifact) => artifact.name === "simulated_data.json");
+  if (simulated === undefined) return;
+  await sampleData(simulated.bytes, documentBytes(truth.value));
+}
+
+async function sampleData(dataBytes, recoveryTruth) {
+  if (state.compile.status !== "compiled" || state.run.status === "running") return;
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
   element("#progress").replaceChildren();
   dispatch({ type: "run-started", requestId, revision: projectRevision });
   try {
-    const dataBytes = new TextEncoder().encode(serializeDocument(parseDocument(observed.value)));
     const sampled = await runtime.run({
       operation: "sample",
       modelIr: state.compile.irBytes,
@@ -68,13 +100,47 @@ async function samplePosterior() {
       const diagnosed = await runtime.run({ operation: "diagnose", fit: posterior.bytes });
       artifacts = [...artifacts, ...diagnosed.artifacts];
     } catch (error) {
-      element("#run-error").textContent = `Posterior completed; diagnostics unavailable: ${message(error)}`;
-      element("#run-error").hidden = false;
+      showFollowupError("diagnostics", error);
+    }
+    if (recoveryTruth !== undefined) {
+      try {
+        const recovery = await runtime.run({ operation: "recover-check", fit: posterior.bytes, truth: recoveryTruth });
+        artifacts = [...artifacts, ...recovery.artifacts];
+      } catch (error) {
+        showFollowupError("recovery check", error);
+      }
     }
     dispatch({ type: "run-succeeded", requestId, revision: projectRevision, artifacts });
   } catch (error) {
     dispatch({ type: "run-failed", requestId, revision: projectRevision, error: message(error) });
   }
+}
+
+async function runSingle(request) {
+  if (state.compile.status !== "compiled" || state.run.status === "running") return;
+  const requestId = crypto.randomUUID();
+  const projectRevision = state.projectRevision;
+  dispatch({ type: "run-started", requestId, revision: projectRevision });
+  try {
+    const result = await runtime.run(request, renderProgress);
+    dispatch({ type: "run-succeeded", requestId, revision: projectRevision, artifacts: result.artifacts });
+  } catch (error) {
+    dispatch({ type: "run-failed", requestId, revision: projectRevision, error: message(error) });
+  }
+}
+
+function showFollowupError(label, error) {
+  element("#run-error").textContent = `Posterior completed; ${label} unavailable: ${message(error)}`;
+  element("#run-error").hidden = false;
+}
+
+function compiledBytes() {
+  if (state.compile.status !== "compiled") throw new Error("Compile the model first");
+  return state.compile.irBytes;
+}
+
+function documentBytes(text) {
+  return new TextEncoder().encode(serializeDocument(parseDocument(text)));
 }
 
 function samplerSettings() {
@@ -113,7 +179,12 @@ function render() {
   compileError.hidden = state.compile.status !== "failed";
   compileError.textContent = state.compile.status === "failed" ? state.compile.error : "";
   element("#compile-button").disabled = state.compile.status === "compiling" || state.source.trim() === "";
-  element("#sample-button").disabled = state.compile.status !== "compiled" || state.run.status === "running" || observed.value.trim() === "";
+  const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
+  element("#sample-button").disabled = unavailable || observed.value.trim() === "";
+  element("#prior-button").disabled = unavailable || design.value.trim() === "";
+  element("#simulate-button").disabled = unavailable || design.value.trim() === "" || truth.value.trim() === "";
+  element("#sample-simulated-button").disabled = unavailable ||
+    !state.artifacts.some((artifact) => artifact.name === "simulated_data.json") || truth.value.trim() === "";
 
   const runError = element("#run-error");
   if (state.run.status === "failed") {
@@ -132,6 +203,9 @@ function renderArtifacts(artifacts) {
   const mapping = {
     "posterior.ndjson": "#artifact-posterior",
     "diagnostics.json": "#artifact-diagnostics",
+    "prior_predictive.ndjson": "#artifact-prior",
+    "simulated_data.json": "#artifact-simulated",
+    "recovery_check.json": "#artifact-recovery",
   };
   for (const selector of Object.values(mapping)) element(selector).hidden = true;
   for (const artifact of artifacts) {

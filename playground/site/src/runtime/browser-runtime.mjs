@@ -8,6 +8,7 @@ import {
   sample,
   simulate,
 } from "../engine/index.mjs";
+import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
 
 const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
@@ -52,18 +53,22 @@ export class BrowserRuntime {
             executor: this.executor,
           })),
         );
-      case "simulate":
-        return oneArtifact(
-          "simulated_data.json",
-          "application/json",
-          requireOutput(await simulate({
-            model: asObject(request.modelIr, "model IR"),
-            data: asObject(request.data, "data"),
-            truth: asObject(request.truth, "truth"),
-            seed: integerSetting(request.settings, "seed", 0),
-            executor: this.executor,
-          })),
-        );
+      case "simulate": {
+        const output = requireOutput(await simulate({
+          model: asObject(request.modelIr, "model IR"),
+          data: asObject(request.data, "data"),
+          truth: asObject(request.truth, "truth"),
+          seed: integerSetting(request.settings, "seed", 0),
+          executor: this.executor,
+        }));
+        return {
+          artifacts: [artifact(
+            "simulated_data.json",
+            "application/json",
+            canonicalSimulatedBytes(output.rawBytes),
+          )],
+        };
+      }
       case "recover-check":
         return oneArtifact(
           "recovery_check.json",
@@ -111,6 +116,16 @@ export class RuntimeError extends Error {
     this.name = "RuntimeError";
     this.kind = kind;
   }
+}
+
+function canonicalSimulatedBytes(bytes) {
+  const parsed = JSON.parse(UTF8.decode(bytes));
+  let candidate = parsed;
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) &&
+      !Object.hasOwn(parsed, "format") && !Object.hasOwn(parsed, "variables")) {
+    candidate = { format: "bayescycle.data.json.v1", variables: parsed };
+  }
+  return ENCODE.encode(serializeDocument(normalizeDocument(candidate)));
 }
 
 function oneArtifact(name, mediaType, output) {
