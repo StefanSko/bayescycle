@@ -31,6 +31,14 @@ def test_native_document_surfaces_are_present() -> None:
     assert "codemirror" not in html.lower()
 
 
+def test_application_reaches_workers_only_through_runtime() -> None:
+    application_source = (SITE_ROOT / "src" / "app" / "main.mjs").read_text()
+    assert 'from "../compile/' not in application_source
+    assert 'from "../engine/' not in application_source
+    assert "runtime.compile(" in application_source
+    assert "runtime.run(" in application_source
+
+
 def test_application_does_not_infer_raw_ir_semantics() -> None:
     application_source = "\n".join(
         path.read_text() for path in sorted((SITE_ROOT / "src" / "app").rglob("*.mjs"))
