@@ -484,11 +484,16 @@ function bindJson(inputs) {
       ? lengthGroups.get(input.synthetic === true ? "n" : input.name)
       : undefined;
     if (lengthGroup !== undefined) {
-      documentValue.variables[input.name] = {
-        dtype: "int64",
-        shape: [],
-        values: [lengthGroup.length],
-      };
+      // Synthetic lengths are UI bookkeeping only: the IR declares no such
+      // variable, and the engine rejects undeclared data. Only dim-named
+      // scalars the model actually declares are materialized.
+      if (input.synthetic !== true) {
+        documentValue.variables[input.name] = {
+          dtype: "int64",
+          shape: [],
+          values: [lengthGroup.length],
+        };
+      }
       return { input: input.name, source: "auto:length", status: "bound" };
     }
     return { input: input.name, source: null, status: "missing" };

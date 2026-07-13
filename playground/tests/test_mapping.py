@@ -5,14 +5,16 @@ from playwright.sync_api import Page, expect
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPILE_TIMEOUT = 30_000
 RUN_TIMEOUT = 120_000
-SYNTHETIC_LENGTH_SOURCE = """from bayeswire import Data, Observed, model
+SYNTHETIC_LENGTH_SOURCE = """from bayeswire import Data, Observed, Param, model
 from bayeswire.distributions import Normal
 
 
 @model
 class SyntheticLength:
+    mu = Param(Normal(0.0, 1.0))
     x = Data.vector()
-    y = Observed(Normal(x, 1.0))
+    loc = mu + x
+    y = Observed(Normal(loc, 1.0))
 """
 
 
@@ -81,6 +83,19 @@ def test_json_binding_derives_synthetic_length(page: Page, base_url: str) -> Non
     expect(synthetic).to_have_attribute("data-status", "bound")
     expect(synthetic.locator("td").nth(1)).to_have_text("auto:length")
     expect(page.locator("#run-button")).to_be_enabled()
+
+    # The synthetic length is UI bookkeeping only — the IR declares no "n",
+    # so it must never reach the engine. Prove it by actually sampling: the
+    # engine rejects undeclared data variables with a typed error.
+    for selector, value in {"#chains": "1", "#num-warmup": "10", "#num-draws": "10"}.items():
+        page.locator(selector).fill(value)
+    page.locator("#run-button").click()
+    page.wait_for_function(
+        "window.__playground.state().running === false && "
+        "window.__playground.state().lastRun !== null",
+        timeout=RUN_TIMEOUT,
+    )
+    expect(page.locator("#run-error")).to_be_hidden()
 
 
 def test_json_binding_allows_distinct_dimension_lengths(page: Page, base_url: str) -> None:
