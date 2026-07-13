@@ -102,6 +102,18 @@ export default [
     },
   },
   {
+    name: "user source cannot replace the trusted IR serializer",
+    fn: async () => {
+      const source = `import bayeswire.ir\nbayeswire.ir.canonical_bytes = lambda _meta: b"{}"\n${await fetchText("linear_regression.py")}`;
+      const poisoned = await compile(source);
+      assert(poisoned.ok, `poisoning fixture failed: ${poisoned.message}`);
+      const hashes = JSON.parse(await fetchText("hashes.json"));
+      assert(poisoned.irHash === hashes.linear_regression, `user serializer changed hash: ${poisoned.irHash}`);
+      const clean = await compile(await fetchText("linear_regression.py"));
+      assert(clean.ok && clean.irHash === hashes.linear_regression, "serializer mutation leaked into the next compile");
+    },
+  },
+  {
     name: "compiler timeout resets the isolated worker",
     fn: async () => {
       let timedOut = false;

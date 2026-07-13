@@ -9,6 +9,7 @@ CASES = [
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "compiler executes in a dedicated worker",
+    "user source cannot replace the trusted IR serializer",
     "compiler timeout resets the isolated worker",
 ]
 
