@@ -203,6 +203,17 @@ function reduceScopedWorkflow(state, event) {
       };
     }
     case "observed-input-edited": {
+      const generatedConditioning = state.fitDatasetSource === "generated" ||
+        state.conditioning.fit?.datasetSource === "generated" ||
+        state.conditioning.attempt.datasetSource === "generated" ||
+        (state.run.status === "running" && state.run.operation === "sample" &&
+          state.run.datasetSource === "generated");
+      if (generatedConditioning) {
+        return {
+          ...state,
+          documents: event.documents,
+        };
+      }
       const posteriorCollection = state.generation.collection?.sourceKind === "posterior";
       return {
         ...state,
