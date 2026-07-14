@@ -520,8 +520,8 @@ def _metadata_entry(role: str, path: Path, artifact_format: str) -> dict[str, st
 
 
 def _verify_generated_output(plan: Draw, output_path: Path) -> None:
-    if not output_path.is_file():
-        raise WorkflowError(f"generation output does not exist: {output_path}")
+    if output_path.is_symlink() or not output_path.is_file():
+        raise WorkflowError(f"generation output must be a regular file: {output_path}")
     artifact = parse_generated_datasets(output_path.read_bytes())
     fixed = plan.distribution.parameters
     verify_generated_datasets(
