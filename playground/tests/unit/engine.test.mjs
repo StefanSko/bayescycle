@@ -217,12 +217,13 @@ export default [
     },
   },
   {
-    name: "exports all nine verbs",
+    name: "exports all ten verbs including native generation",
     fn: async () => {
       await sharedExecutor();
       const verbs = [
         engine.sample,
         engine.diagnose,
+        engine.generate,
         engine.priorPredictive,
         engine.posteriorPredictive,
         engine.posteriorCheck,
@@ -231,7 +232,7 @@ export default [
         engine.recoverCheck,
         engine.sbc,
       ];
-      assert(verbs.every((verb) => typeof verb === "function"), "not all nine verbs are functions");
+      assert(verbs.every((verb) => typeof verb === "function"), "not all ten verbs are functions");
     },
   },
 ];

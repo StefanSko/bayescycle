@@ -1,12 +1,108 @@
 import { BrowserRuntime } from "/site/src/runtime/browser-runtime.mjs";
+import {
+  fitArtifact,
+  fixed,
+  generateDatasets,
+  modelPrior,
+  posteriorOf,
+} from "/site/src/generation/plan.mjs";
 
 const FIXTURE = "/tests/fixtures/engine/eight_schools_non_centered/";
 const UTF8 = new TextDecoder();
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
 async function text(name) { const response = await fetch(`${FIXTURE}${name}`); return response.text(); }
+function bytes(value) { return new TextEncoder().encode(value); }
+async function hash(value) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
 
 export default [
+  {
+    name: "generation plans lower to one exact native request per source",
+    fn: async () => {
+      const model = bytes('{ "bayeswire_ir": 1 }\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const parameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
+      const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{"y":{"dtype":"float64","shape":[],"values":[1.0]}}}\n');
+      const fit = bytes('{"draws_format":"v0-provisional"}\n{"trailer":{}}\n');
+      const requests = [];
+      const executor = {
+        execute: async (request) => {
+          requests.push(request);
+          return { rawBytes: bytes('{"generated_datasets_format":"v0-provisional"}\n{"trailer":{}}\n') };
+        },
+      };
+      const runtime = new BrowserRuntime(executor);
+      const plans = [
+        generateDatasets(model, { design, parameterSource: fixed(parameters), count: 2, seed: 7 }),
+        generateDatasets(model, { design, parameterSource: modelPrior(model), count: 3, seed: 8 }),
+        generateDatasets(model, {
+          design,
+          parameterSource: posteriorOf(fitArtifact(model, fitData, fit, "runtime")),
+          count: 4,
+          seed: 9,
+        }),
+      ];
+      for (const [index, plan] of plans.entries()) {
+        const result = await runtime.run({ type: "run", id: `generation-${index}`, operation: "generate", plan });
+        assert(result.artifacts[0]?.name === "generated_datasets.ndjson", "generated artifact missing");
+      }
+      assert(requests.length === 3, `expected one request per plan, got ${requests.length}`);
+      for (const request of requests) {
+        assert(request.command === "generate", `unexpected command: ${request.command}`);
+        assert(request.model === new TextDecoder().decode(model), "model bytes changed during lowering");
+        assert(request.design === new TextDecoder().decode(design), "design bytes changed during lowering");
+        assert(request.identities.generation_model_hash === await hash(model), "model identity changed");
+        assert(request.identities.design_hash === await hash(design), "design identity changed");
+      }
+      assert(requests[0].parameter_source.parameters === new TextDecoder().decode(parameters), "fixed bytes changed");
+      assert(requests[0].identities.parameters_hash === await hash(parameters), "fixed identity changed");
+      assert(requests[1].parameter_source.kind === "model-prior", "model-prior source changed");
+      assert(requests[1].parameter_source.authored_provenance === null, "model-prior provenance changed");
+      assert(requests[2].parameter_source.fit === new TextDecoder().decode(fit), "posterior bytes changed");
+      assert(requests[2].parameter_source.fit_data === new TextDecoder().decode(fitData), "fit data bytes changed");
+      assert(requests[2].identities.fit_hash === await hash(fit), "fit identity changed");
+      assert(requests[2].identities.fit_model_hash === await hash(model), "fit model identity changed");
+      assert(requests[2].identities.fit_data_hash === await hash(fitData), "fit data identity changed");
+    },
+  },
+  {
+    name: "runtime generates paired datasets through the vendored wasm",
+    fn: async () => {
+      const model = bytes(await (await fetch("/tests/fixtures/corpus/linear_regression.json")).text());
+      const design = bytes(JSON.stringify({
+        format: "bayescycle.data.json.v1",
+        variables: { x: { dtype: "float64", shape: [3], values: [-1, 0, 1] } },
+      }));
+      const parameters = bytes(JSON.stringify({
+        format: "bayescycle.data.json.v1",
+        variables: {
+          alpha: { dtype: "float64", shape: [], values: [0.5] },
+          beta: { dtype: "float64", shape: [], values: [1.2] },
+          sigma: { dtype: "float64", shape: [], values: [0.4] },
+        },
+      }));
+      const result = await new BrowserRuntime().run({
+        type: "run",
+        id: "native-generation",
+        operation: "generate",
+        plan: generateDatasets(model, {
+          design,
+          parameterSource: fixed(parameters),
+          count: 1,
+          seed: 17,
+        }),
+      });
+      const artifact = result.artifacts.find((entry) => entry.name === "generated_datasets.ndjson");
+      assert(artifact !== undefined, "paired generated artifact missing");
+      const documents = UTF8.decode(artifact.bytes).trimEnd().split("\n").map((line) => JSON.parse(line));
+      assert(documents.length === 3, `unexpected generated artifact length: ${documents.length}`);
+      assert(documents[1].dataset.variables.x !== undefined, "complete dataset lost design");
+      assert(documents[1].dataset.variables.y !== undefined, "complete dataset lost outcome");
+    },
+  },
   {
     name: "runtime returns named diagnostic artifacts",
     fn: async () => {
