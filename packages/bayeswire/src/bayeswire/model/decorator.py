@@ -228,6 +228,8 @@ def _prefix_resolved_value(value: object, prefix: str) -> object:
         return _prefix_expr(cast(ExprNode, value), prefix)
     if isinstance(value, DataDimRef):
         return DataDimRef(_qualified_name(prefix, value.name))
+    if isinstance(value, dict):
+        return {name: _prefix_resolved_value(item, prefix) for name, item in value.items()}
     if isinstance(value, tuple):
         return tuple(_prefix_resolved_value(item, prefix) for item in value)
     if is_dataclass(value) and not isinstance(value, type):

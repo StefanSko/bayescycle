@@ -102,6 +102,11 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             f"Distribution {cls.__name__!r} must use @dataclass(frozen=True) so registered "
             "metadata cannot change after validation."
         )
+    if any(not value_field.init for value_field in fields(cls)):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must use init=True on every dataclass field "
+            "so each encoded node can be reconstructed through its constructor."
+        )
     if any(not value_field.compare for value_field in fields(cls)):
         raise UnserializableDistribution(
             f"Distribution {cls.__name__!r} must leave compare=True on every constructor "
