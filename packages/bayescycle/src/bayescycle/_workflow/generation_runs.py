@@ -46,6 +46,10 @@ _HASH = "sha256:"
 _BACKEND = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 
 
+class _DuplicateKey(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class GenerationRunRecord:
     """Validated, locally resolved generation run."""
@@ -225,8 +229,11 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
                 f"generation run metadata must contain 1..{_MAX_METADATA_BYTES} bytes"
             )
         _validate_json_depth(metadata_bytes, "generation run metadata")
-        raw = cast(object, json.loads(metadata_bytes.decode("utf-8")))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raw = cast(
+            object,
+            json.loads(metadata_bytes.decode("utf-8"), object_pairs_hook=_unique_object),
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey) as exc:
         raise WorkflowError(f"invalid generation run metadata: {exc}") from exc
     document = _object(raw, "generation run metadata")
     _exact(document, ("format", "kind", "backend", "plan", "model", "inputs", "outputs"))
@@ -405,8 +412,11 @@ def is_generation_run(run_dir: Path) -> bool:
         if not data or len(data) > _MAX_METADATA_BYTES:
             return False
         _validate_json_depth(data, "run metadata")
-        value = cast(object, json.loads(data.decode("utf-8")))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, WorkflowError):
+        value = cast(
+            object,
+            json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object),
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey, WorkflowError):
         return False
     return isinstance(value, dict) and value.get("format") == GENERATION_RUN_FORMAT
 
@@ -576,6 +586,15 @@ def _contained_regular(root: Path, name: str, role: str) -> Path:
     if candidate.resolve().parent != root:
         raise WorkflowError(f"generation {role} escapes the run directory")
     return candidate
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateKey(f"duplicate object key {key}")
+        result[key] = value
+    return result
 
 
 def _validate_json_depth(data: bytes, label: str) -> None:

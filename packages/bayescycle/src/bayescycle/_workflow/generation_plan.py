@@ -24,6 +24,10 @@ class GenerationPlanError(ValueError):
     """Raised when a functional generation plan is invalid."""
 
 
+class _DuplicateKey(ValueError):
+    pass
+
+
 class FitAssociation(StrEnum):
     """Authority carried by a posterior fit artifact."""
 
@@ -214,8 +218,11 @@ def parse_generation_plan_document(data: bytes) -> GenerationPlanDocument:
         raise GenerationPlanError("generation plan must end in one LF")
     _validate_depth(source)
     try:
-        value = cast(JsonValue, json.loads(source.decode("utf-8")))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        value = cast(
+            JsonValue,
+            json.loads(source.decode("utf-8"), object_pairs_hook=_unique_object),
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey) as exc:
         raise GenerationPlanError(f"generation plan is not valid JSON: {exc}") from exc
     document = _object(value, "generation plan")
     _exact_keys(
@@ -395,6 +402,15 @@ def _copy_bytes(value: object, label: str, *, maximum: int = MAX_GENERATION_INPU
     if len(copied) > maximum:
         raise GenerationPlanError(f"{label} exceeds {maximum} bytes")
     return copied
+
+
+def _unique_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
+    result: dict[str, JsonValue] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateKey(f"duplicate object key {key}")
+        result[key] = value
+    return result
 
 
 def _validate_depth(data: bytes) -> None:

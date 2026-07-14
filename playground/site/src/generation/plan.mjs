@@ -1,3 +1,5 @@
+import { parseStrictJson } from "./strict-json.mjs";
+
 export const MAX_GENERATION_COUNT = 1000;
 export const MAX_GENERATION_INPUT_BYTES = 8 * 1024 * 1024;
 export const MAX_GENERATION_PLAN_BYTES = 1024 * 1024;
@@ -135,7 +137,11 @@ export async function parseGenerationPlanDocument(input) {
   if (bytes.at(-1) !== 0x0a) throw new GenerationPlanError("generation plan must end in one LF");
   validateDepth(bytes);
   let value;
-  try { value = JSON.parse(TEXT.decode(bytes)); }
+  try {
+    value = parseStrictJson(TEXT.decode(bytes), "generation plan", {
+      integerKeys: ["count", "seed"],
+    });
+  }
   catch (error) { throw new GenerationPlanError(`generation plan is not valid JSON: ${String(error)}`); }
   if (!isObject(value) || value.generation_plan_format !== "v0-provisional") {
     throw new GenerationPlanError("generation plan format must be v0-provisional");

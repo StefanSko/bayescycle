@@ -1,3 +1,5 @@
+import { parseStrictJson } from "./strict-json.mjs";
+
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_DEPTH = 64;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
@@ -31,7 +33,13 @@ export async function validatePortablePosterior({
     }
     validateDepth(line, index + 1);
     try {
-      return JSON.parse(UTF8.decode(line));
+      return parseStrictJson(UTF8.decode(line), `portable posterior line ${index + 1}`, {
+        integerKeys: [
+          "draw_index", "chain", "draw", "draw_count", "draws_per_chain",
+          "chain_count", "parameter_count", "params", "num_draws", "seed",
+        ],
+        integerArrayKeys: ["shape", "chain_order", "coordinate_order"],
+      });
     } catch (error) {
       throw new PortablePosteriorError(
         `portable posterior line ${index + 1} is invalid JSON: ${String(error)}`,
