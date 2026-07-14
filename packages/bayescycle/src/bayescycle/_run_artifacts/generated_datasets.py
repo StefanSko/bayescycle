@@ -221,11 +221,17 @@ def parse_generated_datasets(data: bytes) -> GeneratedDatasetsArtifact:
         draw = _object(value, f"draw {draw_index}")
         _exact_keys(draw, _DRAW_KEYS, f"draw {draw_index}")
         _marker(draw, f"draw {draw_index}")
-        if draw["draw_index"] != draw_index:
+        actual_draw_index = _integer(
+            draw["draw_index"], "draw_index", minimum=0, maximum=_MAX_SAFE_INTEGER
+        )
+        if actual_draw_index != draw_index:
             raise GeneratedDatasetsArtifactError(
                 f"draw_index must be contiguous; expected {draw_index}, got {draw['draw_index']!r}"
             )
-        if draw["draw_count"] != count:
+        actual_draw_count = _integer(
+            draw["draw_count"], "draw_count", minimum=1, maximum=_MAX_COUNT
+        )
+        if actual_draw_count != count:
             raise GeneratedDatasetsArtifactError(
                 f"draw {draw_index} draw_count disagrees with header"
             )
@@ -367,6 +373,16 @@ def verify_generated_datasets(
         if (draw.source_chain, draw.source_draw) != (source_draw.chain, source_draw.draw):
             raise GeneratedDatasetsArtifactError(
                 f"draw {draw.draw_index} posterior chain/draw lineage does not match"
+            )
+        expected_shapes = tuple(
+            (parameter.name, parameter.shape) for parameter in posterior.parameters
+        )
+        actual_shapes = tuple(
+            (entry.name, entry.variable.shape) for entry in draw.parameters.variables
+        )
+        if actual_shapes != expected_shapes:
+            raise GeneratedDatasetsArtifactError(
+                f"draw {draw.draw_index} parameter shapes differ from posterior source"
             )
         expected = source_draw.values
         actual = tuple(
@@ -572,7 +588,13 @@ def _lineage(
             ("kind", "source_draw_index"),
             f"draw {draw_index} model-prior source_lineage",
         )
-        if lineage["source_draw_index"] != draw_index:
+        source_draw_index = _integer(
+            lineage["source_draw_index"],
+            "source_draw_index",
+            minimum=0,
+            maximum=_MAX_SAFE_INTEGER,
+        )
+        if source_draw_index != draw_index:
             raise GeneratedDatasetsArtifactError(
                 f"draw {draw_index} model-prior source_draw_index must equal draw_index"
             )

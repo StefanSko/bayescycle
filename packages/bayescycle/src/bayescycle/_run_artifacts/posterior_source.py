@@ -228,6 +228,8 @@ def _validate_finite(value: JsonValue) -> None:
             _validate_finite(item)
     elif isinstance(value, float) and not math.isfinite(value):
         raise PortablePosteriorError("posterior source contains a non-finite number")
+    elif isinstance(value, int) and not isinstance(value, bool) and abs(value) > _MAX_SAFE_INTEGER:
+        raise PortablePosteriorError("posterior source contains an unsafe integer")
 
 
 def _positive_integer(value: object, label: str) -> int:
