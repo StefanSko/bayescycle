@@ -1,7 +1,7 @@
 from playwright.sync_api import Page, expect
 
 
-def test_non_sampling_run_clears_old_chain_progress(page: Page, base_url: str) -> None:
+def test_generation_preserves_completed_fit_progress(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#compile-button").click()
@@ -17,4 +17,4 @@ def test_non_sampling_run_clears_old_chain_progress(page: Page, base_url: str) -
     expect(page.locator("#progress")).to_contain_text("chain 1")
     page.locator("#param-source-fixed").check()
     page.locator("#generate-button").click()
-    expect(page.locator("#progress")).to_be_empty()
+    expect(page.locator("#progress")).to_contain_text("chain 1")

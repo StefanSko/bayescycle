@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -29,43 +30,94 @@ def _write_model(tmp_path: Path) -> Path:
 
 def _write_fake_generation_engine(tmp_path: Path) -> Path:
     path = tmp_path / "fake_bayesite.py"
-    path.write_text(
-        f"#!{sys.executable}\n"
-        "import hashlib, json, sys\n"
-        "from pathlib import Path\n"
-        "args = sys.argv[1:]\n"
-        "if args == ['capabilities']:\n"
-        "    print(json.dumps({'capabilities_format':'v0-provisional','version':'0.test','commands':['generate'],'ir':{'bayeswire_ir':1},'schemas':{}}))\n"
-        "    raise SystemExit(0)\n"
-        "if not args or args[0] != 'generate':\n"
-        "    print('usage: bayesite generate')\n"
-        "    raise SystemExit(0)\n"
-        "def value(flag): return args[args.index(flag)+1]\n"
-        "model = Path(value('--model')).read_bytes()\n"
-        "design_bytes = Path(value('--design')).read_bytes()\n"
-        "parameters_bytes = Path(value('--parameters')).read_bytes()\n"
-        "design = json.loads(design_bytes)\n"
-        "parameters = json.loads(parameters_bytes)\n"
-        "count, seed = int(value('--count')), int(value('--seed'))\n"
-        "sha = lambda data: 'sha256:' + hashlib.sha256(data).hexdigest()\n"
-        "common = {'generated_datasets_format':'v0-provisional','artifact_kind':'generated_dataset_pairs','artifact_scope':'parameter_and_complete_dataset_joint_draws'}\n"
-        "phases = ['parse_json','decode_ir','bind_design','draw_parameters','simulate_outcomes','emit_artifact']\n"
-        "source = {'kind':'fixed','parameters_hash':sha(parameters_bytes)}\n"
-        "schema = lambda doc: [{'name':name,'dtype':spec['dtype'],'shape':spec['shape']} for name,spec in doc['variables'].items()]\n"
-        "header = {**common,'workflow_phases':phases,'generation_model_hash':sha(model),'design_hash':sha(design_bytes),'parameter_source':source,'count':count,'seed':seed,'draw_index_base':'zero_based_generation_order','parameter_schema':schema(parameters),'dataset_schema':schema(design)}\n"
-        "draws = [{**common,'draw_index':index,'draw_count':count,'parameters':parameters,'dataset':design,'source_lineage':{'kind':'fixed'}} for index in range(count)]\n"
-        "trailer = {**common,'workflow_phases':phases,'generation_model_hash':sha(model),'design_hash':sha(design_bytes),'parameter_source':source,'count':count,'seed':seed,'draw_count':count,'complete':True}\n"
-        "text = '\\n'.join(json.dumps(item,separators=(',',':')) for item in [header,*draws,{'trailer':trailer}]) + '\\n'\n"
-        "Path(value('--out')).write_text(text, encoding='utf-8')\n",
-        encoding="utf-8",
-    )
+    script = f"""#!{sys.executable}
+import hashlib, json, sys
+from pathlib import Path
+args = sys.argv[1:]
+if args == ["capabilities"]:
+    print(json.dumps({{
+        "capabilities_format": "v0-provisional",
+        "version": "0.test",
+        "commands": ["generate"],
+        "ir": {{"bayeswire_ir": 1}},
+        "schemas": {{}},
+    }}))
+    raise SystemExit(0)
+if not args or args[0] != "generate":
+    print("usage: bayesite generate")
+    raise SystemExit(0)
+def value(flag):
+    return args[args.index(flag) + 1]
+model = Path(value("--model")).read_bytes()
+design_bytes = Path(value("--design")).read_bytes()
+parameters_bytes = Path(value("--parameters")).read_bytes()
+design = json.loads(design_bytes)
+parameters = json.loads(parameters_bytes)
+count, seed = int(value("--count")), int(value("--seed"))
+sha = lambda data: "sha256:" + hashlib.sha256(data).hexdigest()
+common = {{
+    "generated_datasets_format": "v0-provisional",
+    "artifact_kind": "generated_dataset_pairs",
+    "artifact_scope": "parameter_and_complete_dataset_joint_draws",
+}}
+phases = [
+    "parse_json", "decode_ir", "bind_design", "draw_parameters",
+    "simulate_outcomes", "emit_artifact",
+]
+source = {{"kind": "fixed", "parameters_hash": sha(parameters_bytes)}}
+def schema(document):
+    return [
+        {{"name": name, "dtype": spec["dtype"], "shape": spec["shape"]}}
+        for name, spec in document["variables"].items()
+    ]
+header = {{
+    **common,
+    "workflow_phases": phases,
+    "generation_model_hash": sha(model),
+    "design_hash": sha(design_bytes),
+    "parameter_source": source,
+    "count": count,
+    "seed": seed,
+    "draw_index_base": "zero_based_generation_order",
+    "parameter_schema": schema(parameters),
+    "dataset_schema": schema(design),
+}}
+draws = [
+    {{
+        **common,
+        "draw_index": index,
+        "draw_count": count,
+        "parameters": parameters,
+        "dataset": design,
+        "source_lineage": {{"kind": "fixed"}},
+    }}
+    for index in range(count)
+]
+trailer = {{
+    **common,
+    "workflow_phases": phases,
+    "generation_model_hash": sha(model),
+    "design_hash": sha(design_bytes),
+    "parameter_source": source,
+    "count": count,
+    "seed": seed,
+    "draw_count": count,
+    "complete": True,
+}}
+items = [header, *draws, {{"trailer": trailer}}]
+text = "\\n".join(json.dumps(item, separators=(",", ":")) for item in items) + "\\n"
+Path(value("--out")).write_text(text, encoding="utf-8")
+"""
+    path.write_text(textwrap.dedent(script), encoding="utf-8")
     path.chmod(0o755)
     return path
 
 
 def _canonical(path: Path, variables: dict[str, dict[str, Any]]) -> Path:
     path.write_text(
-        json.dumps({"format": "bayescycle.data.json.v1", "variables": variables}, separators=(",", ":"))
+        json.dumps(
+            {"format": "bayescycle.data.json.v1", "variables": variables}, separators=(",", ":")
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -149,9 +201,7 @@ def test_generation_run_is_portable_and_replays_without_python_source(
     assert plan["kind"] == "generate"
     assert all(str(moved) in entry["path"] for entry in plan["verified_sources"])
 
-    replay_code = main(
-        ["replay", str(moved), "-o", str(replay_dir), "--engine", str(engine)]
-    )
+    replay_code = main(["replay", str(moved), "-o", str(replay_dir), "--engine", str(engine)])
     assert replay_code == 0
     result = json.loads(capsys.readouterr().out)
     assert result["byte_identical"] is True

@@ -248,6 +248,63 @@ def parse_generation_plan_document(data: bytes) -> GenerationPlanDocument:
     )
 
 
+def resolve_generation_plan_document(
+    data: bytes,
+    *,
+    model_ir_bytes: bytes,
+    design_bytes: bytes,
+    fixed_parameters_bytes: bytes | None = None,
+    fit_data_bytes: bytes | None = None,
+    posterior_bytes: bytes | None = None,
+) -> Draw:
+    """Resolve a strict hash-only plan against co-travelling exact payload bytes."""
+    source = parse_generation_plan_document(data).bytes
+    document = cast(dict[str, JsonValue], json.loads(source.decode("utf-8")))
+    distribution = cast(dict[str, JsonValue], document["distribution"])
+    source_document = cast(dict[str, JsonValue], distribution["parameters"])
+    kind = source_document["kind"]
+    parameter_source: ParameterSource
+    if kind == "fixed":
+        if fixed_parameters_bytes is None:
+            raise GenerationPlanError("fixed plan requires fixed parameter payload bytes")
+        parameter_source = Fixed(fixed_parameters_bytes)
+    elif kind == "model-prior":
+        raw_provenance = source_document["authored_provenance"]
+        provenance = None
+        if raw_provenance is not None:
+            claims = cast(dict[str, JsonValue], raw_provenance)
+            provenance = AuthoredProvenance(
+                claimed_source_model_hash=cast(str, claims["claimed_source_model_hash"]),
+                claimed_outcome_model_hash=cast(str, claims["claimed_outcome_model_hash"]),
+            )
+        parameter_source = ModelPrior(model_ir_bytes, provenance)
+    elif kind == "posterior":
+        if fit_data_bytes is None or posterior_bytes is None:
+            raise GenerationPlanError(
+                "posterior plan requires source posterior and fit-data payload bytes"
+            )
+        parameter_source = PosteriorOf(
+            FitArtifact(
+                model_ir_bytes=model_ir_bytes,
+                data_bytes=fit_data_bytes,
+                posterior_bytes=posterior_bytes,
+                association=FitAssociation.PORTABLE,
+            )
+        )
+    else:
+        raise GenerationPlanError(f"parameter source has unknown kind {kind!r}")
+    plan = generate_datasets(
+        model_ir_bytes,
+        design=design_bytes,
+        parameter_source=parameter_source,
+        count=cast(int, document["count"]),
+        seed=cast(int, document["seed"]),
+    )
+    if serialize_generation_plan(plan) != source:
+        raise GenerationPlanError("generation plan payload hashes do not match resolved bytes")
+    return plan
+
+
 def generation_plan_identity(plan: Draw) -> str:
     """Return the deterministic serialized-plan identity."""
     return _sha256(serialize_generation_plan(plan))

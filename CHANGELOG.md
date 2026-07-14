@@ -15,23 +15,27 @@ formats retain their own compatibility policies.
 - Add a fully client-side Bayescycle Playground: compile Bayeswire models in
   an isolated Pyodide worker, run the pinned Bayesite wasm engine per chain,
   normalize explicit JSON data/design/truth documents, inspect posterior
-  diagnostics and SVG plots, simulate and check recovery, download standard
-  run-directory artifacts, and share reviewed projects without a backend. Each
-  explicit compile uses a fresh disposable worker; the browser validates and
-  hashes untrusted compiler bytes before separate engine workers consume them.
+  diagnostics and SVG plots, generate paired parameter/complete-dataset
+  collections from fixed, model-prior, or posterior sources, select and fit a
+  generated dataset with recovery, download portable generation-run artifacts,
+  and share reviewed projects without a backend. Each explicit compile uses a
+  fresh disposable worker; the browser validates and hashes untrusted compiler
+  bytes before separate engine workers consume them.
+- Add `bayescycle generate` and source-free `bayescycle replay` support for
+  portable `bayescycle.generation-run.v0` directories containing exact closed
+  IR, design, generation plan, source payloads, and paired generated datasets.
 
 ### Changed
 
-- Rework the Playground run UI into two explicit Generate datasets and
-  Condition on a dataset directions, with selectable parameter and dataset
-  sources, separate generation and inference seeds, and a dedicated predictive
-  draw count instead of the sampler's retained-draw setting. Predictive draws
-  gate and invalidate only prior-predictive generation. Generation-seed edits
-  preserve fits to observed data but invalidate fits to generated data together
-  with their datasets and downstream artifacts; inference-setting edits preserve
-  generated datasets, and mid-run edits no longer cancel operations they do not
-  affect. Legacy share links reuse their sampler seed and draw count for
-  generation.
+- Rework the Playground run UI into explicit Generate datasets and Condition
+  on a dataset directions with one immutable generation plan, uniform count and
+  seed semantics, selectable parameter and dataset sources, and scoped
+  generation/conditioning state. Generation edits preserve fits to observed
+  data but invalidate fits to generated selections; inference-setting edits
+  preserve completed fits and generated collections, and stale asynchronous
+  completions cannot replace newer lineage.
+- Pin native Bayesite provisioning and the Playground Wasm engine to Bayesite
+  v0.3.0, which supplies the bounded functional `generate` operation.
 - Trim the bundled Playground models to show only the Bayeswire imports each
   declaration actually uses.
 

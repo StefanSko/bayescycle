@@ -322,7 +322,7 @@ async function generateCollection() {
       collection: {
         sourceKind: sourceKind === "prior" ? "model-prior" : sourceKind,
         ...(sourceFitLineageKey === undefined ? {} : { sourceFitLineageKey }),
-        plan, artifact, parsed,
+        plan, artifact, artifacts: result.artifacts, parsed,
       },
     });
     const selected = parsed.select(0);
@@ -554,7 +554,7 @@ function render() {
   element("#share-button").disabled = state.source.trim() === "";
   const visibleArtifacts = [
     ...state.artifacts,
-    ...(state.generation.collection === null ? [] : [state.generation.collection.artifact]),
+    ...(state.generation.collection?.artifacts ?? []),
   ];
   const hasArtifact = (name) => visibleArtifacts.some((artifact) => artifact.name === name);
   const posteriorAvailable = hasArtifact("posterior.ndjson") && hasArtifact("data.json");
@@ -654,6 +654,12 @@ function renderArtifacts(artifacts) {
     "simulated_data.json": "#artifact-simulated",
     "recovery_check.json": "#artifact-recovery",
     "generated_datasets.ndjson": "#artifact-generated-datasets",
+    "generation-plan.json": "#artifact-generation-plan",
+    "run.json": "#artifact-generation-run",
+    "design.json": "#artifact-generation-design",
+    "fixed-parameters.json": "#artifact-fixed-parameters",
+    "source-posterior.ndjson": "#artifact-source-posterior",
+    "source-fit-data.json": "#artifact-source-fit-data",
   };
   for (const selector of Object.values(mapping)) element(selector).hidden = true;
   for (const artifact of artifacts) {

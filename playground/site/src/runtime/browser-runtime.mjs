@@ -11,7 +11,11 @@ import {
   simulate,
 } from "../engine/index.mjs";
 import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
-import { GenerationPlanError, validateGenerationPlan } from "../generation/plan.mjs";
+import {
+  GenerationPlanError,
+  serializeGenerationPlan,
+  validateGenerationPlan,
+} from "../generation/plan.mjs";
 
 const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
@@ -161,7 +165,44 @@ export class BrowserRuntime {
       seed: plan.seed,
       executor: this.executor,
     }));
-    return oneArtifact("generated_datasets.ndjson", "application/x-ndjson", output);
+    const generated = artifact(
+      "generated_datasets.ndjson",
+      "application/x-ndjson",
+      output.rawBytes,
+    );
+    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime") {
+      return { artifacts: [generated] };
+    }
+    const planBytes = await serializeGenerationPlan(plan);
+    const published = [
+      artifact("model.ir.json", "application/json", modelBytes),
+      artifact("design.json", "application/json", designBytes),
+      artifact("generation-plan.json", "application/json", planBytes),
+    ];
+    if (parameters.kind === "fixed") {
+      published.push(artifact(
+        "fixed-parameters.json",
+        "application/json",
+        parameters.parametersBytes,
+      ));
+    } else if (parameters.kind === "posterior") {
+      published.push(
+        artifact(
+          "source-posterior.ndjson",
+          "application/x-ndjson",
+          parameters.fitArtifact.posteriorBytes,
+        ),
+        artifact(
+          "source-fit-data.json",
+          "application/json",
+          parameters.fitArtifact.dataBytes,
+        ),
+      );
+    }
+    published.push(generated);
+    const runBytes = await generationRunBytes(published);
+    published.push(artifact("run.json", "application/json", runBytes));
+    return { artifacts: published };
   }
 
   async #sample(request, onProgress) {
@@ -245,6 +286,57 @@ function exactText(value, label) {
 async function sha256Bytes(value) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", Uint8Array.from(value)));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function generationRunBytes(artifacts) {
+  const byName = new Map(artifacts.map((entry) => [entry.name, entry]));
+  const entry = async (role, name, format) => {
+    const value = byName.get(name);
+    if (value === undefined) {
+      throw new RuntimeError("MissingArtifact", `Generation publication needs ${name}`);
+    }
+    return { role, path: name, sha256: await sha256Bytes(value.bytes), format };
+  };
+  const inputs = [await entry("design", "design.json", "bayescycle.data.json.v1")];
+  if (byName.has("fixed-parameters.json")) {
+    inputs.push(await entry(
+      "fixed-parameters",
+      "fixed-parameters.json",
+      "bayescycle.data.json.v1",
+    ));
+  } else if (byName.has("source-posterior.ndjson")) {
+    inputs.push(
+      await entry("source-posterior", "source-posterior.ndjson", "v0-provisional"),
+      await entry("source-fit-data", "source-fit-data.json", "bayescycle.data.json.v1"),
+    );
+  }
+  const plan = byName.get("generation-plan.json");
+  const model = byName.get("model.ir.json");
+  if (plan === undefined || model === undefined) {
+    throw new RuntimeError("MissingArtifact", "Generation publication needs model and plan");
+  }
+  const document = {
+    format: "bayescycle.generation-run.v0",
+    kind: "generate",
+    backend: "bayesite",
+    plan: {
+      path: "generation-plan.json",
+      sha256: await sha256Bytes(plan.bytes),
+      format: "v0-provisional",
+    },
+    model: {
+      path: "model.ir.json",
+      sha256: await sha256Bytes(model.bytes),
+      format: "bayeswire_ir.v1",
+    },
+    inputs,
+    outputs: [await entry(
+      "generated-datasets",
+      "generated_datasets.ndjson",
+      "v0-provisional",
+    )],
+  };
+  return ENCODE.encode(`${JSON.stringify(document)}\n`);
 }
 
 function asText(value, label) {

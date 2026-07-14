@@ -49,7 +49,7 @@ def test_recovery_summary_remains_visible_when_diagnostics_fail(page: Page, base
     expect(page.locator("#run-error")).to_contain_text("diagnostics unavailable")
     expect(page.locator("#recovery-summary")).to_be_visible()
 
-    page.locator("#predictive-draws").fill("201")
+    page.locator("#inference-seed").fill("201")
     expect(page.locator("#artifact-posterior")).to_be_visible()
     expect(page.locator("#run-error")).to_be_visible()
     expect(page.locator("#run-error")).to_contain_text("diagnostics unavailable")

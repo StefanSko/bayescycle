@@ -46,9 +46,7 @@ def test_all_parameter_sources_use_one_native_generation_operation(
     page.locator("#generate-button").click()
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
-    page.locator("#observed-data").fill(
-        '{"x":[-1,-0.5,0,0.5,1],"y":[-0.7,-0.1,0.5,1.1,1.7]}'
-    )
+    page.locator("#observed-data").fill('{"x":[-1,-0.5,0,0.5,1],"y":[-0.7,-0.1,0.5,1.1,1.7]}')
     page.locator("#fit-button").click()
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#param-source-posterior")).to_be_enabled()
@@ -57,9 +55,7 @@ def test_all_parameter_sources_use_one_native_generation_operation(
     page.locator("#generate-button").click()
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
-    requests = page.evaluate(
-        "__engineRequests.filter((request) => request.command === 'generate')"
-    )
+    requests = page.evaluate("__engineRequests.filter((request) => request.command === 'generate')")
     assert [request["parameter_source"]["kind"] for request in requests] == [
         "fixed",
         "model-prior",
@@ -67,5 +63,7 @@ def test_all_parameter_sources_use_one_native_generation_operation(
     ]
     assert all(request["count"] == 2 and request["seed"] == 123 for request in requests)
     assert not page.evaluate(
-        "__engineRequests.some((request) => ['simulate', 'prior-predictive', 'posterior-predictive'].includes(request.command))"
+        "__engineRequests.some((request) => "
+        "['simulate', 'prior-predictive', 'posterior-predictive']"
+        ".includes(request.command))"
     )

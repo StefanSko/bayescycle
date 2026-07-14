@@ -1,9 +1,7 @@
 from playwright.sync_api import Page, expect
 
 
-def test_generated_pair_selection_conditioning_and_recovery(
-    page: Page, base_url: str
-) -> None:
+def test_generated_pair_selection_conditioning_and_recovery(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#chains").fill("1")
