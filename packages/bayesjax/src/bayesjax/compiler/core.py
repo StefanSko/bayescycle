@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import fields, is_dataclass
-from typing import cast
+from typing import TypeGuard, cast
 
 import jax
 import jax.numpy as jnp
@@ -106,11 +106,28 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
     raise TypeError(f"Cannot evaluate expression node: {type(node).__name__}")
 
 
-def _is_expr_node(value: object) -> bool:
+def _is_expr_node(value: object) -> TypeGuard[ExprNode]:
     """Return whether ``value`` is a final expression IR node."""
     return isinstance(
         value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
     )
+
+
+def _evaluate_distribution_field(
+    value: object,
+    values: dict[str, jax.Array],
+) -> object:
+    """Evaluate one registered field, preserving explicit map and tuple shapes."""
+    if _is_expr_node(value):
+        return _evaluate_expr(value, values)
+    if isinstance(value, dict):
+        return {name: _evaluate_distribution_field(item, values) for name, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_evaluate_distribution_field(item, values) for item in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return _evaluate_distribution(value, values)
+    reject_opaque_symbolic_distribution(value)
+    return value
 
 
 def _evaluate_distribution[DistributionT: Distribution](
@@ -124,14 +141,10 @@ def _evaluate_distribution[DistributionT: Distribution](
 
     resolved: dict[str, object] = {}
     for f in fields(distribution):
-        val = getattr(distribution, f.name)
-        if _is_expr_node(val):
-            resolved[f.name] = _evaluate_expr(val, values)
-        elif is_dataclass(val) and not isinstance(val, type):
-            resolved[f.name] = _evaluate_distribution(val, values)
-        else:
-            reject_opaque_symbolic_distribution(val)
-            resolved[f.name] = val
+        resolved[f.name] = _evaluate_distribution_field(
+            getattr(distribution, f.name),
+            values,
+        )
 
     return cast(DistributionT, type(distribution)(**resolved))
 
