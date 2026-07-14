@@ -7,6 +7,7 @@ CASES = [
     "scoped starts reject dependencies changed during preflight",
     "scoped attempts preserve successful ancestors on failure",
     "selection invalidates only generated conditioning descendants",
+    "observed edits cancel observed fit and posterior generation attempts",
     "observed edits preserve generated-data fit and recovery",
     "inference edits preserve fit and independent generation",
     "replacement fits invalidate posterior-sourced collections",

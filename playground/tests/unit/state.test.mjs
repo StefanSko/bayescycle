@@ -94,6 +94,70 @@ export default [
     },
   },
   {
+    name: "observed edits cancel observed fit and posterior generation attempts",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "old", dependencyKey: "old-fit",
+        datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "old", dependencyKey: "old-fit",
+        fit: { datasetSource: "observed", lineageKey: "old-fit", artifacts: [] },
+      });
+      state = reduce(state, {
+        type: "generation-started", requestId: "posterior-g", dependencyKey: "pg",
+        guard: {
+          compileRevision: null,
+          inputRevision: state.generation.inputRevision,
+          settingsRevision: state.generation.settingsRevision,
+          sourceKind: "posterior",
+          fitLineageKey: "old-fit",
+        },
+      });
+      state = reduce(state, {
+        type: "observed-input-edited",
+        documents: { ...state.documents, observed: "changed" },
+        revision: 1,
+      });
+      assert(state.conditioning.fit === null, "observed fit survived observed edit");
+      assert(state.generation.attempt.status === "idle", "posterior generation survived source edit");
+      const edited = state;
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "posterior-g", dependencyKey: "pg",
+        collection: { sourceKind: "posterior", sourceFitLineageKey: "old-fit" },
+      });
+      assert(state === edited, "stale posterior generation completion was accepted");
+
+      state = initialState();
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "generated", dependencyKey: "generated-fit",
+        datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "generated", dependencyKey: "generated-fit",
+        fit: { datasetSource: "generated", lineageKey: "generated-fit", artifacts: [] },
+      });
+      const generatedFit = state.conditioning.fit;
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "replacement", dependencyKey: "observed-fit",
+        datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "observed-input-edited",
+        documents: { ...state.documents, observed: "new observed" },
+        revision: 2,
+      });
+      assert(state.conditioning.attempt.status === "idle", "observed replacement survived edit");
+      assert(state.conditioning.fit === generatedFit, "unrelated generated fit was erased");
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "replacement", dependencyKey: "observed-fit",
+        fit: { datasetSource: "observed", lineageKey: "stale", artifacts: [] },
+      });
+      assert(state.conditioning.fit === generatedFit, "stale observed fit replaced generated fit");
+    },
+  },
+  {
     name: "observed edits preserve generated-data fit and recovery",
     fn: () => {
       let state = initialState();
