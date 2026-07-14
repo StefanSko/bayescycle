@@ -131,8 +131,8 @@ export async function validatePortablePosterior({
       throw new PortablePosteriorError(`posterior draw ${sourceDrawIndex} format is invalid`);
     }
     kindScope(draw, `posterior draw ${sourceDrawIndex}`);
-    if ((draw.draw_index ?? sourceDrawIndex) !== sourceDrawIndex) {
-      throw new PortablePosteriorError("posterior draw indices are not contiguous");
+    if (draw.draw_index === undefined || draw.draw_index !== sourceDrawIndex) {
+      throw new PortablePosteriorError("posterior draw_index values are required and contiguous");
     }
     const chain = integer(draw.chain, "posterior chain");
     const drawIndex = integer(draw.draw, "posterior draw");

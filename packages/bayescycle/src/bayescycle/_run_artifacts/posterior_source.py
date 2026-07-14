@@ -68,7 +68,11 @@ def validate_portable_posterior(
             documents.append(
                 cast(
                     JsonValue,
-                    json.loads(line.decode("utf-8"), object_pairs_hook=_unique_object),
+                    json.loads(
+                        line.decode("utf-8"),
+                        object_pairs_hook=_unique_object,
+                        parse_constant=_reject_constant,
+                    ),
                 )
             )
         except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey) as exc:
@@ -158,7 +162,7 @@ def validate_portable_posterior(
         document = _object(raw, f"posterior draw {source_index}")
         _marker(document, f"posterior draw {source_index}")
         _kind_scope(document, f"posterior draw {source_index}")
-        raw_index = document.get("draw_index", source_index)
+        raw_index = document.get("draw_index")
         if _integer(raw_index, "posterior draw_index") != source_index:
             raise PortablePosteriorError("posterior draw indices are not contiguous")
         chain = _integer(document.get("chain"), "posterior chain")
@@ -256,6 +260,10 @@ def _object(value: object, label: str) -> dict[str, JsonValue]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise PortablePosteriorError(f"{label} must be an object")
     return cast(dict[str, JsonValue], value)
+
+
+def _reject_constant(value: str) -> JsonValue:
+    raise PortablePosteriorError(f"posterior source contains non-JSON number {value}")
 
 
 def _unique_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
