@@ -2,6 +2,7 @@ import { CompilerClient } from "../compile/index.mjs";
 import {
   WorkerEngine,
   diagnose,
+  generate,
   mergeChainFits,
   posteriorPredictive,
   priorPredictive,
@@ -10,6 +11,7 @@ import {
   simulate,
 } from "../engine/index.mjs";
 import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
+import { GenerationPlanError, validateGenerationPlan } from "../generation/plan.mjs";
 
 const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
@@ -31,6 +33,9 @@ export class BrowserRuntime {
     switch (request.operation) {
       case "sample":
         result = await this.#sample(request, onProgress);
+        break;
+      case "generate":
+        result = await this.#generate(request);
         break;
       case "diagnose":
         result = oneArtifact(
@@ -97,6 +102,66 @@ export class BrowserRuntime {
         throw new RuntimeError("UnsupportedOperation", `Unsupported operation ${request.operation}`);
     }
     return { type: "artifacts", id: request.id, artifacts: result.artifacts };
+  }
+
+  async #generate(request) {
+    let plan;
+    try {
+      plan = validateGenerationPlan(request.plan);
+    } catch (error) {
+      if (error instanceof GenerationPlanError) {
+        throw new RuntimeError("InvalidGenerationPlan", error.message);
+      }
+      throw error;
+    }
+    const parameters = plan.distribution.parameters;
+    const outcomes = plan.distribution.outcomes;
+    const modelBytes = outcomes.modelIrBytes;
+    const designBytes = outcomes.designBytes;
+    const identities = {
+      generation_model_hash: await sha256Bytes(modelBytes),
+      design_hash: await sha256Bytes(designBytes),
+    };
+    let parameterSource;
+    if (parameters.kind === "fixed") {
+      const parametersBytes = parameters.parametersBytes;
+      identities.parameters_hash = await sha256Bytes(parametersBytes);
+      parameterSource = {
+        kind: "fixed",
+        parameters: exactText(parametersBytes, "fixed parameters"),
+      };
+    } else if (parameters.kind === "model-prior") {
+      parameterSource = {
+        kind: "model-prior",
+        authored_provenance: parameters.authoredProvenance === null ? null : {
+          claimed_source_model_hash: parameters.authoredProvenance.claimedSourceModelHash,
+          claimed_outcome_model_hash: parameters.authoredProvenance.claimedOutcomeModelHash,
+        },
+      };
+    } else {
+      const fit = parameters.fitArtifact;
+      const fitModelBytes = fit.modelIrBytes;
+      const fitDataBytes = fit.dataBytes;
+      const posteriorBytes = fit.posteriorBytes;
+      identities.fit_hash = await sha256Bytes(posteriorBytes);
+      identities.fit_model_hash = await sha256Bytes(fitModelBytes);
+      identities.fit_data_hash = await sha256Bytes(fitDataBytes);
+      parameterSource = {
+        kind: "posterior",
+        fit: exactText(posteriorBytes, "fit posterior"),
+        fit_data: exactText(fitDataBytes, "fit data"),
+      };
+    }
+    const output = requireOutput(await generate({
+      model: exactText(modelBytes, "generation model IR"),
+      design: exactText(designBytes, "generation design"),
+      parameterSource,
+      identities,
+      count: plan.count,
+      seed: plan.seed,
+      executor: this.executor,
+    }));
+    return oneArtifact("generated_datasets.ndjson", "application/x-ndjson", output);
   }
 
   async #sample(request, onProgress) {
@@ -167,6 +232,19 @@ function requireOutput(result) {
 
 function runtimeError(error) {
   return new RuntimeError(error.error, error.message);
+}
+
+function exactText(value, label) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+  } catch {
+    throw new RuntimeError("InvalidRequest", `${label} must be valid UTF-8 bytes`);
+  }
+}
+
+async function sha256Bytes(value) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", Uint8Array.from(value)));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function asText(value, label) {

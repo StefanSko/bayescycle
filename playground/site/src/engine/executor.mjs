@@ -167,6 +167,7 @@ function exactKeys(value, allowed) {
 export function isStreamCommand(command) {
   return (
     command === "sample" ||
+    command === "generate" ||
     command === "prior-predictive" ||
     command === "posterior-predictive"
   );
