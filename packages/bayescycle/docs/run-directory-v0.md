@@ -32,7 +32,10 @@ run/
 Fixed generation additionally requires `fixed-parameters.json`. Posterior
 generation additionally requires copied `source-posterior.ndjson` and
 `source-fit-data.json`; its source model is the byte-identical
-`model.ir.json`. Model-prior generation needs no additional source payload.
+`model.ir.json`, and its posterior must carry matching header/trailer
+model-data fingerprints. A browser-runtime-only fingerprint-less fit can produce
+a paired download but cannot materialize this portable profile. Model-prior
+generation needs no additional source payload.
 These local payloads make a generation run replayable after it is moved and the
 original external inputs are removed. Generation `run.json` uses the distinct
 exact-key `bayescycle.generation-run.v0` profile in the functional-generation

@@ -256,7 +256,9 @@ are recomputed from bytes owned by the plan. Claimed authored hashes are only
 syntax-checked and are never described as verified. Object key order is the
 order shown above. JSON identity uses compact UTF-8 JSON followed by one LF. Parsed plans are
 reconstructed only when an artifact resolver supplies bytes whose hashes match;
-hash-only documents are never executable by themselves.
+hash-only documents are never executable by themselves. A hash-only posterior
+plan resolves as `portable`, never `runtime`, and therefore requires matching
+header/trailer model-data fingerprints.
 
 ## Bounds
 
@@ -519,7 +521,11 @@ resolve only to files in the same moved run directory:
 
 All JSON input files retain the exact bytes hashed by the plan. A generation run
 copies posterior source payloads; v0 does not use external or absolute artifact
-references.
+references. A posterior generation run is materializable only when its source
+fit has matching header/trailer model-data fingerprints. A fingerprint-less
+`runtime` association may generate an in-browser paired artifact, but attempting
+to create a portable run fails before any run-directory file is written; copying
+its bytes never promotes it to `portable` authority.
 
 Generation `run.json` is a distinct exact-key profile:
 
