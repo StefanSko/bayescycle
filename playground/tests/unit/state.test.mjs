@@ -57,6 +57,46 @@ export default [
     },
   },
   {
+    name: "observed edits preserve generated-data fit and recovery",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "generation-started", requestId: "g", dependencyKey: "gk" });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "g", dependencyKey: "gk",
+        collection: { sourceKind: "fixed", artifact: { name: "generated_datasets.ndjson" } },
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "r", revision: 0,
+        operation: "sample", datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "run-succeeded", requestId: "r", revision: 0,
+        artifacts: [{ name: "posterior.ndjson" }, { name: "recovery_check.json" }],
+      });
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "f", dependencyKey: "fk",
+        datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "f", dependencyKey: "fk",
+        fit: { datasetSource: "generated", lineageKey: "fk", artifacts: state.artifacts },
+      });
+      const fit = state.conditioning.fit;
+      state = reduce(state, {
+        type: "observed-input-edited",
+        documents: { observed: "changed", design: "", truth: "" },
+        revision: 1,
+      });
+      assert(state.conditioning.fit === fit, "observed edit erased generated-data fit");
+      assert(state.fitDatasetSource === "generated", "observed edit erased generated fit lineage");
+      assert(
+        state.artifacts.some((artifact) => artifact.name === "recovery_check.json"),
+        "observed edit erased generated recovery",
+      );
+      assert(state.generation.collection !== null, "observed edit erased independent generation");
+    },
+  },
+  {
     name: "inference edits preserve fit and independent generation",
     fn: () => {
       let state = initialState();

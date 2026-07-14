@@ -6,6 +6,7 @@ from playwright.sync_api import Page
 CASES = [
     "scoped attempts preserve successful ancestors on failure",
     "selection invalidates only generated conditioning descendants",
+    "observed edits preserve generated-data fit and recovery",
     "inference edits preserve fit and independent generation",
     "replacement fits invalidate posterior-sourced collections",
     "source edits invalidate compilation and artifacts",
