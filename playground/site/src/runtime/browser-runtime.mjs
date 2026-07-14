@@ -17,6 +17,7 @@ import {
 } from "../generation/artifact.mjs";
 import {
   GenerationPlanError,
+  fitArtifact,
   serializeGenerationPlan,
   validateGenerationPlan,
 } from "../generation/plan.mjs";
@@ -26,6 +27,8 @@ const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
 
 export class BrowserRuntime {
+  #runtimeFits = new WeakSet();
+
   constructor(executor = new WorkerEngine(), compiler = new CompilerClient()) {
     this.executor = executor;
     this.compiler = compiler;
@@ -110,7 +113,7 @@ export class BrowserRuntime {
       default:
         throw new RuntimeError("UnsupportedOperation", `Unsupported operation ${request.operation}`);
     }
-    return { type: "artifacts", id: request.id, artifacts: result.artifacts };
+    return { type: "artifacts", id: request.id, ...result };
   }
 
   async #generate(request) {
@@ -160,6 +163,13 @@ export class BrowserRuntime {
         fit: exactText(posteriorBytes, "fit posterior"),
         fit_data: exactText(fitDataBytes, "fit data"),
       };
+    }
+    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime" &&
+        !this.#runtimeFits.has(parameters.fitArtifact)) {
+      throw new RuntimeError(
+        "InvalidFitAssociation",
+        "runtime posterior association was not issued by this conditioning runtime",
+      );
     }
     if (parameters.kind === "posterior" && parameters.fitArtifact.association === "portable") {
       await validatePortablePosterior({
@@ -251,11 +261,12 @@ export class BrowserRuntime {
 
   async #sample(request, onProgress) {
     const settings = request.settings ?? {};
+    const modelBytes = asIrBytes(request.modelIr);
     const dataBytes = asDocumentBytes(request.data);
     const chains = integerSetting(settings, "chains", 4);
     const counts = Array.from({ length: chains }, () => ({ retainedDraws: 0, divergences: 0 }));
     const result = await sample({
-      model: asIrBytes(request.modelIr),
+      model: modelBytes,
       data: asObject(dataBytes, "data"),
       settings: engineSettings(settings),
       seed: integerSetting(settings, "seed", 0),
@@ -272,12 +283,16 @@ export class BrowserRuntime {
     if (!result.ok) throw runtimeError(result.error);
     const streams = result.outputs.map((output) => UTF8.decode(output.rawBytes));
     const merged = streams.length === 1 ? streams[0] : mergeChainFits(streams);
+    const posteriorBytes = ENCODE.encode(merged);
+    const association = fitArtifact(modelBytes, dataBytes, posteriorBytes, "runtime");
+    this.#runtimeFits.add(association);
     return {
       artifacts: [
-        artifact("model.ir.json", "application/json", asIrBytes(request.modelIr)),
+        artifact("model.ir.json", "application/json", modelBytes),
         artifact("data.json", "application/json", dataBytes),
-        artifact("posterior.ndjson", "application/x-ndjson", ENCODE.encode(merged)),
+        artifact("posterior.ndjson", "application/x-ndjson", posteriorBytes),
       ],
+      fitArtifact: association,
     };
   }
 }

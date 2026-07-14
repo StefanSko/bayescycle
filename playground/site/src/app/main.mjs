@@ -1,7 +1,6 @@
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
 import { parseGeneratedDatasets } from "../generation/artifact.mjs";
 import {
-  fitArtifact,
   fixed,
   generateDatasets,
   generationInvalidationKey,
@@ -282,16 +281,10 @@ async function generateCollection() {
   } else if (sourceKind === "prior") {
     parameterSource = modelPrior(modelBytes);
   } else {
-    const posterior = state.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
-    const data = state.artifacts.find((artifact) => artifact.name === "data.json");
-    if (posterior === undefined || data === undefined) return;
-    parameterSource = posteriorOf(fitArtifact(
-      modelBytes,
-      data.bytes,
-      posterior.bytes,
-      "runtime",
-    ));
-    sourceFitLineageKey = await bytesHash(posterior.bytes);
+    const fit = state.conditioning.fit;
+    if (fit === null || fit.fitArtifact === undefined) return;
+    parameterSource = posteriorOf(fit.fitArtifact);
+    sourceFitLineageKey = fit.lineageKey;
   }
   const settings = generationSettings();
   const plan = generateDatasets(modelBytes, {
@@ -409,6 +402,7 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
         datasetSource,
         lineageKey: await bytesHash(posterior.bytes),
         artifacts,
+        fitArtifact: sampled.fitArtifact,
       },
     });
   } catch (error) {

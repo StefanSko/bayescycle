@@ -51,8 +51,7 @@ export function fitArtifact(modelIrBytes, dataBytes, posteriorBytes, association
 
 export function posteriorOf(value) {
   validateFitArtifact(value);
-  const owned = fitArtifact(value.modelIrBytes, value.dataBytes, value.posteriorBytes, value.association);
-  return Object.freeze({ kind: "posterior", fitArtifact: owned });
+  return Object.freeze({ kind: "posterior", fitArtifact: value });
 }
 
 export function outcomesOf(modelIrBytes, designBytes) {
