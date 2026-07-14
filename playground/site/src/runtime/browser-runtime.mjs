@@ -12,6 +12,10 @@ import {
 } from "../engine/index.mjs";
 import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
 import {
+  parseGeneratedDatasets,
+  verifyGeneratedDatasets,
+} from "../generation/artifact.mjs";
+import {
   GenerationPlanError,
   serializeGenerationPlan,
   validateGenerationPlan,
@@ -173,6 +177,35 @@ export class BrowserRuntime {
       seed: plan.seed,
       executor: this.executor,
     }));
+    const parsedOutput = parseGeneratedDatasets(output.rawBytes);
+    await verifyGeneratedDatasets(parsedOutput, {
+      modelBytes,
+      designBytes,
+      fixedParametersBytes: parameters.kind === "fixed"
+        ? parameters.parametersBytes
+        : undefined,
+      modelPriorBytes: parameters.kind === "model-prior"
+        ? parameters.modelIrBytes
+        : undefined,
+      authoredProvenance: parameters.kind === "model-prior" &&
+        parameters.authoredProvenance !== null
+        ? {
+            claimed_source_model_hash:
+              parameters.authoredProvenance.claimedSourceModelHash,
+            claimed_outcome_model_hash:
+              parameters.authoredProvenance.claimedOutcomeModelHash,
+          }
+        : null,
+      posteriorBytes: parameters.kind === "posterior"
+        ? parameters.fitArtifact.posteriorBytes
+        : undefined,
+      fitDataBytes: parameters.kind === "posterior"
+        ? parameters.fitArtifact.dataBytes
+        : undefined,
+      expectedSourceKind: parameters.kind,
+      expectedCount: plan.count,
+      expectedSeed: plan.seed,
+    });
     const generated = artifact(
       "generated_datasets.ndjson",
       "application/x-ndjson",

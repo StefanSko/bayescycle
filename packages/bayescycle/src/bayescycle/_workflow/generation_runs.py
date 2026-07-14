@@ -134,7 +134,10 @@ def execute_generation_run(
     code = run_external_command(execution.command)
     if code != 0:
         return code
-    _verify_generated_output(plan, execution.output_path)
+    try:
+        _verify_generated_output(plan, execution.output_path)
+    except GeneratedDatasetsArtifactError as exc:
+        raise WorkflowError(f"generated-dataset output is invalid: {exc}") from exc
     _write_generation_metadata(output_dir.expanduser().resolve(), plan, backend)
     return 0
 
