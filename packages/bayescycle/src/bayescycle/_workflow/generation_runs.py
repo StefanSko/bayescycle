@@ -610,6 +610,12 @@ def _contained_bytes(root: Path, name: str, role: str, maximum: int) -> tuple[Pa
 
 
 def _read_regular_path(path: Path, label: str, maximum: int) -> bytes:
+    try:
+        before = os.lstat(path)
+    except OSError as exc:
+        raise WorkflowError(f"{label} must be a contained regular file: {path}") from exc
+    if not stat.S_ISREG(before.st_mode):
+        raise WorkflowError(f"{label} must be a contained regular file: {path}")
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -617,8 +623,21 @@ def _read_regular_path(path: Path, label: str, maximum: int) -> bytes:
         raise WorkflowError(f"{label} must be a contained regular file: {path}") from exc
     try:
         status = os.fstat(descriptor)
-        if not stat.S_ISREG(status.st_mode):
-            raise WorkflowError(f"{label} must be a contained regular file: {path}")
+        try:
+            after = os.lstat(path)
+        except OSError as exc:
+            raise WorkflowError(f"{label} changed while opening: {path}") from exc
+        identities = (
+            (before.st_dev, before.st_ino),
+            (status.st_dev, status.st_ino),
+            (after.st_dev, after.st_ino),
+        )
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or not stat.S_ISREG(after.st_mode)
+            or len(set(identities)) != 1
+        ):
+            raise WorkflowError(f"{label} must be one stable contained regular file: {path}")
         chunks: list[bytes] = []
         size = 0
         while True:
