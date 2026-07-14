@@ -246,12 +246,73 @@ function parseLine(line, index) {
     throw new GeneratedDatasetsArtifactError(`generated-dataset line ${index} is not UTF-8`);
   }
   try {
+    assertUniqueObjectKeys(text, `generated-dataset line ${index}`);
     return JSON.parse(text);
   } catch (error) {
     throw new GeneratedDatasetsArtifactError(
       `generated-dataset line ${index} is not finite valid JSON: ${String(error)}`,
     );
   }
+}
+
+function assertUniqueObjectKeys(text, label) {
+  let index = 0;
+  const whitespace = () => {
+    while (/\s/u.test(text[index] ?? "")) index += 1;
+  };
+  const string = () => {
+    const start = index;
+    index += 1;
+    let escaped = false;
+    while (index < text.length) {
+      const character = text[index++];
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') return JSON.parse(text.slice(start, index));
+    }
+    throw new GeneratedDatasetsArtifactError(`${label} has malformed string`);
+  };
+  const value = () => {
+    whitespace();
+    if (text[index] === "{") {
+      objectValue();
+    } else if (text[index] === "[") {
+      index += 1;
+      whitespace();
+      if (text[index] === "]") { index += 1; return; }
+      while (true) {
+        value();
+        whitespace();
+        if (text[index] === "]") { index += 1; return; }
+        index += 1;
+      }
+    } else if (text[index] === '"') {
+      string();
+    } else {
+      while (index < text.length && !",]}".includes(text[index])) index += 1;
+    }
+  };
+  const objectValue = () => {
+    index += 1;
+    const keys = new Set();
+    whitespace();
+    if (text[index] === "}") { index += 1; return; }
+    while (true) {
+      whitespace();
+      const key = string();
+      if (keys.has(key)) {
+        throw new GeneratedDatasetsArtifactError(`${label} has duplicate object key ${key}`);
+      }
+      keys.add(key);
+      whitespace();
+      index += 1;
+      value();
+      whitespace();
+      if (text[index] === "}") { index += 1; return; }
+      index += 1;
+    }
+  };
+  value();
 }
 
 function object(value, label) {

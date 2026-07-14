@@ -76,6 +76,10 @@ class GeneratedDatasetsArtifactError(ValueError):
     """Raised when a paired generated-dataset artifact is invalid."""
 
 
+class _DuplicateJsonKey(ValueError):
+    """Internal strict-JSON duplicate-key signal."""
+
+
 @dataclass(frozen=True)
 class _SchemaEntry:
     name: str
@@ -278,9 +282,12 @@ def _strict_data_bytes(data: bytes, label: str) -> DataDoc:
     if len(data) > MAX_GENERATED_LINE_BYTES:
         raise GeneratedDatasetsArtifactError(f"{label} exceeds byte limit")
     try:
-        value = cast(JsonValue, json.loads(data.decode("utf-8")))
+        value = cast(
+            JsonValue,
+            json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object),
+        )
         document = parse_data_doc(value, label=label)
-    except (UnicodeDecodeError, json.JSONDecodeError, DataDocError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateJsonKey, DataDocError) as exc:
         raise GeneratedDatasetsArtifactError(
             f"{label} is not a canonical data document: {exc}"
         ) from exc
@@ -290,15 +297,31 @@ def _strict_data_bytes(data: bytes, label: str) -> DataDoc:
 
 def _parse_line(line: bytes, index: int) -> JsonValue:
     try:
-        return cast(JsonValue, json.loads(line.decode("utf-8")))
+        return cast(
+            JsonValue,
+            json.loads(line.decode("utf-8"), object_pairs_hook=_unique_object),
+        )
     except UnicodeDecodeError as exc:
         raise GeneratedDatasetsArtifactError(
             f"generated-dataset line {index} is not UTF-8"
+        ) from exc
+    except _DuplicateJsonKey as exc:
+        raise GeneratedDatasetsArtifactError(
+            f"generated-dataset line {index} has duplicate object key: {exc}"
         ) from exc
     except json.JSONDecodeError as exc:
         raise GeneratedDatasetsArtifactError(
             f"generated-dataset line {index} is not finite valid JSON: {exc.msg}"
         ) from exc
+
+
+def _unique_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
+    result: dict[str, JsonValue] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateJsonKey(key)
+        result[key] = value
+    return result
 
 
 def _object(value: JsonValue, label: str) -> dict[str, JsonValue]:
