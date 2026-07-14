@@ -13,6 +13,7 @@ from bayeswire.model._components import (
     _snapshot_dimensions,
     _snapshot_model,
     _variable_dimensions,
+    _VariableDimensions,
     _Wire,
     _Wiring,
 )
@@ -38,6 +39,39 @@ def _build_same_name_wiring(
     return _Wiring(tuple(wires))
 
 
+def _coordinate_values_equal(
+    left: tuple[CoordValue, ...],
+    right: tuple[CoordValue, ...],
+) -> bool:
+    """Compare JSON scalar coordinates without Python bool/int coercion."""
+    return len(left) == len(right) and all(
+        type(left_value) is type(right_value) and left_value == right_value
+        for left_value, right_value in zip(left, right, strict=True)
+    )
+
+
+def _variable_dimensions_equal(
+    left: _VariableDimensions,
+    right: _VariableDimensions,
+) -> bool:
+    if left.names != right.names or len(left.coords) != len(right.coords):
+        return False
+    for (left_name, left_values), (right_name, right_values) in zip(
+        left.coords,
+        right.coords,
+        strict=True,
+    ):
+        if left_name != right_name or (left_values is None) != (right_values is None):
+            return False
+        if (
+            left_values is not None
+            and right_values is not None
+            and not _coordinate_values_equal(left_values, right_values)
+        ):
+            return False
+    return True
+
+
 def _validate_interface(
     target: _ParameterInput,
     source: _ParameterExport,
@@ -52,7 +86,10 @@ def _validate_interface(
                 f"prior parameter {name!r} must use the same data-dependent size name as the target"
             )
         raise ValueError(f"prior parameter {name!r} must match the target size exactly")
-    if source.interface.dimensions != target.interface.dimensions:
+    if not _variable_dimensions_equal(
+        source.interface.dimensions,
+        target.interface.dimensions,
+    ):
         raise ValueError(f"prior parameter {name!r} must match the target dimensions exactly")
 
 
@@ -150,9 +187,9 @@ def _close_composition(composed: _ComposedKernel) -> _ClosedComposition:
             continue
         if existing != value:
             raise ValueError(f"shared data {name!r} must have identical resolved schemas")
-        if _variable_dimensions(source.dimensions, name) != _variable_dimensions(
-            outcomes.dimensions,
-            name,
+        if not _variable_dimensions_equal(
+            _variable_dimensions(source.dimensions, name),
+            _variable_dimensions(outcomes.dimensions, name),
         ):
             raise ValueError(f"shared data {name!r} must have identical dimensions")
 
@@ -231,7 +268,7 @@ def _merge_dimensions(
             if name not in used_dimensions:
                 continue
             existing = coords.get(name)
-            if existing is not None and existing != values:
+            if existing is not None and not _coordinate_values_equal(existing, values):
                 raise ValueError(f"dimension {name!r} has conflicting coordinate values")
             coords[name] = values
 

@@ -13,7 +13,104 @@ from bayeswire.model._data_schema import (
     ResolvedDataSchema,
     ResolvedDataShapeSchema,
 )
-from bayeswire.model.expr import DataRef, ParamRef, VectorScatterOp
+from bayeswire.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    FullSlice,
+    IndexOp,
+    IndexTuple,
+    ParamRef,
+    ScalarIndex,
+    UnaryOp,
+    VectorScatterOp,
+    is_final_expr_node,
+)
+
+_BINARY_OPERATORS = frozenset({"+", "-", "*", "/"})
+_UNARY_FUNCTIONS = frozenset({"exp", "neg", "sigmoid"})
+
+
+def _validate_index_spec(spec: object, *, label: str) -> None:
+    if isinstance(spec, ScalarIndex):
+        _validate_expression_structure(spec.expr, label=label)
+        return
+    if isinstance(spec, FullSlice):
+        return
+    if isinstance(spec, IndexTuple):
+        if not isinstance(spec.items, tuple) or not spec.items:
+            raise TypeError(f"{label} index spec must contain a non-empty tuple")
+        for item in spec.items:
+            if isinstance(item, IndexTuple):
+                raise TypeError(f"{label} index spec must not contain nested index tuples")
+            _validate_index_spec(item, label=label)
+        return
+    raise TypeError(f"{label} index spec must be ScalarIndex, FullSlice, or IndexTuple")
+
+
+def _validate_expression_structure(value: object, *, label: str) -> None:
+    """Require one tree to use only executable resolved expression IR."""
+    if not is_final_expr_node(value):
+        raise TypeError(f"{label} must contain resolved expression IR")
+    if isinstance(value, ParamRef | DataRef):
+        if not isinstance(value.name, str):
+            raise TypeError(f"{label} reference names must be strings")
+        return
+    if isinstance(value, ConstNode):
+        if isinstance(value.value, bool) or not isinstance(value.value, int | float):
+            raise TypeError(f"{label} constants must be int or float values")
+        if isinstance(value.value, float) and not math.isfinite(value.value):
+            raise ValueError(f"{label} constants must be finite")
+        return
+    if isinstance(value, BinOp):
+        if value.op not in _BINARY_OPERATORS:
+            raise ValueError(f"{label} uses unknown binary operator {value.op!r}")
+        _validate_expression_structure(value.left, label=label)
+        _validate_expression_structure(value.right, label=label)
+        return
+    if isinstance(value, UnaryOp):
+        if value.function not in _UNARY_FUNCTIONS:
+            raise ValueError(f"{label} uses unknown unary function {value.function!r}")
+        _validate_expression_structure(value.operand, label=label)
+        return
+    if isinstance(value, IndexOp):
+        _validate_expression_structure(value.base, label=label)
+        _validate_index_spec(value.index, label=label)
+        return
+    if isinstance(value, VectorScatterOp):
+        for item in (
+            value.length,
+            value.observed_idx,
+            value.observed_values,
+            value.missing_idx,
+            value.missing_values,
+        ):
+            _validate_expression_structure(item, label=label)
+
+
+def _validate_data_schema(schema: object, *, label: str) -> None:
+    if isinstance(schema, ResolvedDataRankSchema):
+        if isinstance(schema.rank, bool) or not isinstance(schema.rank, int) or schema.rank < 0:
+            error = f"{label} rank must be a non-negative integer"
+            if isinstance(schema.rank, int) and not isinstance(schema.rank, bool):
+                raise ValueError(error)
+            raise TypeError(error)
+        return
+    if isinstance(schema, ResolvedDataShapeSchema):
+        if not isinstance(schema.dims, tuple):
+            raise TypeError(f"{label} shape dimensions must be a tuple")
+        for dimension in schema.dims:
+            if isinstance(dimension, DataDimRef):
+                if not isinstance(dimension.name, str):
+                    raise TypeError(f"{label} shape data-reference names must be strings")
+                continue
+            if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension < 0:
+                error = f"{label} shape dimensions must be non-negative integers or DataDimRef"
+                if isinstance(dimension, int) and not isinstance(dimension, bool):
+                    raise ValueError(error)
+                raise TypeError(error)
+        return
+    raise TypeError(f"{label} must use a resolved data rank or shape schema")
 
 
 def _is_scalar_schema(schema: ResolvedDataSchema) -> bool:
@@ -50,6 +147,8 @@ def _validate_value_references(
     label: str,
 ) -> None:
     """Validate typed references recursively through registered dataclass-shaped values."""
+    if is_final_expr_node(value):
+        _validate_expression_structure(value, label=label)
     if isinstance(value, ParamRef):
         if value.name not in free_values:
             raise ValueError(f"{label} references unknown free value {value.name!r}")
@@ -157,8 +256,15 @@ def _validate_model_closure(
     role: str,
 ) -> None:
     """Require one input or final snapshot to be independently closed."""
+    param_names = {name for name, _value in model.params}
     free_values = {name for name, _value in model.free_values}
+    non_param_free_values = free_values - param_names
+    if not param_names and not model.observed_nodes and not non_param_free_values:
+        raise ValueError(f"{role} must contain at least one stochastic declaration")
+
     data = {name for name, _value in model.data}
+    for name, resolved in model.data:
+        _validate_data_schema(resolved.schema, label=f"{role} data {name!r}")
     scalar_data = {name for name, resolved in model.data if _is_scalar_schema(resolved.schema)}
     _validate_param_owners(model, role=role)
     _validate_non_param_free_value_owners(model, role=role)
@@ -200,6 +306,7 @@ def _validate_model_closure(
         )
 
     for name, expression in model.expressions:
+        _validate_expression_structure(expression, label=f"{role} expression {name!r}")
         _validate_value_references(
             expression,
             free_values=free_values,
@@ -224,6 +331,10 @@ def _validate_model_closure(
             data=data,
             observed_data=set(),
             label=f"{role} stochastic site {site.name!r} distribution",
+        )
+        _validate_expression_structure(
+            site.value,
+            label=f"{role} stochastic site {site.name!r} value",
         )
         owned_observed = {
             node.name
@@ -275,12 +386,16 @@ def _validate_static_dimensions(
         return
 
     for variable, names in dimensions.variables:
+        if not isinstance(names, tuple):
+            raise TypeError(f"{role} dimension names and coordinates must be tuples")
         if not isinstance(variable, str) or variable == "":
             raise ValueError(f"{role} dimension variable names must be non-empty strings")
         for name in names:
             if not isinstance(name, str) or name == "":
                 raise ValueError(f"{role} dimension names must be non-empty strings")
     for name, values in dimensions.coords:
+        if not isinstance(values, tuple):
+            raise TypeError(f"{role} dimension names and coordinates must be tuples")
         if not isinstance(name, str) or name == "":
             raise ValueError(f"{role} dimension coordinate names must be non-empty strings")
         for value in values:

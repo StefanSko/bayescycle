@@ -74,9 +74,14 @@ def _load_named_model(module: ModuleType, name: str) -> LoadedModel:
     value = namespace[name]
     if not is_model_class(value):
         raise ModelLoadError(f"object {name!r} is not a bayeswire @model declaration")
+    model_cls = cast(type[object], value)
+    try:
+        model_dependencies(model_cls)
+    except (TypeError, ValueError) as exc:
+        raise ModelLoadError(f"invalid bayeswire model dependency graph: {exc}") from exc
     return LoadedModel(
         name=name,
-        model_cls=cast(type[object], value),
+        model_cls=model_cls,
         meta=model_meta(value),
     )
 
@@ -96,8 +101,6 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
                 )
             )
 
-    if len(matches) == 1:
-        return matches[0]
     if not matches:
         raise ModelLoadError(
             f"no bayeswire @model declaration was found in {module.__file__}; "

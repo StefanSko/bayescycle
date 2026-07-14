@@ -118,18 +118,18 @@ def compile_editor_source(source):
             ):
                 models.append(value)
                 seen.add(id(value))
+        referenced = set()
+        traversed = set()
+        pending = list(models)
+        while pending:
+            model = pending.pop()
+            if id(model) in traversed:
+                continue
+            traversed.add(id(model))
+            dependencies = model_dependencies(model)
+            referenced.update(dependencies)
+            pending.extend(dependencies)
         if len(models) > 1:
-            referenced = set()
-            traversed = set()
-            pending = list(models)
-            while pending:
-                model = pending.pop()
-                if id(model) in traversed:
-                    continue
-                traversed.add(id(model))
-                dependencies = model_dependencies(model)
-                referenced.update(dependencies)
-                pending.extend(dependencies)
             roots = [model for model in models if model not in referenced]
             if len(roots) == 1:
                 models = roots
