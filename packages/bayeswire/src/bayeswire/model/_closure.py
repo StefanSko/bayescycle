@@ -5,13 +5,20 @@ from __future__ import annotations
 import math
 from dataclasses import fields, is_dataclass
 
-from bayeswire.constraints import VectorBounds
+from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval, VectorBounds
 from bayeswire.model._components import _DimensionSnapshot, _ModelSnapshot
 from bayeswire.model._data_schema import (
     DataDimRef,
     ResolvedDataRankSchema,
     ResolvedDataSchema,
     ResolvedDataShapeSchema,
+)
+from bayeswire.model.decorator import (
+    ResolvedData,
+    ResolvedFreeValue,
+    ResolvedObserved,
+    ResolvedParam,
+    ResolvedStochasticSite,
 )
 from bayeswire.model.expr import (
     BinOp,
@@ -29,11 +36,90 @@ from bayeswire.model.expr import (
 
 _BINARY_OPERATORS = frozenset({"+", "-", "*", "/"})
 _UNARY_FUNCTIONS = frozenset({"exp", "neg", "sigmoid"})
+_CONSTRAINT_TYPES = (Positive, Interval, UnitInterval, Ordered, VectorBounds)
+
+
+def _validate_distribution(value: object, *, label: str) -> None:
+    from bayeswire.ir import _is_registered_distribution
+
+    if not _is_registered_distribution(value):
+        raise TypeError(f"{label} must be a registered distribution")
+
+
+def _validate_constraint(value: object, *, label: str) -> None:
+    if value is not None and not isinstance(value, _CONSTRAINT_TYPES):
+        raise TypeError(f"{label} must be a supported constraint or None")
+
+
+def _validate_model_role_types(model: _ModelSnapshot, *, role: str) -> None:
+    """Require each ModelMeta field to contain its registered semantic role."""
+    if not isinstance(model.observed_nodes, tuple) or not isinstance(model.stochastic_sites, tuple):
+        raise TypeError(f"{role} observed nodes and stochastic sites must be tuples")
+    for name, value in model.params:
+        if not isinstance(name, str) or not isinstance(value, ResolvedParam):
+            raise TypeError(f"{role} parameter {name!r} must be ResolvedParam")
+        _validate_distribution(value.distribution, label=f"{role} parameter {name!r} distribution")
+        _validate_constraint(value.constraint, label=f"{role} parameter {name!r} constraint")
+    for name, value in model.data:
+        if not isinstance(name, str) or not isinstance(value, ResolvedData):
+            raise TypeError(f"{role} data {name!r} must be ResolvedData")
+    for value in model.observed_nodes:
+        if not isinstance(value, ResolvedObserved):
+            raise TypeError(f"{role} observed nodes must contain ResolvedObserved values")
+        if not isinstance(value.name, str):
+            raise TypeError(f"{role} Observed names must be strings")
+        _validate_distribution(
+            value.distribution,
+            label=f"{role} Observed {value.name!r} distribution",
+        )
+    for name, _value in model.expressions:
+        if not isinstance(name, str):
+            raise TypeError(f"{role} expression names must be strings")
+    for name, value in model.free_values:
+        if not isinstance(name, str) or not isinstance(value, ResolvedFreeValue):
+            raise TypeError(f"{role} free value {name!r} must be ResolvedFreeValue")
+        _validate_constraint(value.constraint, label=f"{role} free value {name!r} constraint")
+    for value in model.stochastic_sites:
+        if not isinstance(value, ResolvedStochasticSite):
+            raise TypeError(f"{role} stochastic sites must contain ResolvedStochasticSite values")
+        if not isinstance(value.name, str):
+            raise TypeError(f"{role} stochastic site names must be strings")
+        _validate_distribution(
+            value.distribution,
+            label=f"{role} stochastic site {value.name!r} distribution",
+        )
+
+
+def _validate_index_expression(value: object, *, label: str) -> None:
+    error = f"{label} index expressions must use integer data or constants"
+    if isinstance(value, DataRef):
+        return
+    if isinstance(value, ConstNode):
+        if isinstance(value.value, bool) or not isinstance(value.value, int):
+            raise TypeError(error)
+        return
+    if isinstance(value, BinOp):
+        if value.op not in {"+", "-", "*"}:
+            raise TypeError(error)
+        _validate_index_expression(value.left, label=label)
+        _validate_index_expression(value.right, label=label)
+        return
+    if isinstance(value, UnaryOp):
+        if value.function != "neg":
+            raise TypeError(error)
+        _validate_index_expression(value.operand, label=label)
+        return
+    if isinstance(value, IndexOp):
+        _validate_index_expression(value.base, label=label)
+        _validate_index_spec(value.index, label=label)
+        return
+    raise TypeError(error)
 
 
 def _validate_index_spec(spec: object, *, label: str) -> None:
     if isinstance(spec, ScalarIndex):
         _validate_expression_structure(spec.expr, label=label)
+        _validate_index_expression(spec.expr, label=label)
         return
     if isinstance(spec, FullSlice):
         return
@@ -256,6 +342,7 @@ def _validate_model_closure(
     role: str,
 ) -> None:
     """Require one input or final snapshot to be independently closed."""
+    _validate_model_role_types(model, role=role)
     param_names = {name for name, _value in model.params}
     free_values = {name for name, _value in model.free_values}
     non_param_free_values = free_values - param_names

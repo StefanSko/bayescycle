@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import fields, is_dataclass
 
 from bayeswire.constraints import VectorBounds
-from bayeswire.model._closure import _validate_model_closure
+from bayeswire.model._closure import _validate_model_closure, _validate_model_role_types
 from bayeswire.model._components import (
     _DimensionSnapshot,
     _ModelSnapshot,
@@ -226,6 +226,7 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
     meta = model_meta(source)
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(source))
+    _validate_model_role_types(model, role="source")
     _validate_internal_value_roles(model, model_role="source")
 
     params = dict(model.params)
@@ -369,6 +370,7 @@ def _factor_outcome_model(target: object) -> _OutcomeKernel:
     meta = model_meta(target)
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(target))
+    _validate_model_role_types(model, role="target")
     _validate_internal_value_roles(model, model_role="target")
 
     params = dict(model.params)

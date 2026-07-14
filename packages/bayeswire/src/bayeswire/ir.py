@@ -18,6 +18,7 @@ from typing import cast
 
 from bayeswire._ir_registry import (
     CORE_PROFILE_TAGS,
+    DISTRIBUTION_NODE_CLASSES,
     NODE_KEY,
     NODE_SPECS_BY_CLASS,
     NODE_SPECS_BY_TAG,
@@ -97,6 +98,12 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             "bayeswire.ir.register_distribution, or replace it with a built-in distribution."
         )
     _register_node(cls, tag=tag)
+    DISTRIBUTION_NODE_CLASSES.add(cls)
+
+
+def _is_registered_distribution(value: object) -> bool:
+    """Return whether ``value`` has a registered distribution wire role."""
+    return type(value) in DISTRIBUTION_NODE_CLASSES
 
 
 def meta_to_dict(meta: ModelMeta) -> dict[str, JsonValue]:
