@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from bayescycle._run_artifacts.canonical_data import JsonValue
 from bayescycle._run_artifacts.generated_datasets import (
     MAX_GENERATED_ARTIFACT_BYTES,
     MAX_GENERATED_LINE_BYTES,
@@ -36,11 +38,14 @@ def _fixture_bytes() -> bytes:
     return FIXTURE.read_bytes()
 
 
-def _documents() -> list[dict[str, object]]:
-    return [json.loads(line) for line in FIXTURE.read_text(encoding="utf-8").splitlines()]
+def _documents() -> list[dict[str, JsonValue]]:
+    return cast(
+        list[dict[str, JsonValue]],
+        [json.loads(line) for line in FIXTURE.read_text(encoding="utf-8").splitlines()],
+    )
 
 
-def _encode(documents: list[dict[str, object]]) -> bytes:
+def _encode(documents: list[dict[str, JsonValue]]) -> bytes:
     return b"".join(
         json.dumps(document, separators=(",", ":"), allow_nan=False).encode() + b"\n"
         for document in documents
@@ -53,6 +58,8 @@ def _source_stream(kind: str) -> bytes:
     trailer = documents[-1]["trailer"]
     assert isinstance(header, dict)
     assert isinstance(trailer, dict)
+    source: dict[str, JsonValue]
+    lineages: list[dict[str, JsonValue]]
     if kind == "model-prior":
         source = {
             "kind": "model-prior",
