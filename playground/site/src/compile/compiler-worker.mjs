@@ -101,9 +101,7 @@ import json
 import traceback
 
 import bayeswire.ir
-from bayeswire import Submodel
-from bayeswire.model.core import submodel_target
-from bayeswire.model.decorator import ModelMeta
+from bayeswire.model import is_model_class, model_dependencies, model_meta
 
 
 def compile_editor_source(source):
@@ -114,26 +112,30 @@ def compile_editor_source(source):
         seen = set()
         for value in namespace.values():
             if (
-                isinstance(value, type)
-                and isinstance(value.__dict__.get("_model_meta"), ModelMeta)
+                is_model_class(value)
                 and getattr(value, "__module__", None) == "__playground_editor__"
                 and id(value) not in seen
             ):
                 models.append(value)
                 seen.add(id(value))
         if len(models) > 1:
-            referenced = {
-                submodel_target(item)
-                for model in models
-                for item in model.__dict__.values()
-                if isinstance(item, Submodel)
-            }
+            referenced = set()
+            traversed = set()
+            pending = list(models)
+            while pending:
+                model = pending.pop()
+                if id(model) in traversed:
+                    continue
+                traversed.add(id(model))
+                dependencies = model_dependencies(model)
+                referenced.update(dependencies)
+                pending.extend(dependencies)
             roots = [model for model in models if model not in referenced]
             if len(roots) == 1:
                 models = roots
         if len(models) != 1:
             raise ValueError(f"Expected exactly one @model class, found {len(models)}")
-        ir_bytes = bayeswire.ir.canonical_bytes(models[0]._model_meta)
+        ir_bytes = bayeswire.ir.canonical_bytes(model_meta(models[0]))
         result = {
             "ok": True,
             "ir_base64": base64.b64encode(ir_bytes).decode("ascii"),

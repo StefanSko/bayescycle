@@ -13,12 +13,6 @@ from bayeswire.model._compose import (
 from bayeswire.model._factorization import _factor_outcome_model, _factor_prior_model
 
 
-def model_dependencies(model_cls: object) -> tuple[type[object], ...]:
-    """Return direct authoring-time dependencies of one model class."""
-    del model_cls
-    return ()
-
-
 def with_prior(target: object, *, prior: object) -> type[object]:
     """Return a new closed model using ``prior`` for ``target`` parameters."""
     caller_module = _caller_module_name()

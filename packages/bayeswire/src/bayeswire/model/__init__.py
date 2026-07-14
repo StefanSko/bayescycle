@@ -7,7 +7,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
-from bayeswire.model.composition import model_dependencies, with_prior
+from bayeswire.model.composition import with_prior
 from bayeswire.model.core import (
     Data,
     Observed,
@@ -25,6 +25,7 @@ from bayeswire.model.decorator import (
     resolved_free_values,
     resolved_stochastic_sites,
 )
+from bayeswire.model.dependencies import model_dependencies
 from bayeswire.model.dimensions import (
     Dim,
     dimension_metadata_from_dict,
