@@ -17,7 +17,10 @@ from bayescycle._workflow.generation_plan import (
     PosteriorOf,
     generate_datasets,
 )
-from bayescycle._workflow.generation_runs import materialize_generation_run
+from bayescycle._workflow.generation_runs import (
+    load_generation_run,
+    materialize_generation_run,
+)
 
 
 def _write_model(tmp_path: Path) -> Path:
@@ -153,6 +156,75 @@ def test_portable_posterior_requires_verified_file_fingerprint(tmp_path: Path) -
     with pytest.raises(WorkflowError, match="fingerprint|posterior"):
         materialize_generation_run(output_dir=output, plan=plan, engine="bayesite")
     assert not output.exists()
+
+
+def _make_fixed_run(tmp_path: Path) -> Path:
+    model = _write_model(tmp_path)
+    design = _canonical(
+        tmp_path / "bounded-design.json",
+        {"x": {"dtype": "float64", "shape": [1], "values": [0.0]}},
+    )
+    parameters = _canonical(
+        tmp_path / "bounded-parameters.json",
+        {"alpha": {"dtype": "float64", "shape": [], "values": [0.5]}},
+    )
+    output = tmp_path / "bounded-run"
+    assert (
+        main(
+            [
+                "generate",
+                str(model),
+                "--design",
+                str(design),
+                "--source",
+                "fixed",
+                "--parameters",
+                str(parameters),
+                "--count",
+                "1",
+                "--seed",
+                "0",
+                "--engine",
+                str(_write_fake_generation_engine(tmp_path)),
+                "-o",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    return output
+
+
+def test_generation_run_rejects_external_unbounded_or_invalid_metadata(tmp_path: Path) -> None:
+    run_dir = _make_fixed_run(tmp_path)
+    metadata_path = run_dir / "run.json"
+    outside = tmp_path / "outside-run.json"
+    metadata_path.replace(outside)
+    metadata_path.symlink_to(outside)
+    with pytest.raises(WorkflowError, match="regular|symbolic|contained"):
+        load_generation_run(run_dir)
+
+    metadata_path.unlink()
+    metadata_path.write_bytes(b" " * (1024 * 1024 + 1))
+    with pytest.raises(WorkflowError, match="byte|size|MiB"):
+        load_generation_run(run_dir)
+
+    metadata = json.loads(outside.read_text(encoding="utf-8"))
+    metadata["backend"] = "!" * 65
+    metadata_path.write_text(json.dumps(metadata, separators=(",", ":")) + "\n")
+    with pytest.raises(WorkflowError, match="backend"):
+        load_generation_run(run_dir)
+
+    metadata = json.loads(outside.read_text(encoding="utf-8"))
+    metadata["inputs"][0]["format"] = "wrong"
+    metadata_path.write_text(json.dumps(metadata, separators=(",", ":")) + "\n")
+    with pytest.raises(WorkflowError, match="format"):
+        load_generation_run(run_dir)
+
+    nested = "[" * 65 + "0" + "]" * 65
+    metadata_path.write_text('{"format":' + nested + "}\n")
+    with pytest.raises(WorkflowError, match="depth"):
+        load_generation_run(run_dir)
 
 
 def test_generation_run_is_portable_and_replays_without_python_source(
