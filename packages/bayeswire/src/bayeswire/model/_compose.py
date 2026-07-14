@@ -15,6 +15,7 @@ from bayeswire.model._components import (
 )
 from bayeswire.model.decorator import ModelMeta
 from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions, ResolvedVariableDims
+from bayeswire.model.expr import DataRef
 
 
 def _build_same_name_wiring(
@@ -39,10 +40,84 @@ def _validate_interface(
     source: _ParameterExport,
 ) -> None:
     """Require exact v0 static compatibility except for distributions."""
-    if source.interface != target.interface:
+    name = source.interface.name
+    if source.interface.constraint != target.interface.constraint:
+        raise ValueError(f"prior parameter {name!r} must match the target constraint exactly")
+    if source.interface.size != target.interface.size:
+        if isinstance(source.interface.size, DataRef) or isinstance(target.interface.size, DataRef):
+            raise ValueError(
+                f"prior parameter {name!r} must use the same data-dependent size name as the target"
+            )
+        raise ValueError(f"prior parameter {name!r} must match the target size exactly")
+    if source.interface.dimensions != target.interface.dimensions:
+        raise ValueError(f"prior parameter {name!r} must match the target dimensions exactly")
+
+
+def _first_overlap(left: tuple[str, ...], right: set[str]) -> str | None:
+    return next((name for name in left if name in right), None)
+
+
+def _reject_cross_role_overlap(
+    left: tuple[str, ...],
+    right: set[str],
+    *,
+    source_role: str,
+    target_role: str,
+) -> None:
+    name = _first_overlap(left, right)
+    if name is not None:
         raise ValueError(
-            f"prior parameter {source.interface.name!r} must match the target constraint, "
-            "size, data-dependent size name, and dimensions"
+            f"name {name!r} from {source_role} collides with {target_role}; "
+            "rename one declaration before composing"
+        )
+
+
+def _validate_cross_role_collisions(
+    source: _ParameterKernel,
+    outcomes: _OutcomeKernel,
+) -> None:
+    """Reject every cross-input value-role overlap except Params and shared data."""
+    source_params = tuple(name for name, _value in source.model.params)
+    source_data = tuple(name for name, _value in source.model.data)
+    source_expressions = tuple(name for name, _value in source.model.expressions)
+    target_data = {name for name, _value in outcomes.model.data}
+    target_expressions = {name for name, _value in outcomes.model.expressions}
+    target_observed = {observed.name for observed in outcomes.model.observed_nodes}
+    target_non_param_free = {name for name, _value in outcomes.retained_free_values}
+
+    for target_names, target_role in (
+        (target_data, "target data"),
+        (target_expressions, "target expression"),
+        (target_observed, "target Observed value"),
+        (target_non_param_free, "target free value"),
+    ):
+        _reject_cross_role_overlap(
+            source_params,
+            target_names,
+            source_role="source Param",
+            target_role=target_role,
+        )
+    for target_names, target_role in (
+        (target_expressions, "target expression"),
+        (target_observed, "target Observed value"),
+        (target_non_param_free, "target free value"),
+    ):
+        _reject_cross_role_overlap(
+            source_data,
+            target_names,
+            source_role="source data",
+            target_role=target_role,
+        )
+    for target_names, target_role in (
+        (target_data, "target data"),
+        (target_observed, "target Observed value"),
+        (target_non_param_free, "target free value"),
+    ):
+        _reject_cross_role_overlap(
+            source_expressions,
+            target_names,
+            source_role="source expression",
+            target_role=target_role,
         )
 
 
@@ -55,6 +130,7 @@ def _compose_kernels(
     wired_inputs = tuple(wire.target for wire in wiring.wires)
     if wired_inputs != outcomes.inputs:
         raise ValueError("prior composition wiring must close every target parameter exactly once")
+    _validate_cross_role_collisions(source, outcomes)
     return _ComposedKernel(source=source, outcomes=outcomes, wiring=wiring)
 
 

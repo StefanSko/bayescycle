@@ -6,6 +6,7 @@ from dataclasses import fields, is_dataclass
 
 from bayeswire.model._components import (
     _DimensionSnapshot,
+    _ModelSnapshot,
     _OutcomeKernel,
     _ParameterExport,
     _ParameterInput,
@@ -107,6 +108,91 @@ def _validate_ancestral_param_order(exports: tuple[_ParameterExport, ...]) -> No
         earlier.add(name)
 
 
+def _reject_role_overlap(
+    left: set[str],
+    right: set[str],
+    *,
+    model_role: str,
+    left_role: str,
+    right_role: str,
+) -> None:
+    overlap = tuple(name for name in left if name in right)
+    if overlap:
+        raise ValueError(
+            f"{model_role} name {overlap[0]!r} is both {left_role} and {right_role}; "
+            "give every resolved value one unambiguous role"
+        )
+
+
+def _validate_internal_value_roles(model: _ModelSnapshot, *, model_role: str) -> None:
+    """Reject all non-owner overlaps in one input's value namespace."""
+    params = {name for name, _value in model.params}
+    data = {name for name, _value in model.data}
+    expressions = {name for name, _value in model.expressions}
+    observed_names = [observed.name for observed in model.observed_nodes]
+    observed = set(observed_names)
+    if len(observed) != len(observed_names):
+        raise ValueError(f"{model_role} contains duplicate Observed names")
+    free_values = {name for name, _value in model.free_values}
+    non_param_free = free_values - params
+
+    _reject_role_overlap(
+        params,
+        data,
+        model_role=model_role,
+        left_role="a Param",
+        right_role="data",
+    )
+    _reject_role_overlap(
+        params,
+        expressions,
+        model_role=model_role,
+        left_role="a Param",
+        right_role="an expression",
+    )
+    _reject_role_overlap(
+        params,
+        observed,
+        model_role=model_role,
+        left_role="a Param",
+        right_role="Observed",
+    )
+    _reject_role_overlap(
+        data,
+        expressions,
+        model_role=model_role,
+        left_role="data",
+        right_role="an expression",
+    )
+    _reject_role_overlap(
+        data,
+        observed,
+        model_role=model_role,
+        left_role="data",
+        right_role="Observed",
+    )
+    _reject_role_overlap(
+        expressions,
+        observed,
+        model_role=model_role,
+        left_role="an expression",
+        right_role="Observed",
+    )
+    for role_names, role_name in (
+        (params, "a Param"),
+        (data, "data"),
+        (expressions, "an expression"),
+        (observed, "Observed"),
+    ):
+        _reject_role_overlap(
+            non_param_free,
+            role_names,
+            model_role=model_role,
+            left_role="a non-Param free value",
+            right_role=role_name,
+        )
+
+
 def _factor_prior_model(source: object) -> _ParameterKernel:
     """Return a validated prior-only view of ``source``."""
     if not isinstance(source, type) or not is_model_class(source):
@@ -117,6 +203,7 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
     meta = model_meta(source)
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(source))
+    _validate_internal_value_roles(model, model_role="source")
 
     params = dict(model.params)
     free_values = dict(model.free_values)
@@ -246,6 +333,7 @@ def _factor_outcome_model(target: object) -> _OutcomeKernel:
     meta = model_meta(target)
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(target))
+    _validate_internal_value_roles(model, model_role="target")
 
     params = dict(model.params)
     free_values = dict(model.free_values)
