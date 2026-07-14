@@ -343,6 +343,18 @@ export default [
       const unknown = documents(fixture);
       unknown[0].unexpected = true;
       malformed.push([encodeDocuments(unknown), "unknown"]);
+      const roundedInteger = documents(fixture);
+      roundedInteger[0].parameter_schema[0].dtype = "int64";
+      for (const draw of roundedInteger.slice(1, -1)) {
+        draw.parameters.variables.alpha.dtype = "int64";
+        draw.parameters.variables.alpha.values = [1];
+      }
+      malformed.push([
+        UTF8.encode(TEXT.decode(encodeDocuments(roundedInteger)).replace(
+          '"values":[1]', '"values":[1.0000000000000001]',
+        )),
+        "integer",
+      ]);
       const attacker = '{"format":"bayescycle.data.json.v1","variables":{}}';
       malformed.push([
         UTF8.encode(text.replace('"parameters":', `"parameters":${attacker},"parameters":`)),
