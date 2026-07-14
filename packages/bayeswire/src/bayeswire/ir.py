@@ -97,6 +97,11 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             "Decorate it with @dataclass(frozen=True) before calling "
             "bayeswire.ir.register_distribution, or replace it with a built-in distribution."
         )
+    if not getattr(getattr(cls, "__dataclass_params__", None), "frozen", False):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must use @dataclass(frozen=True) so registered "
+            "metadata cannot change after validation."
+        )
     if cls in NODE_SPECS_BY_CLASS and cls not in DISTRIBUTION_NODE_CLASSES:
         raise UnserializableDistribution(
             f"IR node {cls.__name__!r} is already registered with a non-distribution role "
@@ -127,10 +132,12 @@ def _encode_value(value: object) -> JsonValue:
                 "inf/nan tokens. Replace it with a finite constant in the model declaration."
             )
         return value
-    if isinstance(value, dict):
-        return _encode_map(cast("dict[object, object]", value))
-    if isinstance(value, tuple):
-        return [_encode_value(item) for item in value]
+    if isinstance(value, dict | tuple):
+        raise UnserializableValue(
+            f"A bare {type(value).__name__} has no IR value encoding. Declare it as a "
+            "registered dataclass field annotated with dict or tuple so its wire kind "
+            "is explicit."
+        )
     spec = NODE_SPECS_BY_CLASS.get(type(value))
     if spec is not None:
         return _encode_node(value, spec)
