@@ -23,7 +23,7 @@ from bayeswire import (
     with_prior,
 )
 from bayeswire.constraints import Positive, VectorBounds
-from bayeswire.distributions import Bernoulli, Normal, Truncated
+from bayeswire.distributions import Bernoulli, Normal, StudentT, Truncated
 from bayeswire.distributions.core import Distribution
 from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
 from bayeswire.model import ModelMeta, model_meta
@@ -598,6 +598,29 @@ def test_composition_rejects_mutable_sidecar_containers() -> None:
         with_prior(target, prior=source)
 
 
+def test_composition_rejects_duck_typed_dimension_variable_records() -> None:
+    @dataclass(frozen=True)
+    class FakeDims:
+        names: tuple[str, ...]
+
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    malformed = ResolvedModelDimensions(
+        variables=cast(dict[str, ResolvedVariableDims], {"theta": FakeDims(())}),
+        coords={},
+    )
+    target = bindable_from_meta(model_meta(TargetDeclaration), dimensions=malformed)
+
+    with pytest.raises(TypeError, match="dimension variables must contain ResolvedVariableDims"):
+        with_prior(target, prior=Prior)
+
+
 def test_composition_rejects_empty_source_target_and_factor_only_models() -> None:
     empty_meta = ModelMeta(params={}, data={}, observed_nodes=(), expressions={})
     empty = bindable_from_meta(empty_meta)
@@ -760,6 +783,52 @@ def test_composition_rejects_empty_lists_before_legacy_fallback(role: str, field
         with_prior(target, prior=source)
 
 
+def test_composition_rejects_unexecutable_retained_factor_roles() -> None:
+    @model
+    class TargetDeclaration:
+        x = Data.scalar()
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    discrete_factor = ResolvedStochasticSite(
+        "discrete_factor",
+        Bernoulli(ConstNode(0.5)),
+        ParamRef("theta"),
+    )
+    malformed = bindable_from_meta(
+        replace(meta, stochastic_sites=meta.stochastic_sites + (discrete_factor,)),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+    with pytest.raises(TypeError, match="Discrete stochastic site.*data or constants"):
+        with_prior(malformed, prior=Prior)
+
+    unsupported_factor = ResolvedStochasticSite(
+        "truncated_factor",
+        Truncated(
+            StudentT(ConstNode(3.0), ConstNode(0.0), ConstNode(1.0)),
+            lower=ConstNode(0.0),
+        ),
+        ParamRef("theta"),
+    )
+    malformed = bindable_from_meta(
+        replace(meta, stochastic_sites=meta.stochastic_sites + (unsupported_factor,)),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+    with pytest.raises(TypeError, match=r"Truncated.*StudentT.*CDF/ICDF"):
+        with_prior(malformed, prior=Prior)
+
+    valid_data_factor = replace(discrete_factor, value=DataRef("x"))
+    valid = bindable_from_meta(
+        replace(meta, stochastic_sites=meta.stochastic_sites + (valid_data_factor,)),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+    assert model_meta(with_prior(valid, prior=Prior)).stochastic_sites[-1] == valid_data_factor
+
+
 @pytest.mark.parametrize("role", ["source", "target"])
 def test_composition_rejects_discrete_param_metadata(role: str) -> None:
     @model
@@ -872,6 +941,44 @@ def test_composition_rejects_malformed_vector_scatter_static_roles() -> None:
         )
         with pytest.raises(TypeError, match=r"VectorScatter.*(length|idx).*(data|DataRef)"):
             with_prior(malformed, prior=Prior)
+
+    mismatched_observed = replace(
+        latent_site.value,
+        observed_values=DataRef("missing_idx"),
+    )
+    sites = list(meta.stochastic_sites)
+    sites[latent_index] = replace(latent_site, value=mismatched_observed)
+    malformed = bindable_from_meta(
+        replace(meta, stochastic_sites=tuple(sites)),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+    with pytest.raises(
+        ValueError,
+        match="VectorScatter observed_values and observed_idx must use the same dimension",
+    ):
+        with_prior(malformed, prior=Prior)
+
+    mismatched_missing = replace(
+        latent_site.value,
+        missing_idx=DataRef("observed_idx"),
+    )
+    sites[latent_index] = replace(latent_site, value=mismatched_missing)
+    malformed = bindable_from_meta(
+        replace(
+            meta,
+            free_values={
+                **meta.free_values,
+                "latent": replace(meta.free_values["latent"], constraint=None),
+            },
+            stochastic_sites=tuple(sites),
+        ),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+    with pytest.raises(
+        ValueError,
+        match="VectorScatter missing_idx must match the free-value size dimension",
+    ):
+        with_prior(malformed, prior=Prior)
 
     scalar_bounds = VectorBounds(lower=DataRef("n"))
     malformed = bindable_from_meta(
