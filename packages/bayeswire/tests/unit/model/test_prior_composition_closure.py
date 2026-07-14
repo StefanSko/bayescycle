@@ -6,18 +6,35 @@ import copy
 import hashlib
 import subprocess
 import sys
-from dataclasses import fields, is_dataclass, replace
+from dataclasses import dataclass, fields, is_dataclass, replace
 
 import pytest
 
-from bayeswire import Data, Dim, Observed, Param, model, model_dimensions, with_prior
+from bayeswire import (
+    Data,
+    Dim,
+    Observed,
+    Param,
+    PartiallyObserved,
+    model,
+    model_dimensions,
+    with_prior,
+)
 from bayeswire.distributions import Normal
-from bayeswire.ir import bindable_from_meta, meta_to_dict
+from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
 from bayeswire.model import model_meta
 from bayeswire.model._data_schema import DataDimRef, ResolvedDataShapeSchema
-from bayeswire.model.decorator import ResolvedData
+from bayeswire.model.decorator import ResolvedData, ResolvedStochasticSite
 from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions, ResolvedVariableDims
-from bayeswire.model.expr import DataRef, ParamRef
+from bayeswire.model.expr import ConstNode, DataRef, ParamRef
+
+
+@dataclass(frozen=True)
+class MappedTestDistribution:
+    parameters: dict[str, object]
+
+
+register_distribution(MappedTestDistribution, tag="MappedTestDistribution")
 
 
 def test_composition_freezes_all_ordered_merges() -> None:
@@ -183,6 +200,141 @@ def test_data_dimension_references_must_name_declared_scalar_data() -> None:
     )
 
     with pytest.raises(ValueError, match="source data 'context'.*unknown scalar data 'missing'"):
+        with_prior(Target, prior=source)
+
+
+def test_source_closure_traverses_registered_distribution_map_fields() -> None:
+    @model
+    class Target:
+        shared = Data.scalar()
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    source_meta = model_meta(Prior)
+    distribution = MappedTestDistribution({"location": DataRef("shared")})
+    source = bindable_from_meta(
+        replace(
+            source_meta,
+            params={"theta": replace(source_meta.params["theta"], distribution=distribution)},
+            stochastic_sites=(replace(source_meta.stochastic_sites[0], distribution=distribution),),
+        ),
+        dimensions=model_dimensions(Prior),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="source parameter 'theta' distribution.*unknown data 'shared'",
+    ):
+        with_prior(Target, prior=source)
+
+
+def test_source_ancestry_traverses_registered_distribution_map_fields() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+        later = Param(Normal(0.0, 1.0))
+
+    source_meta = model_meta(Prior)
+    distribution = MappedTestDistribution({"location": ParamRef("later")})
+    params = dict(source_meta.params)
+    params["theta"] = replace(params["theta"], distribution=distribution)
+    sites = list(source_meta.stochastic_sites)
+    sites[0] = replace(sites[0], distribution=distribution)
+    source = bindable_from_meta(
+        replace(source_meta, params=params, stochastic_sites=tuple(sites)),
+        dimensions=model_dimensions(Prior),
+    )
+
+    with pytest.raises(ValueError, match="prior parameter 'theta'.*earlier Param"):
+        with_prior(Target, prior=source)
+
+
+def test_additional_factor_cannot_use_observed_bind_input_as_a_value() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+        x = Data.scalar()
+        y = Observed(Normal(theta, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    target_meta = model_meta(Target)
+    observed_factor = ResolvedStochasticSite(
+        name="penalty",
+        distribution=Normal(ConstNode(0.0), ConstNode(2.0)),
+        value=DataRef("y"),
+    )
+    malformed = bindable_from_meta(
+        replace(
+            target_meta,
+            stochastic_sites=target_meta.stochastic_sites + (observed_factor,),
+        ),
+        dimensions=model_dimensions(Target),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="target stochastic site 'penalty' value.*unknown data 'y'",
+    ):
+        with_prior(malformed, prior=Prior)
+
+    declared_data_factor = replace(observed_factor, value=DataRef("x"))
+    valid = bindable_from_meta(
+        replace(
+            target_meta,
+            stochastic_sites=target_meta.stochastic_sites + (declared_data_factor,),
+        ),
+        dimensions=model_dimensions(Target),
+    )
+    assert model_meta(with_prior(valid, prior=Prior)).stochastic_sites[-1] == declared_data_factor
+
+
+def test_final_closure_rejects_vector_bounds_owner_collision_from_source_site_label() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed = Data.vector(n_obs)
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        missing_upper = Data.vector(n_mis)
+        latent = PartiallyObserved.vector(
+            Normal(theta, 1.0),
+            length=n,
+            observed=observed,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_upper=missing_upper,
+        )
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    source_meta = model_meta(Prior)
+    source = bindable_from_meta(
+        replace(
+            source_meta,
+            stochastic_sites=(replace(source_meta.stochastic_sites[0], name="latent"),),
+        ),
+        dimensions=model_dimensions(Prior),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="composed model free value 'latent'.*exactly one canonical owner",
+    ):
         with_prior(Target, prior=source)
 
 

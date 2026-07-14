@@ -179,6 +179,16 @@ def test_model_dependencies_preserves_nested_composition_as_direct_graph() -> No
     assert model_dependencies(second) == (first, SecondPrior)
 
 
+def test_model_dependencies_preserves_duplicate_target_and_prior_roles() -> None:
+    @model
+    class PriorOnly:
+        theta = Param(Normal(0.0, 1.0))
+
+    composed = with_prior(PriorOnly, prior=PriorOnly)
+
+    assert model_dependencies(composed) == (PriorOnly, PriorOnly)
+
+
 def test_model_dependencies_reports_no_graph_for_decoded_ir() -> None:
     rebuilt = bindable_from_meta(model_meta(PublicHookModel))
 
