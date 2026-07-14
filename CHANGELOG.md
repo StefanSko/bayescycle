@@ -20,6 +20,11 @@ formats retain their own compatibility policies.
   explicit compile uses a fresh disposable worker; the browser validates and
   hashes untrusted compiler bytes before separate engine workers consume them.
 
+### Changed
+
+- Trim the bundled Playground models to show only the Bayeswire imports each
+  declaration actually uses.
+
 ### Fixed
 
 - Mark R-hat and ESS unavailable in merged browser posterior trailers instead

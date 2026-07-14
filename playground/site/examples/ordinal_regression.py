@@ -1,13 +1,7 @@
-from dataclasses import replace
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Ordered
+from bayeswire.distributions import Normal, OrderedLogistic
 
-from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, Submodel, model
-from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
-from bayeswire.distributions import (
-    Bernoulli, Beta, Exponential, HalfNormal, MultivariateNormal, Normal,
-    OrderedLogistic, Poisson, Truncated,
-)
-from bayeswire.math import exp
-from bayeswire.model.decorator import ResolvedStochasticSite
 
 @model
 class OrdinalRegression:
