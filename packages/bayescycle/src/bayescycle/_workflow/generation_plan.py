@@ -13,6 +13,7 @@ MAX_GENERATION_COUNT = 1000
 MAX_GENERATION_INPUT_BYTES = 8 * 1024 * 1024
 MAX_GENERATION_PLAN_BYTES = 1024 * 1024
 _MAX_SAFE_INTEGER = 9_007_199_254_740_991
+_MAX_DEPTH = 64
 _HASH = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
@@ -211,6 +212,7 @@ def parse_generation_plan_document(data: bytes) -> GenerationPlanDocument:
     source = _copy_bytes(data, "generation plan", maximum=MAX_GENERATION_PLAN_BYTES)
     if not source.endswith(b"\n"):
         raise GenerationPlanError("generation plan must end in one LF")
+    _validate_depth(source)
     try:
         value = cast(JsonValue, json.loads(source.decode("utf-8")))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -393,6 +395,32 @@ def _copy_bytes(value: object, label: str, *, maximum: int = MAX_GENERATION_INPU
     if len(copied) > maximum:
         raise GenerationPlanError(f"{label} exceeds {maximum} bytes")
     return copied
+
+
+def _validate_depth(data: bytes) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in data:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:
+                escaped = True
+            elif byte == 0x22:
+                in_string = False
+        elif byte == 0x22:
+            in_string = True
+        elif byte in (0x7B, 0x5B):
+            depth += 1
+            if depth > _MAX_DEPTH:
+                raise GenerationPlanError(f"generation plan exceeds nesting depth {_MAX_DEPTH}")
+        elif byte in (0x7D, 0x5D):
+            depth -= 1
+            if depth < 0:
+                raise GenerationPlanError("generation plan has malformed nesting")
+    if in_string or depth != 0:
+        raise GenerationPlanError("generation plan has malformed nesting")
 
 
 def _object(value: JsonValue, label: str) -> dict[str, JsonValue]:

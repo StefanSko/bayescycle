@@ -3,6 +3,7 @@ export const MAX_GENERATION_INPUT_BYTES = 8 * 1024 * 1024;
 export const MAX_GENERATION_PLAN_BYTES = 1024 * 1024;
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+const MAX_DEPTH = 64;
 const HASH = /^sha256:[0-9a-f]{64}$/u;
 const UTF8 = new TextEncoder();
 const TEXT = new TextDecoder("utf-8", { fatal: true });
@@ -133,6 +134,7 @@ export async function serializeGenerationPlan(plan) {
 export async function parseGenerationPlanDocument(input) {
   const bytes = copyBytes(input, "generation plan", MAX_GENERATION_PLAN_BYTES);
   if (bytes.at(-1) !== 0x0a) throw new GenerationPlanError("generation plan must end in one LF");
+  validateDepth(bytes);
   let value;
   try { value = JSON.parse(TEXT.decode(bytes)); }
   catch (error) { throw new GenerationPlanError(`generation plan is not valid JSON: ${String(error)}`); }
@@ -303,6 +305,31 @@ function copyBytes(value, label, maximum = MAX_GENERATION_INPUT_BYTES) {
   if (value.byteLength === 0) throw new GenerationPlanError(`${label} bytes must not be empty`);
   if (value.byteLength > maximum) throw new GenerationPlanError(`${label} exceeds ${maximum} bytes`);
   return Uint8Array.from(value);
+}
+
+function validateDepth(bytes) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (const byte of bytes) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (byte === 0x5c) escaped = true;
+      else if (byte === 0x22) inString = false;
+    } else if (byte === 0x22) inString = true;
+    else if (byte === 0x7b || byte === 0x5b) {
+      depth += 1;
+      if (depth > MAX_DEPTH) {
+        throw new GenerationPlanError(`generation plan exceeds nesting depth ${MAX_DEPTH}`);
+      }
+    } else if (byte === 0x7d || byte === 0x5d) {
+      depth -= 1;
+      if (depth < 0) throw new GenerationPlanError("generation plan has malformed nesting");
+    }
+  }
+  if (inString || depth !== 0) {
+    throw new GenerationPlanError("generation plan has malformed nesting");
+  }
 }
 
 function exactKeys(value, expected, label) {
