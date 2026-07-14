@@ -25,15 +25,27 @@ source.addEventListener("input", () => {
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
 for (const input of [observed, design, truth]) input.addEventListener("input", documentsEdited);
-for (const selector of ["#chains", "#warmup", "#draws", "#seed", "#target-accept", "#max-treedepth"]) {
+for (const selector of [
+  "#chains", "#warmup", "#draws", "#inference-seed", "#target-accept",
+  "#max-treedepth", "#generation-seed",
+]) {
   element(selector).addEventListener("input", settingsEdited);
 }
+for (const selector of ["input[name='param-source']", "input[name='dataset-source']"]) {
+  for (const radio of document.querySelectorAll(selector)) radio.addEventListener("change", render);
+}
 element("#compile-button").addEventListener("click", () => void compileModel());
-element("#sample-button").addEventListener("click", () => launchRun(samplePosterior));
-element("#prior-button").addEventListener("click", () => launchRun(runPriorPredictive));
-element("#simulate-button").addEventListener("click", () => launchRun(simulateData));
-element("#sample-simulated-button").addEventListener("click", () => launchRun(sampleSimulated));
-element("#posterior-button").addEventListener("click", () => launchRun(runPosteriorPredictive));
+element("#generate-button").addEventListener("click", () => {
+  const operations = {
+    fixed: simulateData,
+    prior: runPriorPredictive,
+    posterior: runPosteriorPredictive,
+  };
+  launchRun(operations[selectedParamSource()]);
+});
+element("#fit-button").addEventListener("click", () => {
+  launchRun(selectedDatasetSource() === "generated" ? sampleSimulated : samplePosterior);
+});
 element("#examples-menu").addEventListener("change", () => void loadExample());
 element("#share-button").addEventListener("click", () => void shareProject());
 element("#load-shared").addEventListener("click", loadSharedProject);
@@ -97,6 +109,7 @@ async function shareProject() {
     design: design.value,
     truth: truth.value,
     sampler: samplerSettings(),
+    generation: { seed: integerValue("#generation-seed") },
   };
   const payload = await encodeProject(project);
   const url = new URL(window.location.href);
@@ -128,6 +141,7 @@ function loadSharedProject() {
     truth: String(pendingSharedProject.truth ?? ""),
   });
   applySamplerSettings(pendingSharedProject.sampler);
+  applyGenerationSettings(pendingSharedProject.generation);
   element("#share-review").hidden = true;
 }
 
@@ -140,13 +154,13 @@ function setProject(project) {
   }
   dispatch({ type: "source-edited", source: project.source, revision: ++revision });
   dispatch({ type: "documents-edited", documents: { observed: project.observed, design: project.design, truth: project.truth }, revision: ++revision });
-  element("#simulation-documents").open = project.design.trim() !== "" || project.truth.trim() !== "";
+  element("#generation-documents").open = project.design.trim() !== "";
   element("#share-output").hidden = true;
 }
 
 function applySamplerSettings(settings) {
   if (settings === null || typeof settings !== "object") return;
-  const fields = { chains: "#chains", num_warmup: "#warmup", num_draws: "#draws", seed: "#seed", target_accept: "#target-accept", max_treedepth: "#max-treedepth" };
+  const fields = { chains: "#chains", num_warmup: "#warmup", num_draws: "#draws", seed: "#inference-seed", target_accept: "#target-accept", max_treedepth: "#max-treedepth" };
   let applied = false;
   for (const [name, selector] of Object.entries(fields)) {
     if (typeof settings[name] === "number") {
@@ -155,6 +169,14 @@ function applySamplerSettings(settings) {
     }
   }
   if (applied) settingsEdited();
+}
+
+function applyGenerationSettings(settings) {
+  if (settings === null || typeof settings !== "object") return;
+  if (typeof settings.seed === "number") {
+    element("#generation-seed").value = String(settings.seed);
+    settingsEdited();
+  }
 }
 
 function launchRun(operation) {
@@ -205,7 +227,7 @@ async function runPriorPredictive() {
     operation: "prior-predictive",
     modelIr: compiledBytes(),
     data: documentBytes(design.value),
-    settings: safeSeedSettings(),
+    settings: generationSettings(),
   });
 }
 
@@ -218,7 +240,7 @@ async function runPosteriorPredictive() {
     modelIr: compiledBytes(),
     data: data.bytes,
     fit: posterior.bytes,
-    settings: safeSeedSettings(),
+    settings: generationSettings(),
   });
 }
 
@@ -228,7 +250,7 @@ async function simulateData() {
     modelIr: compiledBytes(),
     data: documentBytes(design.value),
     truth: documentBytes(truth.value),
-    settings: safeSeedSettings(),
+    settings: generationSettings(),
   });
 }
 
@@ -317,10 +339,16 @@ function sampleSettings() {
   return settings;
 }
 
-function safeSeedSettings() {
-  const settings = samplerSettings();
-  if (!validSeedSettings(settings)) throw new Error("Seed must be a nonnegative safe integer");
+function generationSettings() {
+  const settings = { ...samplerSettings(), seed: integerValue("#generation-seed") };
+  if (!validGenerationSettings(settings)) {
+    throw new Error("Generation seed must be a nonnegative safe integer");
+  }
   return settings;
+}
+
+function validGenerationSettings(settings = { seed: integerValue("#generation-seed") }) {
+  return Number.isSafeInteger(settings.seed) && settings.seed >= 0;
 }
 
 function validSeedSettings(settings = samplerSettings()) {
@@ -342,7 +370,7 @@ function samplerSettings() {
     chains: integerValue("#chains"),
     num_warmup: integerValue("#warmup"),
     num_draws: integerValue("#draws"),
-    seed: integerValue("#seed"),
+    seed: integerValue("#inference-seed"),
     target_accept: numberValue("#target-accept"),
     max_treedepth: integerValue("#max-treedepth"),
   };
@@ -383,18 +411,38 @@ function render() {
   element("#compile-button").disabled = state.compile.status === "compiling" ||
     state.run.status === "running" || state.source.trim() === "";
   element("#share-button").disabled = state.source.trim() === "";
+  const hasArtifact = (name) => state.artifacts.some((artifact) => artifact.name === name);
+  const posteriorAvailable = hasArtifact("posterior.ndjson") && hasArtifact("data.json");
+  const posteriorSource = element("#param-source-posterior");
+  posteriorSource.disabled = !posteriorAvailable;
+  element("#posterior-source-hint").hidden = posteriorAvailable;
+  if (posteriorSource.checked && posteriorSource.disabled) element("#param-source-fixed").checked = true;
+
+  const generatedAvailable = hasArtifact("simulated_data.json") && truth.value.trim() !== "";
+  const generatedSource = element("#dataset-source-generated");
+  generatedSource.disabled = !generatedAvailable;
+  if (generatedSource.checked && generatedSource.disabled) element("#dataset-source-observed").checked = true;
+
+  const paramSource = selectedParamSource();
+  const datasetSource = selectedDatasetSource();
+  element("#fixed-values-field").hidden = paramSource !== "fixed";
+  element("#generate-button").textContent = {
+    fixed: "Generate at fixed values",
+    prior: "Generate from model prior",
+    posterior: "Generate from posterior",
+  }[paramSource];
+  element("#fit-button").textContent = datasetSource === "generated"
+    ? "Fit generated dataset"
+    : "Fit observed data";
+
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
-  const seedUnavailable = !validSeedSettings();
-  const sampleUnavailable = unavailable || !validSampleSettings();
-  element("#sample-button").disabled = sampleUnavailable || observed.value.trim() === "";
-  element("#prior-button").disabled = unavailable || seedUnavailable || design.value.trim() === "";
-  element("#simulate-button").disabled = unavailable || seedUnavailable ||
-    design.value.trim() === "" || truth.value.trim() === "";
-  element("#sample-simulated-button").disabled = sampleUnavailable ||
-    !state.artifacts.some((artifact) => artifact.name === "simulated_data.json") || truth.value.trim() === "";
-  element("#posterior-button").disabled = unavailable || seedUnavailable ||
-    !state.artifacts.some((artifact) => artifact.name === "posterior.ndjson") ||
-    !state.artifacts.some((artifact) => artifact.name === "data.json");
+  element("#generate-button").disabled = unavailable || !validGenerationSettings() ||
+    (paramSource !== "posterior" && design.value.trim() === "") ||
+    (paramSource === "fixed" && truth.value.trim() === "") ||
+    (paramSource === "posterior" && !posteriorAvailable);
+  element("#fit-button").disabled = unavailable || !validSampleSettings() ||
+    (datasetSource === "observed" && observed.value.trim() === "") ||
+    (datasetSource === "generated" && !generatedAvailable);
   element("#run-status").textContent = state.run.status === "running"
     ? `${operationLabel(state.run.operation)} is running…`
     : "";
@@ -484,12 +532,20 @@ function renderPlots(artifacts) {
 
 function operationLabel(operation) {
   const labels = {
-    sample: "Sampling",
-    "prior-predictive": "Prior predictive sampling",
-    "posterior-predictive": "Posterior predictive sampling",
-    simulate: "Simulation",
+    sample: "Fitting",
+    "prior-predictive": "Generating from model prior",
+    "posterior-predictive": "Generating from posterior",
+    simulate: "Generating at fixed values",
   };
   return labels[operation] ?? "Operation";
+}
+
+function selectedParamSource() {
+  return element("input[name='param-source']:checked").value;
+}
+
+function selectedDatasetSource() {
+  return element("input[name='dataset-source']:checked").value;
 }
 
 function integerValue(selector) { return Number(element(selector).value); }

@@ -12,6 +12,7 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
 
     page.locator("#model-source").fill(source)
     page.locator("#observed-data").fill(data)
+    expect(page.locator("#design-data")).to_have_value("")
     expect(page.locator("#ir-hash")).to_be_hidden()
 
     page.locator("#compile-button").click()
@@ -23,9 +24,9 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     page.locator("#chains").fill("2")
     page.locator("#warmup").fill("4")
     page.locator("#draws").fill("4")
-    expect(page.locator("#sample-button")).to_be_enabled()
-    page.locator("#sample-button").click()
-    expect(page.locator("#run-status")).to_have_text("Sampling is running…")
+    expect(page.locator("#fit-button")).to_be_enabled()
+    page.locator("#fit-button").click()
+    expect(page.locator("#run-status")).to_have_text("Fitting is running…")
     expect(page.locator("#compile-button")).to_be_disabled()
 
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
@@ -35,8 +36,11 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     expect(page.locator("#progress")).to_contain_text("chain 1")
     expect(page.locator("#run-error")).to_be_hidden()
 
-    expect(page.locator("#posterior-button")).to_be_enabled()
-    page.locator("#posterior-button").click()
+    expect(page.locator("#param-source-posterior")).to_be_enabled()
+    page.locator("#param-source-posterior").check()
+    expect(page.locator("#generate-button")).to_have_text("Generate from posterior")
+    expect(page.locator("#generate-button")).to_be_enabled()
+    page.locator("#generate-button").click()
     expect(page.locator("#artifact-posterior-predictive")).to_be_visible(timeout=120_000)
 
     page.locator("#examples-menu").select_option("linear-simulation")

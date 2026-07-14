@@ -22,6 +22,9 @@ formats retain their own compatibility policies.
 
 ### Changed
 
+- Rework the Playground run UI into two explicit Generate datasets and
+  Condition on a dataset directions, with selectable parameter and dataset
+  sources and separate generation and inference seeds.
 - Trim the bundled Playground models to show only the Bayeswire imports each
   declaration actually uses.
 

@@ -6,6 +6,6 @@ def test_examples_disclose_only_relevant_documents(page: Page, base_url: str) ->
     menu = page.locator("#examples-menu")
     expect(menu.locator("option")).to_have_count(4)
     menu.select_option("eight-schools")
-    expect(page.locator("#simulation-documents")).not_to_have_attribute("open", "")
+    expect(page.locator("#generation-documents")).not_to_have_attribute("open", "")
     menu.select_option("linear-simulation")
-    expect(page.locator("#simulation-documents")).to_have_attribute("open", "")
+    expect(page.locator("#generation-documents")).to_have_attribute("open", "")

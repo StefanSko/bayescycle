@@ -20,53 +20,77 @@
     <p class="lede">No compilation backend: a disposable browser worker compiles source, then separate Bayesite workers run inference.</p>
   </header>
   <main>
-    <section aria-labelledby="model-heading">
-      <div class="section-heading"><h2 id="model-heading">1 · Model</h2><span id="ir-hash" class="hash" hidden></span></div>
-      <div class="project-actions">
-        <label for="examples-menu">Example</label>
-        <select id="examples-menu"><option value="">Choose a project…</option></select>
-        <button id="share-button" type="button" disabled>Share project</button>
-      </div>
-      <div id="share-output" hidden><label for="share-url">Reviewed share URL</label><input id="share-url" type="url" readonly><p id="share-warning" class="hint" hidden>Long URL: some applications may truncate it.</p></div>
-      <label for="model-source">Bayeswire model source</label>
-      <textarea id="model-source" rows="20" spellcheck="false" placeholder="Paste a @model class…"></textarea>
-      <p class="hint">Model source is arbitrary Python, not a general sandbox. External-origin requests are blocked; review shared source before compiling.</p>
-      <button id="compile-button" class="primary" type="button">Compile model</button>
-      <output id="compile-status" class="status" for="model-source compile-button" aria-live="polite"></output>
-      <pre id="compile-error" class="error" role="alert" hidden></pre>
-    </section>
+    <div class="doc-stack">
+      <section aria-labelledby="model-heading">
+        <div class="section-heading"><h2 id="model-heading">1 · Model</h2><span id="ir-hash" class="hash" hidden></span></div>
+        <div class="project-actions">
+          <label for="examples-menu">Example</label>
+          <select id="examples-menu"><option value="">Choose a project…</option></select>
+          <button id="share-button" type="button" disabled>Share project</button>
+        </div>
+        <div id="share-output" hidden><label for="share-url">Reviewed share URL</label><input id="share-url" type="url" readonly><p id="share-warning" class="hint" hidden>Long URL: some applications may truncate it.</p></div>
+        <label for="model-source">Bayeswire model source</label>
+        <textarea id="model-source" rows="20" spellcheck="false" placeholder="Paste a @model class…"></textarea>
+        <p class="hint">Model source is arbitrary Python, not a general sandbox. External-origin requests are blocked; review shared source before compiling.</p>
+        <button id="compile-button" class="primary" type="button">Compile model</button>
+        <output id="compile-status" class="status" for="model-source compile-button" aria-live="polite"></output>
+        <pre id="compile-error" class="error" role="alert" hidden></pre>
+      </section>
 
-    <section aria-labelledby="documents-heading">
-      <h2 id="documents-heading">2 · Documents</h2>
-      <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
-      <label for="observed-data">Observed data JSON</label>
-      <textarea id="observed-data" rows="12" spellcheck="false" placeholder='{"x": [1, 2], "y": [3, 4]}'></textarea>
-      <details id="simulation-documents" open>
-        <summary>Simulation documents</summary>
-        <label for="design-data">Design data JSON</label>
-        <textarea id="design-data" rows="7" spellcheck="false" placeholder='{"x": [-1, 0, 1]}'></textarea>
-        <label for="truth-data">Parameter truth JSON</label>
+      <section aria-labelledby="documents-heading">
+        <h2 id="documents-heading">2 · Documents</h2>
+        <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
+        <label for="observed-data">Observed data JSON</label>
+        <textarea id="observed-data" rows="12" spellcheck="false" placeholder='{"x": [1, 2], "y": [3, 4]}'></textarea>
+        <details id="generation-documents" open>
+          <summary>Generation documents</summary>
+          <label for="design-data">Design/context JSON</label>
+          <textarea id="design-data" rows="7" spellcheck="false" placeholder='{"x": [-1, 0, 1]}'></textarea>
+        </details>
+      </section>
+    </div>
+
+    <section aria-labelledby="generate-heading">
+      <h2 id="generate-heading">3 · Generate datasets</h2>
+      <fieldset>
+        <legend>Parameter source</legend>
+        <label class="radio-option" for="param-source-fixed"><input id="param-source-fixed" type="radio" name="param-source" value="fixed" checked> Fixed values</label>
+        <label class="radio-option" for="param-source-prior"><input id="param-source-prior" type="radio" name="param-source" value="prior"> Model prior</label>
+        <div class="radio-with-hint">
+          <label class="radio-option" for="param-source-posterior"><input id="param-source-posterior" type="radio" name="param-source" value="posterior" disabled> Posterior from fit</label>
+          <span id="posterior-source-hint" class="inline-hint">requires a completed fit</span>
+        </div>
+      </fieldset>
+      <div id="fixed-values-field">
+        <label for="truth-data">Fixed parameter values</label>
         <textarea id="truth-data" rows="7" spellcheck="false" placeholder='{"alpha": 0, "beta": 1}'></textarea>
-      </details>
+      </div>
+      <label for="generation-seed">Generation seed</label>
+      <input id="generation-seed" type="number" min="0" value="0">
+      <button id="generate-button" class="primary" type="button" disabled>Generate at fixed values</button>
+      <p class="hint">Uses Design/context as x. Generated datasets keep their paired parameter values for recovery.</p>
     </section>
 
-    <section aria-labelledby="run-heading">
-      <h2 id="run-heading">3 · Run</h2>
+    <section aria-labelledby="condition-heading">
+      <h2 id="condition-heading">4 · Condition on a dataset</h2>
+      <fieldset>
+        <legend>Dataset source</legend>
+        <label class="radio-option" for="dataset-source-observed"><input id="dataset-source-observed" type="radio" name="dataset-source" value="observed" checked> Observed data</label>
+        <div class="radio-with-hint">
+          <label class="radio-option" for="dataset-source-generated"><input id="dataset-source-generated" type="radio" name="dataset-source" value="generated" disabled> Generated dataset</label>
+          <span id="generated-source-hint" class="inline-hint">enables recovery against its paired parameter values</span>
+        </div>
+      </fieldset>
+      <h3 class="subheading">Inference settings</h3>
       <div class="settings">
         <label for="chains">Chains<input id="chains" type="number" min="1" value="4"></label>
         <label for="warmup">Warmup<input id="warmup" type="number" min="0" value="1000"></label>
         <label for="draws">Draws<input id="draws" type="number" min="4" value="2000"></label>
-        <label for="seed">Seed<input id="seed" type="number" min="0" value="0"></label>
+        <label for="inference-seed">Inference seed<input id="inference-seed" type="number" min="0" value="0"></label>
         <label for="target-accept">Target accept<input id="target-accept" type="number" min="0.01" max="0.99" step="0.01" value="0.8"></label>
         <label for="max-treedepth">Max treedepth<input id="max-treedepth" type="number" min="1" value="10"></label>
       </div>
-      <button id="sample-button" class="primary" type="button" disabled>Sample observed data</button>
-      <div class="simulation-actions">
-        <button id="prior-button" type="button" disabled>Prior predictive</button>
-        <button id="simulate-button" type="button" disabled>Simulate data</button>
-        <button id="sample-simulated-button" type="button" disabled>Sample simulated data</button>
-        <button id="posterior-button" type="button" disabled>Posterior predictive</button>
-      </div>
+      <button id="fit-button" class="primary" type="button" disabled>Fit observed data</button>
       <output id="run-status" class="status" aria-live="polite"></output>
       <div id="progress" class="progress" aria-live="polite"></div>
       <pre id="run-error" class="error" role="alert" hidden></pre>
