@@ -24,38 +24,39 @@ export function parseStrictJson(text, label, options = {}) {
     const character = text[index];
     if (character === "{") {
       objectValue();
-      return;
+      return undefined;
     }
     if (character === "[") {
       const requireIntegers = integerArray || integerArrayKeys.has(key);
       index += 1;
       whitespace();
-      if (text[index] === "]") { index += 1; return; }
+      if (text[index] === "]") { index += 1; return undefined; }
       while (true) {
         value(null, requireIntegers);
         whitespace();
-        if (text[index] === "]") { index += 1; return; }
+        if (text[index] === "]") { index += 1; return undefined; }
         if (text[index] !== ",") fail("has malformed array");
         index += 1;
       }
     }
     if (character === '"') {
       if (integerArray || integerKeys.has(key)) fail(`field ${String(key)} must use an integer token`);
-      string();
-      return;
+      return string();
     }
     const start = index;
     while (index < text.length && ![",", "]", "}", " ", "\t", "\r", "\n"].includes(text[index])) {
       index += 1;
     }
     const token = text.slice(start, index);
-    if ((integerArray || integerKeys.has(key)) && !/^(?:0|-[1-9]\d*|[1-9]\d*)$/u.test(token)) {
+    if ((integerArray || integerKeys.has(key)) && !/^-?(?:0|[1-9]\d*)$/u.test(token)) {
       fail(`field ${String(key)} must use an integer token`);
     }
+    return token;
   };
   const objectValue = () => {
     index += 1;
     const keys = new Set();
+    let integerTypedValues = false;
     whitespace();
     if (text[index] === "}") { index += 1; return; }
     while (true) {
@@ -67,7 +68,10 @@ export function parseStrictJson(text, label, options = {}) {
       whitespace();
       if (text[index] !== ":") fail("has malformed object field");
       index += 1;
-      value(key, false);
+      const parsed = value(key, key === "values" && integerTypedValues);
+      if (key === "dtype") {
+        integerTypedValues = parsed === "int32" || parsed === "int64";
+      }
       whitespace();
       if (text[index] === "}") { index += 1; return; }
       if (text[index] !== ",") fail("has malformed object");
