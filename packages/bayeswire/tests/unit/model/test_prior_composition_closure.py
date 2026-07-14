@@ -25,11 +25,24 @@ from bayeswire import (
 from bayeswire.constraints import VectorBounds
 from bayeswire.distributions import Normal
 from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
-from bayeswire.model import model_meta
-from bayeswire.model._data_schema import DataDimRef, ResolvedDataShapeSchema
+from bayeswire.model import ModelMeta, model_meta
+from bayeswire.model._data_schema import (
+    DataDimRef,
+    ResolvedDataRankSchema,
+    ResolvedDataShapeSchema,
+)
 from bayeswire.model.decorator import ResolvedData, ResolvedStochasticSite
 from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions, ResolvedVariableDims
-from bayeswire.model.expr import ConstNode, DataRef, ParamRef
+from bayeswire.model.expr import (
+    BinOp,
+    ConstNode,
+    DataRef,
+    ExprNode,
+    IndexOp,
+    IndexSpec,
+    ParamRef,
+    UnaryOp,
+)
 
 
 @dataclass(frozen=True)
@@ -435,6 +448,187 @@ def test_composition_rejects_invalid_resolved_size_node_kinds(invalid_size: obje
         match="size must be DataRef, a non-negative integer, or None",
     ):
         with_prior(with_size(TargetDeclaration), prior=with_size(PriorDeclaration))
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        cast(ExprNode, 7),
+        BinOp("unsupported", ParamRef("theta"), ConstNode(1.0)),
+        UnaryOp("unsupported", ParamRef("theta")),
+        IndexOp(ParamRef("theta"), cast(IndexSpec, 7)),
+    ],
+)
+def test_composition_rejects_malformed_named_expression_ir(malformed: ExprNode) -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    target = bindable_from_meta(
+        replace(meta, expressions={"malformed": malformed}),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+
+    with pytest.raises(
+        (TypeError, ValueError),
+        match="expression 'malformed'.*(expression IR|binary operator|unary function|index spec)",
+    ):
+        with_prior(target, prior=Prior)
+
+
+def test_composition_rejects_non_expression_stochastic_site_value() -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    factor = ResolvedStochasticSite(
+        name="malformed",
+        distribution=Normal(0.0, 1.0),
+        value=cast(ExprNode, 7),
+    )
+    target = bindable_from_meta(
+        replace(meta, stochastic_sites=meta.stochastic_sites + (factor,)),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+
+    with pytest.raises(TypeError, match="stochastic site 'malformed' value.*expression IR"):
+        with_prior(target, prior=Prior)
+
+
+@pytest.mark.parametrize(
+    ("schema", "message"),
+    [
+        (ResolvedDataRankSchema(-1), "rank must be a non-negative integer"),
+        (ResolvedDataRankSchema(True), "rank must be a non-negative integer"),
+        (ResolvedDataShapeSchema((cast(int, 1.5),)), "shape dimensions.*non-negative integers"),
+        (ResolvedDataShapeSchema((-1,)), "shape dimensions.*non-negative integers"),
+        (ResolvedDataShapeSchema((True,)), "shape dimensions.*non-negative integers"),
+    ],
+)
+def test_composition_rejects_malformed_resolved_data_schemas(
+    schema: ResolvedDataRankSchema | ResolvedDataShapeSchema,
+    message: str,
+) -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        context = Data.vector()
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(PriorDeclaration)
+    data = dict(meta.data)
+    data["context"] = ResolvedData(schema)
+    source = bindable_from_meta(
+        replace(meta, data=data),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        with_prior(Target, prior=source)
+
+
+def test_matching_coordinates_distinguish_json_scalar_types() -> None:
+    target_axis = Dim("axis", coords=(True,))
+    source_axis = Dim("axis", coords=(1,))
+
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0), size=1, dims=(target_axis,))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5), size=1, dims=(source_axis,))
+
+    with pytest.raises(ValueError, match="parameter 'theta'.*dimensions"):
+        with_prior(Target, prior=Prior)
+
+
+def test_retained_coordinate_collisions_distinguish_json_scalar_types() -> None:
+    target_axis = Dim("axis", coords=(True,))
+    source_axis = Dim("axis", coords=(1,))
+
+    @model
+    class Target:
+        target_data = Data.vector(1, dims=(target_axis,))
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        source_data = Data.vector(1, dims=(source_axis,))
+        theta = Param(Normal(1.0, 0.5))
+
+    with pytest.raises(ValueError, match="dimension 'axis'.*coordinate"):
+        with_prior(Target, prior=Prior)
+
+
+def test_composition_rejects_mutable_sidecar_containers() -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0), size=2)
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5), size=2)
+
+    names = cast(tuple[str, ...], ["axis"])
+    coordinates = cast(tuple[CoordValue, ...], ["a", "b"])
+    malformed = ResolvedModelDimensions(
+        variables={"theta": ResolvedVariableDims(names)},
+        coords={"axis": coordinates},
+    )
+    target = bindable_from_meta(model_meta(TargetDeclaration), dimensions=malformed)
+    source = bindable_from_meta(model_meta(PriorDeclaration), dimensions=malformed)
+
+    with pytest.raises(TypeError, match="dimension names and coordinates must be tuples"):
+        with_prior(target, prior=source)
+
+
+def test_composition_rejects_empty_source_target_and_factor_only_models() -> None:
+    empty_meta = ModelMeta(params={}, data={}, observed_nodes=(), expressions={})
+    empty = bindable_from_meta(empty_meta)
+
+    @model
+    class ObservedTarget:
+        y = Observed(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(0.0, 1.0))
+
+    factor_only = bindable_from_meta(
+        replace(
+            empty_meta,
+            stochastic_sites=(
+                ResolvedStochasticSite(
+                    name="factor",
+                    distribution=Normal(0.0, 1.0),
+                    value=ConstNode(0.0),
+                ),
+            ),
+        )
+    )
+
+    for target, source in (
+        (ObservedTarget, empty),
+        (empty, Prior),
+        (empty, empty),
+        (factor_only, Prior),
+    ):
+        with pytest.raises(ValueError, match="at least one stochastic declaration"):
+            with_prior(target, prior=source)
 
 
 def test_final_metadata_contains_only_resolved_public_ir_nodes() -> None:

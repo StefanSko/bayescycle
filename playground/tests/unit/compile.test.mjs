@@ -126,6 +126,22 @@ Composed = with_prior(Target, prior=Prior)
     },
   },
   {
+    name: "rejects a dependency cycle for one local model",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Param, model
+from bayeswire.distributions import Normal
+
+@model
+class Only:
+    theta = Param(Normal(0.0, 1.0))
+
+type.__setattr__(Only, "_model_dependencies", (Only,))
+`);
+      assert(!result.ok, "single-model dependency cycle was accepted");
+      assert(result.message.includes("model dependency cycle"), `unexpected cycle error: ${result.message}`);
+    },
+  },
+  {
     name: "compiler executes in a dedicated worker",
     fn: async () => {
       const source = await fetchText("linear_regression.py");

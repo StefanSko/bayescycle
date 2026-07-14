@@ -2022,6 +2022,41 @@ def test_sample_selects_parent_that_uses_composed_model_as_submodel(
     assert json.loads(capsys.readouterr().out)["model"] == "Root"
 
 
+def test_sample_rejects_dependency_cycle_for_single_local_model(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from bayeswire import Param, model\n"
+        "from bayeswire.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Only:\n"
+        "    theta = Param(Normal(0.0, 1.0))\n"
+        "\n"
+        "type.__setattr__(Only, '_model_dependencies', (Only,))\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text("{}\n", encoding="utf-8")
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 2
+    assert "model dependency cycle" in capsys.readouterr().err
+
+
 def test_sample_requires_explicit_model_when_file_declares_multiple_models(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
