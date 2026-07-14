@@ -51,6 +51,8 @@ def test_native_document_surfaces_are_present() -> None:
         "truth-data",
         "generation-count",
         "artifact-generated-datasets",
+        "generated-dataset-index",
+        "selected-pair-summary",
     ):
         assert f'id="{element_id}"' in html
     assert "codemirror" not in html.lower()
