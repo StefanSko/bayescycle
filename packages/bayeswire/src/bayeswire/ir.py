@@ -102,6 +102,11 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             f"Distribution {cls.__name__!r} must use @dataclass(frozen=True) so registered "
             "metadata cannot change after validation."
         )
+    if not getattr(getattr(cls, "__dataclass_params__", None), "eq", False):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must use @dataclass(frozen=True, eq=True) so "
+            "separately decoded declaration and owner nodes remain structurally equal."
+        )
     if cls in NODE_SPECS_BY_CLASS and cls not in DISTRIBUTION_NODE_CLASSES:
         raise UnserializableDistribution(
             f"IR node {cls.__name__!r} is already registered with a non-distribution role "
