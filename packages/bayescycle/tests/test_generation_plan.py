@@ -166,3 +166,11 @@ def test_rejects_unknown_or_missing_serialized_fields() -> None:
         encoded = json.dumps(mutation, separators=(",", ":")).encode() + b"\n"
         with pytest.raises(GenerationPlanError, match="unknown|missing|format"):
             parse_generation_plan_document(encoded)
+
+    nested = b"[" * 65 + b"0" + b"]" * 65
+    deep = FIXTURE.read_bytes().replace(
+        b'{"kind":"fixed","parameters_hash":',
+        b'{"kind":"fixed","parameters_hash":' + nested + b',"ignored":',
+    )
+    with pytest.raises(GenerationPlanError, match="depth"):
+        parse_generation_plan_document(deep)

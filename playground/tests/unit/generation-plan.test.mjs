@@ -136,6 +136,12 @@ export default [
         () => parseGenerationPlanDocument(UTF8.encode(`${JSON.stringify(serialized)}\n`)),
         "format",
       );
+      const nested = "[".repeat(65) + "0" + "]".repeat(65);
+      const deep = TEXT.decode(await fixtureBytes()).replace(
+        '{"kind":"fixed","parameters_hash":',
+        `{"kind":"fixed","parameters_hash":${nested},"ignored":`,
+      );
+      await rejects(() => parseGenerationPlanDocument(UTF8.encode(deep)), "depth");
       assert(MAX_GENERATION_COUNT === 1000, "count bound changed");
       assert(MAX_GENERATION_INPUT_BYTES === 8 * 1024 * 1024, "input bound changed");
     },
