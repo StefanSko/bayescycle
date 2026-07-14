@@ -8,6 +8,7 @@ CASES = [
     "accepts varying model-prior and posterior parameters",
     "selects exact nested bytes and preserves the download",
     "verifies hashes fixed values and design prefix",
+    "resolver rejects output from the wrong generation plan",
     "rejects malformed truncated nonfinite and oversized streams",
 ]
 

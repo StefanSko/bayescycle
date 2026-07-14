@@ -162,6 +162,32 @@ def test_verifies_exact_hashes_fixed_values_and_design_prefix() -> None:
         )
 
 
+def test_resolver_rejects_output_from_the_wrong_plan() -> None:
+    prior = parse_generated_datasets(_source_stream("model-prior"))
+    with pytest.raises(GeneratedDatasetsArtifactError, match="source kind"):
+        verify_generated_datasets(
+            prior,
+            model_bytes=MODEL_BYTES,
+            design_bytes=DESIGN_BYTES,
+            fixed_parameters_bytes=FIXED_BYTES,
+            expected_source_kind="fixed",
+            expected_count=2,
+            expected_seed=7,
+        )
+
+    fixed = parse_generated_datasets(_fixture_bytes())
+    with pytest.raises(GeneratedDatasetsArtifactError, match="count|seed"):
+        verify_generated_datasets(
+            fixed,
+            model_bytes=MODEL_BYTES,
+            design_bytes=DESIGN_BYTES,
+            fixed_parameters_bytes=FIXED_BYTES,
+            expected_source_kind="fixed",
+            expected_count=1,
+            expected_seed=8,
+        )
+
+
 def test_rejects_malformed_truncated_nonfinite_and_oversized_streams() -> None:
     fixture = _fixture_bytes()
     malformed: list[tuple[bytes, str]] = [

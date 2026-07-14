@@ -131,6 +131,30 @@ export default [
     },
   },
   {
+    name: "resolver rejects output from the wrong generation plan",
+    fn: async () => {
+      const fixture = await fixtureBytes();
+      const prior = parseGeneratedDatasets(sourceStream(fixture, "model-prior"));
+      await rejects(() => verifyGeneratedDatasets(prior, {
+        modelBytes: MODEL_BYTES,
+        designBytes: DESIGN_BYTES,
+        fixedParametersBytes: FIXED_BYTES,
+        expectedSourceKind: "fixed",
+        expectedCount: 2,
+        expectedSeed: 7,
+      }), "source kind");
+      const fixed = parseGeneratedDatasets(fixture);
+      await rejects(() => verifyGeneratedDatasets(fixed, {
+        modelBytes: MODEL_BYTES,
+        designBytes: DESIGN_BYTES,
+        fixedParametersBytes: FIXED_BYTES,
+        expectedSourceKind: "fixed",
+        expectedCount: 1,
+        expectedSeed: 8,
+      }), "count");
+    },
+  },
+  {
     name: "rejects malformed truncated nonfinite and oversized streams",
     fn: async () => {
       const fixture = await fixtureBytes();
