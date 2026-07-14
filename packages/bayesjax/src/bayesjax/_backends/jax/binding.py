@@ -603,6 +603,27 @@ def _distribution_value_shape(
     )
 
 
+def _shape_stub_distribution_field(
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> object:
+    """Resolve one nested field to bind-time zero arrays while preserving containers."""
+    if is_final_expr_node(value):
+        shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
+        return jnp.zeros(shape)
+    if isinstance(value, dict):
+        return {
+            name: _shape_stub_distribution_field(item, data, param_shapes)
+            for name, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(_shape_stub_distribution_field(item, data, param_shapes) for item in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return _shape_stub_distribution(cast(Distribution, value), data, param_shapes)
+    return value
+
+
 def _shape_stub_distribution[DistributionT: Distribution](
     distribution: DistributionT,
     data: dict[str, jax.Array],
@@ -613,18 +634,11 @@ def _shape_stub_distribution[DistributionT: Distribution](
         return distribution
     resolved: dict[str, object] = {}
     for distribution_field in fields(distribution):
-        value = getattr(distribution, distribution_field.name)
-        if is_final_expr_node(value):
-            shape = _infer_expr_shape(cast(ExprNode, value), data, param_shapes)
-            resolved[distribution_field.name] = jnp.zeros(shape)
-        elif is_dataclass(value) and not isinstance(value, type):
-            resolved[distribution_field.name] = _shape_stub_distribution(
-                cast(Distribution, value),
-                data,
-                param_shapes,
-            )
-        else:
-            resolved[distribution_field.name] = value
+        resolved[distribution_field.name] = _shape_stub_distribution_field(
+            getattr(distribution, distribution_field.name),
+            data,
+            param_shapes,
+        )
     return cast(DistributionT, type(distribution)(**resolved))
 
 
@@ -857,6 +871,31 @@ def _evaluate_optional_data_expr(value: object, data: dict[str, jax.Array]) -> j
     return jnp.asarray(value)
 
 
+def _validate_distribution_index_field(
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+) -> None:
+    """Validate concrete indexes recursively through explicit field containers."""
+    if is_final_expr_node(value):
+        _validate_index_expr(cast(ExprNode, value), data, param_shapes)
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_distribution_index_field(item, data, param_shapes)
+        return
+    if isinstance(value, tuple):
+        for item in value:
+            _validate_distribution_index_field(item, data, param_shapes)
+        return
+    if is_dataclass(value) and not isinstance(value, type):
+        _validate_distribution_index_expressions(
+            cast(Distribution, value),
+            data,
+            param_shapes,
+        )
+
+
 def _validate_distribution_index_expressions(
     distribution: Distribution,
     data: dict[str, jax.Array],
@@ -867,11 +906,11 @@ def _validate_distribution_index_expressions(
         return
 
     for distribution_field in fields(distribution):
-        value = getattr(distribution, distribution_field.name)
-        if is_final_expr_node(value):
-            _validate_index_expr(cast(ExprNode, value), data, param_shapes)
-        elif is_dataclass(value) and not isinstance(value, type):
-            _validate_distribution_index_expressions(cast(Distribution, value), data, param_shapes)
+        _validate_distribution_index_field(
+            getattr(distribution, distribution_field.name),
+            data,
+            param_shapes,
+        )
 
 
 def _validate_index_expr(
