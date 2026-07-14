@@ -392,6 +392,32 @@ def test_generation_run_routing_rejects_fifo_without_blocking(tmp_path: Path) ->
     assert completed.returncode == 0
 
 
+def test_generation_run_interprets_the_same_bytes_it_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = _make_fixed_run(tmp_path)
+    output = run_dir / "generated_datasets.ndjson"
+    original = output.read_bytes()
+    changed = original.replace(b',"dataset":', b', "dataset":', 1)
+    assert changed != original
+    read_bytes = Path.read_bytes
+    raced = False
+
+    def replace_after_first_read(path: Path) -> bytes:
+        nonlocal raced
+        data = read_bytes(path)
+        if path == output and not raced:
+            raced = True
+            output.write_bytes(changed)
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", replace_after_first_read)
+    record = load_generation_run(run_dir)
+    owned = dict(record.artifact_bytes)
+    assert owned["generated-datasets"] == original
+    assert output.read_bytes() == changed
+
+
 def test_generation_run_rejects_external_unbounded_or_invalid_metadata(tmp_path: Path) -> None:
     run_dir = _make_fixed_run(tmp_path)
     metadata_path = run_dir / "run.json"
