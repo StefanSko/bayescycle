@@ -352,7 +352,8 @@ export default [
       }
       malformed.push([
         UTF8.encode(TEXT.decode(encodeDocuments(roundedInteger)).replace(
-          '"values":[1]', '"values":[1.0000000000000001]',
+          '"dtype":"int64","shape":[],"values":[1]',
+          '"values":[1.0000000000000001],"dtype":"int64","shape":[]',
         )),
         "integer",
       ]);
