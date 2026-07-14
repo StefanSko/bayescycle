@@ -7,14 +7,34 @@ backend, but completed runs should expose the same explicit files.
 The v0 contract is provisional. Consumers must validate format markers before
 parsing artifact contents.
 
-## Required files
+## Operation-specific required files
+
+A completed conditioning run requires:
 
 ```text
 run/
   model.ir.json       # serialized bayeswire ModelMeta IR
-  data.json           # canonical bayescycle.data.json.v1 snapshot used for the run
+  data.json           # exact canonical snapshot used for conditioning
   posterior.ndjson    # retained posterior draws; see posterior-draws-v0.md
 ```
+
+A completed functional generation run requires:
+
+```text
+run/
+  model.ir.json               # exact closed generation model
+  design.json                 # exact canonical generation design/context
+  generation-plan.json        # exact hash-resolved functional plan
+  generated_datasets.ndjson   # paired parameter/complete-dataset draws
+```
+
+Fixed generation additionally requires `fixed-parameters.json`. Posterior
+generation additionally requires copied `source-posterior.ndjson` and
+`source-fit-data.json`; its source model is the byte-identical
+`model.ir.json`. Model-prior generation needs no additional source payload.
+These local payloads make a generation run replayable after it is moved and the
+original external inputs are removed. Generation-only runs do not require a
+posterior output.
 
 ## Optional files
 
@@ -30,7 +50,6 @@ run/
   recovery.json               # single-scenario recovery factual report
   sbc.json                    # simulation-based calibration factual report
   recovery_check.json         # fit-vs-truth factual recovery report
-  generated_datasets.ndjson   # paired parameter/complete-dataset draws
   posterior_check.json        # observed-vs-replicated factual check report
   fit.nc                      # derived ArviZ/NetCDF export, not source state
 ```
@@ -88,12 +107,12 @@ workflow reports fail explicitly during preparation.
 
 ## Generation compatibility
 
-The paired artifact is additive in v0. `simulated_data.json`,
-`prior_predictive.ndjson`, and `posterior_predictive.ndjson` retain their
-existing source-specific meanings. Producers may emit them as explicit
-compatibility views alongside `generated_datasets.ndjson`; they must not rename
-or reinterpret them. New generated-dataset selection and paired recovery use
-the paired artifact.
+The paired artifact is additive in v0. Unified functional generation returns
+`generated_datasets.ndjson` and does not project legacy artifacts.
+`simulated_data.json`, `prior_predictive.ndjson`, and
+`posterior_predictive.ndjson` remain outputs only of their legacy operations and
+retain byte semantics unchanged. New generated-dataset selection and paired
+recovery use the paired artifact.
 
 ## Compatibility rule
 

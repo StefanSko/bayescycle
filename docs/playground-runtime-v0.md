@@ -69,9 +69,10 @@ inference over one canonical dataset and may produce posterior, diagnostics,
 and paired recovery artifacts. Conditioning remains separate from generation.
 
 The application uses these two workflow operations. BrowserRuntime keeps
-Bayesite command names private; temporary source-specific compatibility
-lowering is an adapter detail and is removed when the pinned Wasm exposes the
-native bounded generation operation.
+Bayesite command names private. A temporary compatibility lowering may run only
+when it exactly implements the requested redraw law; unsupported source/count
+combinations fail before dispatch until the pinned Wasm exposes native bounded
+generation.
 
 ## Artifact names
 
@@ -87,9 +88,10 @@ Runtime results use the run-directory vocabulary:
 - `recovery_check.json`
 - `generated_datasets.ndjson`
 
-The three source-specific generation artifacts remain compatibility artifacts
-with their existing meanings. New selection and recovery behavior uses
-`generated_datasets.ndjson`; no legacy artifact is silently reinterpreted.
+The three source-specific generation artifacts remain outputs of their legacy
+operations with existing meanings. Unified `generate` returns only
+`generated_datasets.ndjson`; it does not project a legacy artifact. New
+selection and recovery behavior uses the paired artifact.
 
 A runtime may return fewer artifacts when an operation does not produce them.
 An unsupported follow-up is a failure of that operation only and never removes

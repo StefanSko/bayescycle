@@ -74,31 +74,52 @@ and outcomes from one ordinary closed Bayeswire model. The same closed model is
 the `OutcomesOf` model. An Implementation-A composite, if supplied later, is
 indistinguishable from any other closed model.
 
-Optional authored provenance is opaque lineage supplied by the caller:
+Optional authored provenance is an opaque claim supplied by the caller:
 
 ```json
 {
-  "source_model_hash": "sha256:...",
-  "outcome_model_hash": "sha256:..."
+  "claimed_source_model_hash": "sha256:...",
+  "claimed_outcome_model_hash": "sha256:..."
 }
 ```
 
-Both keys are required when this object is present. B does not derive, inspect,
-or validate composition semantics from them.
+Both keys are required when this object is present. They are checked only for
+hash syntax, are always labeled `claimed_`, and never change execution. B does
+not derive, inspect, attest, or validate composition semantics from them.
 
 ### `PosteriorOf`
 
-`PosteriorOf(fit_artifact, fit_model_ir, fit_data_document)` is the empirical
-distribution over retained natural-scale fit draws. Sampling is with replacement
-using the generation seed. Source-draw lineage is retained in each generated
-record.
+`PosteriorOf(fit_artifact)` is the empirical distribution over retained
+natural-scale fit draws. Sampling is with replacement using the generation
+seed. Source-draw lineage is retained in each generated record.
 
-The exact fit model bytes must equal the outcome-model bytes. The fit's
-`model_data_fingerprint`, when present, must match the exact fit-model and
-fit-data bytes. Structural posterior identity remains mandatory for transports
-whose fit stream predates that fingerprint. The generation design may differ
-from the fit data, but must bind the same closed model. If exact fit lineage is
-unavailable or stale, this source is unavailable rather than guessed.
+A `fit_artifact` is not arbitrary NDJSON. It is an immutable conditioning result
+that co-owns defensive copies of the exact fit-model IR, conditioning-data, and
+posterior bytes. Browser v0 does not import standalone posterior streams into a
+source. A durable Bayescycle run reconstructs this value only from the
+co-travelling files defined below.
+
+Posterior-source validation requires all of the following:
+
+1. exact fit-model bytes equal the outcome-model bytes;
+2. a complete `v0-provisional` posterior stream with the posterior-draw
+   kind/scope, one header, its declared number of contiguous draw records, and
+   one final trailer with no trailing records;
+3. header and trailer parameter order/shapes, chain order/count, draw count,
+   posterior identity, and optional model/data fingerprint agree;
+4. every draw has the declared finite constrained values and a unique global
+   index whose chain/per-chain draw coordinates agree with stream order;
+5. the structural posterior identity in both header and trailer equals the
+   identity computed by the engine from the supplied model and fit data;
+6. `model_data_fingerprint` is either present in both header and trailer with
+   equal values that match the normative exact-byte framing, or absent from
+   both. An absent fingerprint is accepted only for a fit value produced by the
+   current runtime's conditioning transition with its co-owned model/data
+   bytes. It is not accepted from an imported standalone stream.
+
+The generation design may differ from the fit data, but must bind the same
+closed model. If this exact association is unavailable or stale, the posterior
+source is unavailable rather than reconstructed from parameter names.
 
 ## Immutable plan values
 
@@ -108,14 +129,14 @@ logical variants:
 ```text
 Fixed(parameters_bytes)
 ModelPrior(model_ir_bytes, authored_provenance?)
-PosteriorOf(fit_bytes, fit_model_ir_bytes, fit_data_bytes)
+PosteriorOf(fit_artifact)
 OutcomesOf(model_ir_bytes, design_bytes)
 JointPredict(parameters, outcomes)
 Draw(distribution, count, seed)
 ```
 
 `ModelPrior.model_ir_bytes` must byte-equal `OutcomesOf.model_ir_bytes`.
-`PosteriorOf.fit_model_ir_bytes` must byte-equal
+`PosteriorOf.fit_artifact.model_ir_bytes` must byte-equal
 `OutcomesOf.model_ir_bytes`. Constructors reject other combinations.
 
 The JSON plan document is provenance, not an executable request. It contains
@@ -157,9 +178,10 @@ The other parameter-source records are exactly:
 }
 ```
 
-Objects reject unknown and missing keys. Hashes are lowercase SHA-256 strings
-with the `sha256:` prefix. Object key order is the order shown above. JSON
-identity uses compact UTF-8 JSON followed by one LF. Parsed plans are
+Objects reject unknown and missing keys. Verified hashes are lowercase SHA-256 strings with the `sha256:` prefix and
+are recomputed from bytes owned by the plan. Claimed authored hashes are only
+syntax-checked and are never described as verified. Object key order is the
+order shown above. JSON identity uses compact UTF-8 JSON followed by one LF. Parsed plans are
 reconstructed only when an artifact resolver supplies bytes whose hashes match;
 hash-only documents are never executable by themselves.
 
@@ -170,10 +192,14 @@ All boundaries reject values rather than clamp them:
 - `count`: safe JSON integer in `1..=1000`;
 - `seed`: safe JSON integer in `0..=9007199254740991`;
 - model IR, design, fixed parameters, fit data, or fit input: at most 8 MiB each;
-- one paired-artifact NDJSON line: at most 8 MiB;
-- complete paired artifact: at most 64 MiB;
-- nesting: bounded by the receiving JSON parser, and never less strict than the
-  engine's documented parser bound.
+- one paired-artifact NDJSON line: at most 8 MiB including its terminating LF;
+- complete paired artifact: at most 64 MiB including every LF;
+- JSON container depth: at most 64. The root object has depth 1; entering an
+  object or array adds one; scalar values do not add depth.
+
+Byte limits count UTF-8 bytes, not characters. Boundaries reject an oversized
+buffer before UTF-8 decoding or JSON parsing. A bounded pre-parse depth scan
+rejects depth 65 before constructing nested application values.
 
 These are v0 interoperability ceilings, not claims that every request under a
 ceiling is executable in available memory.
@@ -188,11 +214,24 @@ A runtime fails visibly before claiming success when:
   constraint;
 - declared design values are missing, extra, or incompatible;
 - posterior model/data/structural identity does not match;
-- a document, count, seed, line, or output exceeds a bound;
+- the model has any non-Param free value, including a partially observed latent
+  value, because browser generation v0 has no semantics for carrying it to a
+  new design;
+- a generation document contains an `int64` value outside JavaScript's exactly
+  representable range `[-9007199254740991, 9007199254740991]`;
+- a document, count, seed, nesting depth, line, or output exceeds a bound;
 - the backend does not support the source variant.
 
-Factors are never silently dropped. The frontend does not inspect raw model IR
-to predict these failures; the runtime/engine reports them.
+Factors are never silently dropped. A v0 parameter document and
+`parameter_schema` contain exactly declaration-backed Params in resolved IR
+order. Hierarchical and source-only Params are ordinary Params and are retained.
+The runtime rejects a generation model whose free-value layout contains
+anything else. The frontend does not inspect raw model IR to predict these
+failures; the runtime/engine reports them.
+
+The safe-integer rule is a generation-v0 interoperability profile layered on
+the canonical data document. It deliberately rejects some otherwise valid
+`int64` documents so Python, JavaScript, CLI, and Wasm produce the same result.
 
 ## `generated_datasets.ndjson`
 
@@ -212,11 +251,11 @@ The exact marker fields are:
 }
 ```
 
-Hashes are SHA-256 over received bytes. `generation_model_hash` identifies the
-closed model used to generate outcomes. `target_model_hash` is the optional
-caller-supplied authored outcome target hash and is otherwise equal to
-`generation_model_hash`; this field is provenance only and never changes
-execution. `design_hash` identifies the exact canonical design document.
+Verified hashes are SHA-256 over exact bytes owned by the executable plan.
+`generation_model_hash` identifies the closed model used to generate outcomes,
+and `design_hash` identifies the exact canonical design document. Opaque
+`claimed_` hashes, when present inside model-prior provenance, are not verified
+payload identities and never change execution.
 
 ### Header
 
@@ -229,10 +268,8 @@ The header has exactly these keys in this order:
   "artifact_scope": "parameter_and_complete_dataset_joint_draws",
   "workflow_phases": ["parse_json", "decode_ir", "bind_design", "draw_parameters", "simulate_outcomes", "emit_artifact"],
   "generation_model_hash": "sha256:...",
-  "target_model_hash": "sha256:...",
   "design_hash": "sha256:...",
   "parameter_source": {"kind":"fixed","parameters_hash":"sha256:..."},
-  "authored_provenance": null,
   "count": 2,
   "seed": 0,
   "draw_index_base": "zero_based_generation_order",
@@ -247,9 +284,10 @@ The header has exactly these keys in this order:
 ```
 
 Schema entries preserve model/runtime order and have exactly `name`, `dtype`,
-and `shape`. Supported dtypes are those of `bayescycle.data.json.v1`.
-`parameter_source` has the exact serialized source shape defined above.
-`authored_provenance` is null or the exact two-key object defined above.
+and `shape`. Supported dtypes are those of `bayescycle.data.json.v1` under the
+safe-integer interoperability profile. `parameter_source` has the exact
+serialized source shape defined above, including model-prior claimed provenance
+when present.
 
 ### Draw record
 
@@ -291,6 +329,18 @@ Source lineage is one exact variant:
 ```
 
 Posterior indices identify the retained fit record selected with replacement.
+For fixed sources, every `parameters` document byte-semantically equals the
+fixed source after canonical validation. For model-prior sources,
+`source_draw_index` equals `draw_index`. For posterior sources, the global
+source index, chain, and per-chain draw identify one validated retained record,
+and `parameters` equals that record's declared constrained parameter values.
+Repeated posterior source indices are valid because selection is with
+replacement; every repetition still receives a fresh outcome draw.
+
+A standalone parser verifies exact keys, stream structure, schemas, and internal
+index relationships. Resolver-backed verification additionally recomputes all
+verified hashes and checks fixed values or posterior parameters against the
+source payload. Only resolver-backed verification authorizes recovery claims.
 
 ### Trailer
 
@@ -303,9 +353,8 @@ The final line is an object with the sole key `trailer`. Its value has exactly:
   "artifact_scope": "parameter_and_complete_dataset_joint_draws",
   "workflow_phases": ["parse_json", "decode_ir", "bind_design", "draw_parameters", "simulate_outcomes", "emit_artifact"],
   "generation_model_hash": "sha256:...",
-  "target_model_hash": "sha256:...",
   "design_hash": "sha256:...",
-  "parameter_source_kind": "fixed",
+  "parameter_source": {"kind":"fixed","parameters_hash":"sha256:..."},
   "count": 2,
   "seed": 0,
   "draw_count": 2,
@@ -313,10 +362,12 @@ The final line is an object with the sole key `trailer`. Its value has exactly:
 }
 ```
 
-Header, records, and trailer must agree. Draw indices are contiguous. Variable
-order, dtype, and shape must match the header schemas. A parser rejects
-truncation, duplicate or missing indices, unknown fields, non-finite values,
-invalid canonical documents, oversized input, and trailing records.
+Header and trailer repeat the complete verified source descriptor and must
+agree byte-for-byte as JSON values. Draw indices are contiguous. Variable order,
+dtype, and shape must match the header schemas. A parser rejects truncation,
+duplicate or missing indices, inconsistent source lineage, unknown fields,
+non-finite or unsafe-integer values, invalid canonical documents, excessive
+depth, oversized input, and trailing records.
 
 Selection returns immutable copies of both the canonical parameter document and
 canonical complete dataset for one index. Download paths preserve the exact
@@ -345,13 +396,53 @@ model IR, canonical design, one source variant and payload, count, and seed. It
 performs all requested draws in one core invocation and returns the paired
 artifact. The browser must not create one worker or Wasm instance per dataset.
 
+Legacy private command lowering is permitted only when it exactly implements the
+requested law. The current prior-predictive command can implement model-prior
+count, and one fixed simulation can implement fixed `count=1`. Fixed
+multi-count and posterior sampling-with-replacement return
+`UnsupportedCapability` without issuing a legacy command until native
+`generate` is staged. The UI does not expose a source/count combination before
+its exact native path is available.
+
+## Durable generation run
+
+A portable generation-only run has an operation-specific required set; it does
+not require `posterior.ndjson` as an output:
+
+```text
+run/
+  model.ir.json
+  design.json
+  generation-plan.json
+  generated_datasets.ndjson
+```
+
+`generation-plan.json` is the exact compact plan document. Its payload hashes
+resolve only to files in the same moved run directory:
+
+- fixed adds `fixed-parameters.json`;
+- model-prior needs no source payload beyond `model.ir.json`;
+- posterior adds `source-posterior.ndjson` and `source-fit-data.json`; its fit
+  model resolves to the byte-identical `model.ir.json`.
+
+All JSON input files retain the exact bytes hashed by the plan. A generation run
+copies posterior source payloads; v0 does not use external or absolute artifact
+references. `run.json`, when present, names these paths and the operation so
+replay can resolve, validate, and execute the immutable plan after the directory
+is moved and original external inputs are removed.
+
+Conditioning runs retain their existing `model.ir.json`, `data.json`, and
+`posterior.ndjson` required set. A selected generated dataset is materialized as
+that conditioning run's exact `data.json`; its later fingerprint uses those
+actual bytes.
+
 ## State and invalidation
 
 State carries separate revisions for:
 
 ```text
-target model, observed data, design, fixed values, generation settings,
-inference settings, selected generated draw, fit artifacts
+target model, observed data, design, fixed values, parameter-source selection,
+generation settings, inference settings, selected generated draw, fit artifacts
 ```
 
 Dependencies are:
@@ -365,12 +456,21 @@ selected pair + selected-dataset fit -> recovery
 
 Therefore:
 
-- inference-setting edits do not invalidate generated collections;
+- switching parameter-source kind or source payload increments the source
+  revision, invalidates the current generation key, and rejects an old
+  completion;
+- editing inference controls does not erase a completed fit or any generated
+  collection. It only changes the key for the next conditioning request;
+- a newly successful replacement fit changes fit lineage, invalidates
+  collections generated from the replaced posterior, and disables that old
+  `PosteriorOf`; a failed replacement preserves the old fit and descendants;
 - generation-setting edits do not invalidate unrelated observed-data fits;
 - selection edits invalidate only selected-dataset fit descendants and recovery;
 - model, fit-data, or fit-artifact lineage changes disable `PosteriorOf`;
+- fixed and model-prior collections have no fit dependency;
 - failed descendants preserve successful ancestors;
-- async completions carry their dependency key and stale keys are ignored;
+- async completions carry the complete dependency key, including explicit
+  source identity, and stale keys are ignored;
 - source kind is explicit and is never inferred from artifact presence.
 
 ## Compatibility and non-goals
@@ -382,9 +482,12 @@ meanings:
 - `prior_predictive.ndjson` remains the source-specific prior-predictive stream;
 - `posterior_predictive.ndjson` remains the source-fit predictive stream.
 
-Adapters may emit those legacy artifacts as explicit source-specific views in
-addition to the paired collection. They must not rename or reinterpret them,
-and the new UI uses the paired collection for selection and recovery.
+Unified `generate` returns `generated_datasets.ndjson` and does not project a
+legacy artifact. Private legacy operations may remain during migration and
+continue to return their old artifacts with byte semantics unchanged. No fixed
+multi-count or posterior-with-replacement collection is projected into a legacy
+shape unless a future separately versioned contract defines that projection.
+The new UI uses the paired collection for selection and recovery.
 
 This contract does not add Bayeswire component composition, `with_prior`,
 parameter-name matching in the frontend, raw-IR inspection, arbitrary

@@ -64,8 +64,9 @@ The next work orders migrate the source-specific controls onto the contract in
     and invalidation keys. GREEN typed Python values and pure browser values.
 21. **B3 runtime lowering.** RED one recording-executor `generate` operation,
     byte preservation, visible capability failures, stale/failed preservation,
-    and no private generation verbs in application code. GREEN private adapter
-    lowering and paired-result normalization.
+    and no private generation verbs in application code. GREEN lowers only
+    exact legacy-compatible plans and rejects the rest before dispatch; native
+    paired-result execution replaces compatibility lowering at B4.
 22. **B4 native generation.** In a fresh Bayesite branch, RED one bounded pure
     request with deterministic per-dataset redraw, fixed/posterior validation,
     paired output, capability rejection, and CLI/Wasm parity. GREEN one core

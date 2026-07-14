@@ -74,9 +74,10 @@ input to a later compilation.
    [`docs/generation-plan-v0.md`](../docs/generation-plan-v0.md).
 5. Generation reaches the runtime through one immutable exact-key `generate`
    plan. Application/UI modules do not select fixed, prior-predictive, or
-   posterior-predictive engine commands. `BrowserRuntime` may lower the three
-   explicit parameter-source variants to private compatibility commands until
-   the pinned engine provides its native bounded generation operation.
+   posterior-predictive engine commands. `BrowserRuntime` may use a private
+   compatibility command only when it implements the exact requested redraw
+   law; otherwise it fails before dispatch until the native bounded generation
+   operation is staged.
 6. Generated records retain one natural-scale parameter document paired with
    one complete canonical dataset per draw. A requested count redraws the
    parameter source per dataset; fixed parameters repeat only because their
@@ -90,8 +91,8 @@ input to a later compilation.
 9. Observed data, generation design, and fixed parameter values remain explicit
    canonical JSON documents. The browser does not synthesize semantic forms
    from model IR.
-10. Model, observed-data, design, fixed-value, generation-setting,
-    inference-setting, selected-draw, and fit revisions invalidate only their
+10. Model, observed-data, design, fixed-value, parameter-source,
+    generation-setting, inference-setting, selected-draw, and fit revisions invalidate only their
     descendants. Unknown or stale asynchronous completions cannot mutate
     current state.
 11. A failed follow-up operation does not erase artifacts from an earlier
