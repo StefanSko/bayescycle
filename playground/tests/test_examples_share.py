@@ -54,6 +54,6 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
         old.goto(f"{base_url}/site/#project={old_payload}")
         old.locator("#load-shared").click()
         expect(old.locator("#inference-seed")).to_have_value("31")
-        expect(old.locator("#generation-seed")).to_have_value("0")
+        expect(old.locator("#generation-seed")).to_have_value("31")
     finally:
         old.close()

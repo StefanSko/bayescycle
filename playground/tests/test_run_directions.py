@@ -54,6 +54,9 @@ def test_composed_actions_availability_fallback_and_separate_seeds(
     )
 
     expect(page.locator("#dataset-source-generated")).to_be_enabled()
+    page.locator("#warmup").fill("5")
+    expect(page.locator("#artifact-simulated")).to_be_visible()
+    expect(page.locator("#dataset-source-generated")).to_be_enabled()
     page.locator("#dataset-source-generated").check()
     expect(page.locator("#fit-button")).to_have_text("Fit generated dataset")
     page.locator("#fit-button").click()
@@ -77,7 +80,7 @@ def test_composed_actions_availability_fallback_and_separate_seeds(
     expect(page.locator("#dataset-source-observed")).to_be_checked()
     expect(page.locator("#fit-button")).to_have_text("Fit observed data")
 
-    page.locator("#warmup").fill("5")
+    page.locator("#warmup").fill("6")
     expect(page.locator("#artifact-posterior")).to_be_hidden()
     expect(page.locator("#param-source-posterior")).to_be_disabled()
     expect(page.locator("#param-source-fixed")).to_be_checked()

@@ -142,7 +142,7 @@ function loadSharedProject() {
     truth: String(pendingSharedProject.truth ?? ""),
   });
   applySamplerSettings(pendingSharedProject.sampler);
-  applyGenerationSettings(pendingSharedProject.generation);
+  applyGenerationSettings(pendingSharedProject.generation, pendingSharedProject.sampler);
   element("#share-review").hidden = true;
 }
 
@@ -172,10 +172,14 @@ function applySamplerSettings(settings) {
   if (applied) settingsEdited();
 }
 
-function applyGenerationSettings(settings) {
-  if (settings === null || typeof settings !== "object") return;
-  if (typeof settings.seed === "number") {
-    element("#generation-seed").value = String(settings.seed);
+function applyGenerationSettings(settings, legacySampler) {
+  const generationSeed = settings !== null && typeof settings === "object" &&
+    typeof settings.seed === "number" ? settings.seed : undefined;
+  const legacySeed = legacySampler !== null && typeof legacySampler === "object" &&
+    typeof legacySampler.seed === "number" ? legacySampler.seed : undefined;
+  const seed = generationSeed ?? legacySeed;
+  if (seed !== undefined) {
+    element("#generation-seed").value = String(seed);
     generationSettingsEdited();
   }
 }

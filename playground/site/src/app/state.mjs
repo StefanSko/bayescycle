@@ -38,7 +38,13 @@ export function reduce(state, event) {
         ...state,
         projectRevision: event.revision,
         run: { status: "idle" },
-        artifacts: [],
+        artifacts: state.artifacts.filter((artifact) => ![
+          "data.json",
+          "posterior.ndjson",
+          "diagnostics.json",
+          "recovery_check.json",
+          "posterior_predictive.ndjson",
+        ].includes(artifact.name)),
         notice: null,
       });
     case "generation-settings-edited":

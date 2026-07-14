@@ -36,11 +36,27 @@ export default [
       state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
       state = reduce(state, { type: "compile-started", requestId: "c1", revision: 1 });
       state = reduce(state, { type: "compile-succeeded", requestId: "c1", revision: 1, irBytes: new Uint8Array([1]), irHash: "abc" });
-      state = reduce(state, { type: "run-started", requestId: "r1", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "complete", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "complete", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, { type: "run-started", requestId: "stale", revision: 1 });
       state = reduce(state, { type: "settings-edited", revision: 2 });
-      state = reduce(state, { type: "run-succeeded", requestId: "r1", revision: 1, artifacts: [{ name: "posterior.ndjson" }] });
       assert(state.compile.status === "compiled", "settings edit discarded compilation");
-      assert(state.run.status === "idle" && state.artifacts.length === 0, "stale run survived settings edit");
+      assert(state.projectRevision === 2, `project revision is ${state.projectRevision}`);
+      assert(state.run.status === "idle" && state.notice === null, "settings edit retained run state");
+      const names = state.artifacts.map((artifact) => artifact.name).join(",");
+      assert(names === "model.ir.json,prior_predictive.ndjson,simulated_data.json", `unexpected retained artifacts: ${names}`);
+      const edited = state;
+      state = reduce(state, { type: "run-succeeded", requestId: "stale", revision: 1, artifacts: [{ name: "stale.json" }] });
+      assert(state === edited, "stale completion at the old revision was accepted");
     },
   },
   {

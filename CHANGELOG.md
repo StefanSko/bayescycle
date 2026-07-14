@@ -24,9 +24,10 @@ formats retain their own compatibility policies.
 
 - Rework the Playground run UI into two explicit Generate datasets and
   Condition on a dataset directions, with selectable parameter and dataset
-  sources and separate generation and inference seeds; generation-seed edits
-  now preserve completed fits and clear only generated datasets and predictive
-  draws.
+  sources and separate generation and inference seeds. Generation-seed edits
+  preserve completed fits and clear only generated datasets and predictive
+  draws; inference-setting edits preserve generated datasets, and legacy share
+  links reuse their sampler seed for generation.
 - Trim the bundled Playground models to show only the Bayeswire imports each
   declaration actually uses.
 
