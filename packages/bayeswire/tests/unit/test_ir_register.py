@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
+import subprocess
+import sys
 from dataclasses import dataclass
+from typing import cast
 
 import pytest
 
@@ -15,6 +18,7 @@ from bayeswire.distributions.core import (
 )
 from bayeswire.ir import (
     UnserializableDistribution,
+    UnserializableValue,
     meta_from_dict,
     meta_to_dict,
     register_distribution,
@@ -47,6 +51,13 @@ class _RenamedLaplace:
 
     def log_prob(self, x: DistributionValue) -> LogProbability:
         raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class _TupleDistribution:
+    """Extension used to verify registered tuple field kinds at runtime."""
+
+    values: tuple[object, ...]
 
 
 class _PlainDistribution:
@@ -96,12 +107,45 @@ def test_register_distribution_is_idempotent() -> None:
     assert meta_from_dict(meta_to_dict(_meta_with(_Gumbel(0.0, 1.0)))) is not None
 
 
+def test_registered_distribution_rejects_runtime_field_kind_mismatches() -> None:
+    register_distribution(_TupleDistribution)
+    malformed = _TupleDistribution(cast(tuple[object, ...], {"x": 1}))
+
+    with pytest.raises(UnserializableValue, match=r"_TupleDistribution.*values.*tuple"):
+        meta_to_dict(_meta_with(malformed))
+
+
 def test_register_distribution_rejects_non_dataclass_with_repair_instruction() -> None:
     with pytest.raises(
         UnserializableDistribution,
         match=r"_PlainDistribution.*dataclass",
     ):
         register_distribution(_PlainDistribution)
+
+
+def test_register_distribution_cannot_reclassify_constraint_nodes() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+from bayeswire.constraints import Positive
+from bayeswire.ir import UnserializableDistribution, register_distribution
+
+try:
+    register_distribution(Positive)
+except UnserializableDistribution:
+    pass
+else:
+    raise AssertionError("Positive was reclassified as a distribution")
+""",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_register_distribution_supports_explicit_tag_override() -> None:
