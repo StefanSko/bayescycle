@@ -44,6 +44,7 @@ export default [
         compileRevision: null,
         settingsRevision: state.conditioning.settingsRevision,
         datasetSource: "observed",
+        datasetSourceRevision: state.conditioning.datasetSourceRevision,
         observed: state.documents.observed,
         selectionRevision: state.generation.selectionRevision,
       };
@@ -51,13 +52,45 @@ export default [
         type: "dataset-source-edited", source: "generated", revision: 3,
       });
       state = reduce(state, {
+        type: "dataset-source-edited", source: "observed", revision: 4,
+      });
+      state = reduce(state, {
         type: "conditioning-started", requestId: "stale-source", dependencyKey: "fk",
         datasetSource: "observed", guard: sourceGuard,
       });
       assert(
         state.conditioning.attempt.status === "idle",
-        "dataset-source change did not cancel stale conditioning preflight",
+        "dataset-source change-and-back did not cancel stale conditioning preflight",
       );
+
+      state = initialState();
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "active", dependencyKey: "active-key",
+        datasetSource: "observed",
+        guard: {
+          compileRevision: null,
+          settingsRevision: state.conditioning.settingsRevision,
+          datasetSource: "observed",
+          datasetSourceRevision: state.conditioning.datasetSourceRevision,
+          observed: state.documents.observed,
+          selectionRevision: state.generation.selectionRevision,
+        },
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "active", revision: 0,
+        operation: "condition", datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "dataset-source-edited", source: "generated", revision: 5,
+      });
+      assert(state.conditioning.attempt.status === "idle", "active old-source fit was retained");
+      state = reduce(state, {
+        type: "conditioning-committed", requestId: "active", dependencyKey: "active-key",
+        revision: 0,
+        fit: { datasetSource: "observed", lineageKey: "stale-source", artifacts: [] },
+        artifacts: [{ name: "posterior.ndjson" }], notice: null,
+      });
+      assert(state.conditioning.fit === null, "old-source fit completion was accepted");
     },
   },
   {
