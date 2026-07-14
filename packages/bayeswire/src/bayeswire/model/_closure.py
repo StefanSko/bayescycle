@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
 
+from bayeswire.constraints import VectorBounds
 from bayeswire.model._components import _DimensionSnapshot, _ModelSnapshot
 from bayeswire.model._data_schema import (
     DataDimRef,
@@ -11,7 +12,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataSchema,
     ResolvedDataShapeSchema,
 )
-from bayeswire.model.expr import DataRef, ParamRef
+from bayeswire.model.expr import DataRef, ParamRef, VectorScatterOp
 
 
 def _is_scalar_schema(schema: ResolvedDataSchema) -> bool:
@@ -47,6 +48,16 @@ def _validate_value_references(
         if value.name not in data and value.name not in observed_data:
             raise ValueError(f"{label} references unknown data {value.name!r}")
         return
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_value_references(
+                item,
+                free_values=free_values,
+                data=data,
+                observed_data=observed_data,
+                label=label,
+            )
+        return
     if isinstance(value, tuple):
         for item in value:
             _validate_value_references(
@@ -68,6 +79,42 @@ def _validate_value_references(
             )
 
 
+def _is_canonical_free_value_owner(site: object, name: str) -> bool:
+    """Return whether one site has a same-name direct or scatter owner form."""
+    from bayeswire.model.decorator import ResolvedStochasticSite
+
+    if not isinstance(site, ResolvedStochasticSite) or site.name != name:
+        return False
+    if site.value == ParamRef(name):
+        return True
+    return isinstance(site.value, VectorScatterOp) and site.value.missing_values == ParamRef(name)
+
+
+def _validate_non_param_free_value_owners(
+    model: _ModelSnapshot,
+    *,
+    role: str,
+) -> None:
+    params = {name for name, _value in model.params}
+    for name, free_value in model.free_values:
+        if name in params:
+            continue
+        candidates = tuple(
+            site
+            for site in model.stochastic_sites
+            if (
+                site.name == name
+                if isinstance(free_value.constraint, VectorBounds)
+                else _is_canonical_free_value_owner(site, name)
+            )
+        )
+        if len(candidates) != 1 or not _is_canonical_free_value_owner(candidates[0], name):
+            raise ValueError(
+                f"{role} free value {name!r} must have exactly one canonical owner site, "
+                f"found {len(candidates)}"
+            )
+
+
 def _validate_model_closure(
     model: _ModelSnapshot,
     dimensions: _DimensionSnapshot | None,
@@ -78,7 +125,7 @@ def _validate_model_closure(
     free_values = {name for name, _value in model.free_values}
     data = {name for name, _value in model.data}
     scalar_data = {name for name, resolved in model.data if _is_scalar_schema(resolved.schema)}
-    observed = {node.name for node in model.observed_nodes}
+    _validate_non_param_free_value_owners(model, role=role)
 
     for name, resolved in model.data:
         if isinstance(resolved.schema, ResolvedDataShapeSchema):
@@ -142,11 +189,16 @@ def _validate_model_closure(
             observed_data=set(),
             label=f"{role} stochastic site {site.name!r} distribution",
         )
+        owned_observed = {
+            node.name
+            for node in model.observed_nodes
+            if site.value == DataRef(node.name) and site.distribution == node.distribution
+        }
         _validate_value_references(
             site.value,
             free_values=free_values,
             data=data,
-            observed_data=observed,
+            observed_data=owned_observed,
             label=f"{role} stochastic site {site.name!r} value",
         )
 

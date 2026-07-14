@@ -22,20 +22,12 @@ def _direct_model_dependencies(model_cls: type[object]) -> tuple[type[object], .
         raise TypeError("private model dependency state must be an immutable tuple")
 
     dependencies: list[type[object]] = []
-    seen: set[type[object]] = set()
     for value in explicit:
-        dependency = _require_model_class(value, label="model dependency")
-        if dependency not in seen:
-            dependencies.append(dependency)
-            seen.add(dependency)
+        dependencies.append(_require_model_class(value, label="model dependency"))
 
     for value in model_cls.__dict__.values():
-        if not isinstance(value, Submodel):
-            continue
-        dependency = submodel_target(value)
-        if dependency not in seen:
-            dependencies.append(dependency)
-            seen.add(dependency)
+        if isinstance(value, Submodel):
+            dependencies.append(submodel_target(value))
     return tuple(dependencies)
 
 

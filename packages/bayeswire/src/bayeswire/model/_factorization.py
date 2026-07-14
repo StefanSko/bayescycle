@@ -80,6 +80,8 @@ def _param_references(value: object) -> tuple[str, ...]:
     """Return ParamRef names nested in one resolved immutable value."""
     if isinstance(value, ParamRef):
         return (value.name,)
+    if isinstance(value, dict):
+        return tuple(name for item in value.values() for name in _param_references(item))
     if isinstance(value, tuple):
         return tuple(name for item in value for name in _param_references(item))
     if is_dataclass(value) and not isinstance(value, type):
