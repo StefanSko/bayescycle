@@ -10,6 +10,14 @@ from typing import Any
 import pytest
 
 from bayescycle._cli import main
+from bayescycle._errors import WorkflowError
+from bayescycle._workflow.generation_plan import (
+    FitArtifact,
+    FitAssociation,
+    PosteriorOf,
+    generate_datasets,
+)
+from bayescycle._workflow.generation_runs import materialize_generation_run
 
 
 def _write_model(tmp_path: Path) -> Path:
@@ -122,6 +130,29 @@ def _canonical(path: Path, variables: dict[str, dict[str, Any]]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def test_portable_posterior_requires_verified_file_fingerprint(tmp_path: Path) -> None:
+    model_bytes = b'{"bayeswire_ir":1,"model":{}}\n'
+    data_bytes = b'{"format":"bayescycle.data.json.v1","variables":{}}\n'
+    plan = generate_datasets(
+        model_bytes,
+        design=data_bytes,
+        parameter_source=PosteriorOf(
+            FitArtifact(
+                model_bytes,
+                data_bytes,
+                b'{"draws_format":"v0-provisional"}\n',
+                FitAssociation.PORTABLE,
+            )
+        ),
+        count=1,
+        seed=0,
+    )
+    output = tmp_path / "invalid-posterior-run"
+    with pytest.raises(WorkflowError, match="fingerprint|posterior"):
+        materialize_generation_run(output_dir=output, plan=plan, engine="bayesite")
+    assert not output.exists()
 
 
 def test_generation_run_is_portable_and_replays_without_python_source(

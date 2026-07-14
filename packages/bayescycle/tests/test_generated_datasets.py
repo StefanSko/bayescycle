@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import cast
@@ -22,6 +23,7 @@ DESIGN_BYTES = (
     b'{"format":"bayescycle.data.json.v1","variables":'
     b'{"x":{"dtype":"float64","shape":[3],"values":[-1.0,0.0,1.0]}}}\n'
 )
+FIT_DATA_BYTES = b'{"format":"bayescycle.data.json.v1","variables":{}}\n'
 FIXED_BYTES = (
     b'{"format":"bayescycle.data.json.v1","variables":'
     b'{"alpha":{"dtype":"float64","shape":[],"values":[0.5]}}}\n'
@@ -49,6 +51,52 @@ def _encode(documents: list[dict[str, JsonValue]]) -> bytes:
     return b"".join(
         json.dumps(document, separators=(",", ":"), allow_nan=False).encode() + b"\n"
         for document in documents
+    )
+
+
+def _sha256(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def _posterior_source() -> bytes:
+    fingerprint = _sha256(b"bayescycle-model-data-v1\n" + MODEL_BYTES + b"\n" + FIT_DATA_BYTES)
+    documents: list[dict[str, object]] = [
+        {
+            "draws_format": "v0-provisional",
+            "artifact_kind": "posterior_draws",
+            "artifact_scope": "observed_data_conditioned_parameter_draws",
+            "model_data_fingerprint": fingerprint,
+            "params": [{"name": "alpha", "shape": [], "coordinate_order": [[]]}],
+            "parameter_count": 1,
+            "parameter_order": ["alpha"],
+            "draw_count": 2,
+        },
+        {
+            "draws_format": "v0-provisional",
+            "draw_index": 0,
+            "chain": 0,
+            "draw": 0,
+            "parameter_order": ["alpha"],
+            "values": {"alpha": 1.0},
+        },
+        {
+            "draws_format": "v0-provisional",
+            "draw_index": 1,
+            "chain": 0,
+            "draw": 1,
+            "parameter_order": ["alpha"],
+            "values": {"alpha": 2.0},
+        },
+        {
+            "trailer": {
+                "draws_format": "v0-provisional",
+                "model_data_fingerprint": fingerprint,
+                "draw_count": 2,
+            }
+        },
+    ]
+    return b"".join(
+        json.dumps(document, separators=(",", ":")).encode() + b"\n" for document in documents
     )
 
 
@@ -185,6 +233,93 @@ def test_resolver_rejects_output_from_the_wrong_plan() -> None:
             expected_source_kind="fixed",
             expected_count=1,
             expected_seed=8,
+        )
+
+
+def test_resolver_verifies_prior_descriptor_and_posterior_draw_lineage() -> None:
+    prior = parse_generated_datasets(_source_stream("model-prior"))
+    verify_generated_datasets(
+        prior,
+        model_bytes=MODEL_BYTES,
+        design_bytes=DESIGN_BYTES,
+        expected_source_kind="model-prior",
+        expected_count=2,
+        expected_seed=7,
+        model_prior_bytes=MODEL_BYTES,
+        authored_provenance=None,
+    )
+    with pytest.raises(GeneratedDatasetsArtifactError, match="model-prior"):
+        verify_generated_datasets(
+            prior,
+            model_bytes=MODEL_BYTES,
+            design_bytes=DESIGN_BYTES,
+            expected_source_kind="model-prior",
+            expected_count=2,
+            expected_seed=7,
+            model_prior_bytes=b"other model",
+            authored_provenance=None,
+        )
+
+    posterior_bytes = _posterior_source()
+    documents = _documents()
+    source = {
+        "kind": "posterior",
+        "fit_hash": _sha256(posterior_bytes),
+        "fit_model_hash": _sha256(MODEL_BYTES),
+        "fit_data_hash": _sha256(FIT_DATA_BYTES),
+    }
+    documents[0]["parameter_source"] = source
+    trailer = documents[-1]["trailer"]
+    assert isinstance(trailer, dict)
+    trailer["parameter_source"] = source
+    for index in range(2):
+        draw = documents[index + 1]
+        draw["source_lineage"] = {
+            "kind": "posterior",
+            "source_draw_index": index,
+            "chain": 0,
+            "draw": index,
+        }
+        parameters = draw["parameters"]
+        assert isinstance(parameters, dict)
+        variables = parameters["variables"]
+        assert isinstance(variables, dict)
+        alpha = variables["alpha"]
+        assert isinstance(alpha, dict)
+        alpha["values"] = [float(index + 1)]
+    posterior_artifact = parse_generated_datasets(_encode(documents))
+    verify_generated_datasets(
+        posterior_artifact,
+        model_bytes=MODEL_BYTES,
+        design_bytes=DESIGN_BYTES,
+        expected_source_kind="posterior",
+        expected_count=2,
+        expected_seed=7,
+        posterior_bytes=posterior_bytes,
+        fit_data_bytes=FIT_DATA_BYTES,
+    )
+    wrong = _documents()
+    wrong[0]["parameter_source"] = source
+    wrong_trailer = wrong[-1]["trailer"]
+    assert isinstance(wrong_trailer, dict)
+    wrong_trailer["parameter_source"] = source
+    for index in range(2):
+        wrong[index + 1]["source_lineage"] = {
+            "kind": "posterior",
+            "source_draw_index": index,
+            "chain": 0,
+            "draw": index,
+        }
+    with pytest.raises(GeneratedDatasetsArtifactError, match="posterior"):
+        verify_generated_datasets(
+            parse_generated_datasets(_encode(wrong)),
+            model_bytes=MODEL_BYTES,
+            design_bytes=DESIGN_BYTES,
+            expected_source_kind="posterior",
+            expected_count=2,
+            expected_seed=7,
+            posterior_bytes=posterior_bytes,
+            fit_data_bytes=FIT_DATA_BYTES,
         )
 
 
