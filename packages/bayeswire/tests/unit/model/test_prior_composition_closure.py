@@ -23,7 +23,8 @@ from bayeswire import (
     with_prior,
 )
 from bayeswire.constraints import Positive, VectorBounds
-from bayeswire.distributions import Normal
+from bayeswire.distributions import Normal, Truncated
+from bayeswire.distributions.core import Distribution
 from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
 from bayeswire.model import ModelMeta, model_meta
 from bayeswire.model._data_schema import (
@@ -662,6 +663,55 @@ def test_composition_rejects_resolved_role_type_mismatches() -> None:
         with_prior(Target, prior=wrong_distribution)
 
 
+def test_composition_rejects_malformed_nested_constraint_and_distribution_roles() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    source_meta = model_meta(PriorDeclaration)
+    malformed_bounds = VectorBounds(lower=cast(DataRef, 1))
+    bounds_source = bindable_from_meta(
+        replace(
+            source_meta,
+            params={
+                "theta": replace(source_meta.params["theta"], constraint=malformed_bounds),
+            },
+            free_values={
+                "theta": replace(source_meta.free_values["theta"], constraint=malformed_bounds),
+            },
+        ),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+    with pytest.raises(TypeError, match=r"VectorBounds.*lower.*DataRef"):
+        with_prior(Target, prior=bounds_source)
+
+    malformed_distribution = Truncated(cast(Distribution, Positive()), lower=0.0)
+    distribution_source = bindable_from_meta(
+        replace(
+            source_meta,
+            params={
+                "theta": replace(
+                    source_meta.params["theta"],
+                    distribution=malformed_distribution,
+                ),
+            },
+            stochastic_sites=(
+                replace(
+                    source_meta.stochastic_sites[0],
+                    distribution=malformed_distribution,
+                ),
+            ),
+        ),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+    with pytest.raises(TypeError, match=r"Truncated.*base.*registered distribution"):
+        with_prior(Target, prior=distribution_source)
+
+
 def test_composition_rejects_mutable_observed_and_site_sequences() -> None:
     @model
     class TargetDeclaration:
@@ -680,6 +730,33 @@ def test_composition_rejects_mutable_observed_and_site_sequences() -> None:
         target = bindable_from_meta(malformed, dimensions=model_dimensions(TargetDeclaration))
         with pytest.raises(TypeError, match="observed nodes and stochastic sites must be tuples"):
             with_prior(target, prior=Prior)
+
+
+@pytest.mark.parametrize("role", ["source", "target"])
+@pytest.mark.parametrize("field", ["free_values", "stochastic_sites"])
+def test_composition_rejects_empty_lists_before_legacy_fallback(role: str, field: str) -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    declaration = PriorDeclaration if role == "source" else TargetDeclaration
+    meta = model_meta(declaration)
+    if field == "free_values":
+        malformed_meta = replace(meta, free_values=cast(dict, []))
+        match = "free_values must be a dict"
+    else:
+        malformed_meta = replace(meta, stochastic_sites=cast(tuple, []))
+        match = "observed nodes and stochastic sites must be tuples"
+    malformed = bindable_from_meta(malformed_meta, dimensions=model_dimensions(declaration))
+
+    target = malformed if role == "target" else TargetDeclaration
+    source = malformed if role == "source" else PriorDeclaration
+    with pytest.raises(TypeError, match=match):
+        with_prior(target, prior=source)
 
 
 @pytest.mark.parametrize("index", [1.5, "parameter"])
