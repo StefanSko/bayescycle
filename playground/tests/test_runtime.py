@@ -4,7 +4,8 @@ from typing import Any
 from playwright.sync_api import Page
 
 CASES = [
-    "generation plans lower to one exact native request per source",
+    "fixed and model-prior plans lower to one exact native request",
+    "runtime rejects caller asserted posterior association",
     "runtime rejects malformed successful generation output",
     "runtime generates paired datasets through the vendored wasm",
     "runtime returns named diagnostic artifacts",

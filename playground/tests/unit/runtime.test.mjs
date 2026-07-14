@@ -18,6 +18,45 @@ async function hash(value) {
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+function runtimePosteriorBytes() {
+  return bytes([
+    {
+      draws_format: "v0-provisional",
+      artifact_kind: "posterior_draws",
+      artifact_scope: "observed_data_conditioned_parameter_draws",
+      params: [{ name: "theta", shape: [], coordinate_order: [[]] }],
+      parameter_count: 1,
+      parameter_order: ["theta"],
+      settings: { num_draws: 1 },
+      chain_count: 1,
+      chain_order: [0],
+      draw_count: 1,
+    },
+    {
+      draws_format: "v0-provisional",
+      artifact_kind: "posterior_draws",
+      artifact_scope: "observed_data_conditioned_parameter_draws",
+      draw_index: 0, chain: 0, draw: 0, parameter_count: 1,
+      parameter_order: ["theta"], values: { theta: 0.5 },
+    },
+    {
+      trailer: {
+        draws_format: "v0-provisional",
+        artifact_kind: "posterior_draws",
+        artifact_scope: "observed_data_conditioned_parameter_draws",
+        draws_per_chain: 1,
+        chain_count: 1,
+        chain_order: [0],
+        draw_count: 1,
+        parameter_count: 1,
+        parameter_order: ["theta"],
+        params: 1,
+        chains: [{ chain: 0, draw_count: 1 }],
+      },
+    },
+  ].map((document) => JSON.stringify(document)).join("\n") + "\n");
+}
+
 function generatedOutput(request) {
   const marker = {
     generated_datasets_format: "v0-provisional",
@@ -91,48 +130,11 @@ function generatedOutput(request) {
 
 export default [
   {
-    name: "generation plans lower to one exact native request per source",
+    name: "fixed and model-prior plans lower to one exact native request",
     fn: async () => {
       const model = bytes('{ "bayeswire_ir": 1 }\n');
       const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
       const parameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
-      const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{"y":{"dtype":"float64","shape":[],"values":[1.0]}}}\n');
-      const fit = bytes([
-        {
-          draws_format: "v0-provisional",
-          artifact_kind: "posterior_draws",
-          artifact_scope: "observed_data_conditioned_parameter_draws",
-          params: [{ name: "theta", shape: [], coordinate_order: [[]] }],
-          parameter_count: 1,
-          parameter_order: ["theta"],
-          settings: { num_draws: 1 },
-          chain_count: 1,
-          chain_order: [0],
-          draw_count: 1,
-        },
-        {
-          draws_format: "v0-provisional",
-          artifact_kind: "posterior_draws",
-          artifact_scope: "observed_data_conditioned_parameter_draws",
-          draw_index: 0, chain: 0, draw: 0, parameter_count: 1,
-          parameter_order: ["theta"], values: { theta: 0.5 },
-        },
-        {
-          trailer: {
-            draws_format: "v0-provisional",
-            artifact_kind: "posterior_draws",
-            artifact_scope: "observed_data_conditioned_parameter_draws",
-            draws_per_chain: 1,
-            chain_count: 1,
-            chain_order: [0],
-            draw_count: 1,
-            parameter_count: 1,
-            parameter_order: ["theta"],
-            params: 1,
-            chains: [{ chain: 0, draw_count: 1 }],
-          },
-        },
-      ].map((document) => JSON.stringify(document)).join("\n") + "\n");
       const requests = [];
       const executor = {
         execute: async (request) => {
@@ -144,12 +146,6 @@ export default [
       const plans = [
         generateDatasets(model, { design, parameterSource: fixed(parameters), count: 2, seed: 7 }),
         generateDatasets(model, { design, parameterSource: modelPrior(model), count: 3, seed: 8 }),
-        generateDatasets(model, {
-          design,
-          parameterSource: posteriorOf(fitArtifact(model, fitData, fit, "runtime")),
-          count: 4,
-          seed: 9,
-        }),
       ];
       const artifactNames = [];
       for (const [index, plan] of plans.entries()) {
@@ -165,10 +161,7 @@ export default [
         "model.ir.json", "design.json", "generation-plan.json",
         "generated_datasets.ndjson", "run.json",
       ]), `model-prior publication is incomplete: ${JSON.stringify(artifactNames[1])}`);
-      assert(JSON.stringify(artifactNames[2]) === JSON.stringify([
-        "generated_datasets.ndjson",
-      ]), `runtime-only posterior was incorrectly published: ${JSON.stringify(artifactNames[2])}`);
-      assert(requests.length === 3, `expected one request per plan, got ${requests.length}`);
+      assert(requests.length === 2, `expected one request per plan, got ${requests.length}`);
       for (const request of requests) {
         assert(request.command === "generate", `unexpected command: ${request.command}`);
         assert(request.model === new TextDecoder().decode(model), "model bytes changed during lowering");
@@ -180,29 +173,41 @@ export default [
       assert(requests[0].identities.parameters_hash === await hash(parameters), "fixed identity changed");
       assert(requests[1].parameter_source.kind === "model-prior", "model-prior source changed");
       assert(requests[1].parameter_source.authored_provenance === null, "model-prior provenance changed");
-      assert(requests[2].parameter_source.fit === new TextDecoder().decode(fit), "posterior bytes changed");
-      assert(requests[2].parameter_source.fit_data === new TextDecoder().decode(fitData), "fit data bytes changed");
-      assert(requests[2].identities.fit_hash === await hash(fit), "fit identity changed");
-      assert(requests[2].identities.fit_model_hash === await hash(model), "fit model identity changed");
-      assert(requests[2].identities.fit_data_hash === await hash(fitData), "fit data identity changed");
-      const invalidPortable = generateDatasets(model, {
-        design,
-        parameterSource: posteriorOf(fitArtifact(model, fitData, fit, "portable")),
-        count: 1,
-        seed: 0,
+    },
+  },
+  {
+    name: "runtime rejects caller asserted posterior association",
+    fn: async () => {
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      let requests = 0;
+      const runtime = new BrowserRuntime({
+        execute: async (request) => {
+          requests += 1;
+          return { rawBytes: generatedOutput(request) };
+        },
       });
-      let portableError = "";
+      let message = "";
       try {
         await runtime.run({
-          type: "run", id: "invalid-portable", operation: "generate", plan: invalidPortable,
+          type: "run",
+          id: "forged-runtime-fit",
+          operation: "generate",
+          plan: generateDatasets(model, {
+            design,
+            parameterSource: posteriorOf(
+              fitArtifact(model, fitData, runtimePosteriorBytes(), "runtime"),
+            ),
+            count: 1,
+            seed: 0,
+          }),
         });
       } catch (error) {
-        portableError = String(error);
+        message = String(error);
       }
-      assert(
-        portableError.includes("fingerprint") || portableError.includes("portable"),
-        `invalid portable posterior was published: ${portableError}`,
-      );
+      assert(message.includes("association"), `forged runtime fit succeeded: ${message}`);
+      assert(requests === 0, `forged runtime fit reached engine ${requests} times`);
     },
   },
   {
