@@ -270,6 +270,10 @@ function reduceScopedWorkflow(state, event) {
         state.conditioning.fit?.datasetSource === "generated" ||
         state.conditioning.attempt.datasetSource === "generated" ||
         (state.run.status === "running" && state.run.datasetSource === "generated");
+      const posteriorGenerationFromFit = generatedFit &&
+        state.generation.attempt.status === "running" &&
+        state.generation.attempt.sourceKind === "posterior" &&
+        state.generation.attempt.sourceFitLineageKey === state.conditioning.fit?.lineageKey;
       return {
         ...state,
         ...(generatedFit ? {
@@ -283,6 +287,7 @@ function reduceScopedWorkflow(state, event) {
         } : {}),
         generation: {
           ...state.generation,
+          ...(posteriorGenerationFromFit ? { attempt: { status: "idle" } } : {}),
           selected: selectedValue(event),
           selectionRevision: event.revision,
         },
