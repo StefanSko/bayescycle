@@ -70,6 +70,14 @@ def _unrepresentable_value(documents: list[dict[str, Any]]) -> None:
     documents[1]["values"]["mu"] = 10**400
 
 
+def _missing_draw_index(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["draw_index"]
+
+
+def _non_json_number(documents: list[dict[str, Any]]) -> None:
+    documents[0]["settings"]["target_accept"] = float("nan")
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -81,6 +89,8 @@ def _unrepresentable_value(documents: list[dict[str, Any]]) -> None:
         _wrong_identity,
         _wrong_chain_stats,
         _unrepresentable_value,
+        _missing_draw_index,
+        _non_json_number,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

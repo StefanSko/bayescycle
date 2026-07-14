@@ -315,6 +315,7 @@ export default [
       const posteriorText = TEXT.decode(posterior);
       for (const [changed, expected] of [
         [posteriorText.replace('"chain_count":2', '"chain_count":2.0000000000000001'), "integer"],
+        [posteriorText.replace('"draw_index":0,', ""), "draw_index"],
         [posteriorText.replace(
           '"model_data_fingerprint":',
           '"model_data_fingerprint":"sha256:' + "0".repeat(64) + '","model_data_fingerprint":',
