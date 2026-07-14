@@ -4,6 +4,99 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
 
 export default [
   {
+    name: "scoped attempts preserve successful ancestors on failure",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "generation-started", requestId: "g1", dependencyKey: "key-1" });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "g1", dependencyKey: "key-1",
+        collection: { sourceKind: "fixed", artifact: { name: "generated_datasets.ndjson" } },
+      });
+      const collection = state.generation.collection;
+      state = reduce(state, { type: "generation-started", requestId: "g2", dependencyKey: "key-2" });
+      state = reduce(state, { type: "generation-failed", requestId: "g2", dependencyKey: "key-2", error: "unsupported" });
+      assert(state.generation.attempt.status === "failed", "failed generation attempt disappeared");
+      assert(state.generation.collection === collection, "failed replacement erased the collection");
+
+      state = reduce(state, { type: "conditioning-started", requestId: "f1", dependencyKey: "fit-1", datasetSource: "observed" });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "f1", dependencyKey: "fit-1",
+        fit: { datasetSource: "observed", lineageKey: "fit-1", artifacts: [{ name: "posterior.ndjson" }] },
+      });
+      const fit = state.conditioning.fit;
+      state = reduce(state, { type: "conditioning-started", requestId: "f2", dependencyKey: "fit-2", datasetSource: "observed" });
+      state = reduce(state, { type: "conditioning-failed", requestId: "f2", dependencyKey: "fit-2", error: "bad fit" });
+      assert(state.conditioning.attempt.status === "failed", "failed conditioning attempt disappeared");
+      assert(state.conditioning.fit === fit, "failed replacement erased the fit");
+    },
+  },
+  {
+    name: "selection invalidates only generated conditioning descendants",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "generation-started", requestId: "g", dependencyKey: "gk" });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "g", dependencyKey: "gk",
+        collection: { sourceKind: "fixed", artifact: { name: "generated_datasets.ndjson" } },
+      });
+      const parameters = new Uint8Array([1]);
+      const dataset = new Uint8Array([2]);
+      state = reduce(state, { type: "selection-edited", revision: 1, index: 0, parametersBytes: parameters, datasetBytes: dataset });
+      parameters[0] = 9;
+      dataset[0] = 9;
+      assert(state.generation.selected.parametersBytes[0] === 1, "selected parameters retained an alias");
+      assert(state.generation.selected.datasetBytes[0] === 2, "selected dataset retained an alias");
+      state = reduce(state, { type: "conditioning-started", requestId: "f", dependencyKey: "fk", datasetSource: "generated" });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "f", dependencyKey: "fk",
+        fit: { datasetSource: "generated", lineageKey: "fk", artifacts: [{ name: "posterior.ndjson" }] },
+      });
+      state = reduce(state, { type: "selection-edited", revision: 2, index: 0, parametersBytes: new Uint8Array([3]), datasetBytes: new Uint8Array([4]) });
+      assert(state.conditioning.fit === null, "selection edit retained a generated-data fit");
+      assert(state.generation.collection !== null, "selection edit erased its collection");
+    },
+  },
+  {
+    name: "inference edits preserve fit and independent generation",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "generation-started", requestId: "g", dependencyKey: "gk" });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "g", dependencyKey: "gk",
+        collection: { sourceKind: "model-prior", artifact: { name: "generated_datasets.ndjson" } },
+      });
+      state = reduce(state, { type: "conditioning-started", requestId: "f", dependencyKey: "fk", datasetSource: "observed" });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "f", dependencyKey: "fk",
+        fit: { datasetSource: "observed", lineageKey: "fk", artifacts: [{ name: "posterior.ndjson" }] },
+      });
+      const collection = state.generation.collection;
+      const fit = state.conditioning.fit;
+      state = reduce(state, { type: "inference-settings-edited", revision: 7 });
+      assert(state.generation.collection === collection, "inference edit erased generation");
+      assert(state.conditioning.fit === fit, "inference edit erased completed fit");
+      assert(state.conditioning.settingsRevision === 7, "inference revision was not recorded");
+    },
+  },
+  {
+    name: "replacement fits invalidate posterior-sourced collections",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "generation-started", requestId: "g", dependencyKey: "gk" });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "g", dependencyKey: "gk",
+        collection: { sourceKind: "posterior", sourceFitLineageKey: "old-fit", artifact: { name: "generated_datasets.ndjson" } },
+      });
+      state = reduce(state, { type: "conditioning-started", requestId: "f", dependencyKey: "new-fit", datasetSource: "observed" });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "f", dependencyKey: "new-fit",
+        fit: { datasetSource: "observed", lineageKey: "new-fit", artifacts: [{ name: "posterior.ndjson" }] },
+      });
+      assert(state.generation.collection === null, "posterior collection survived replacement fit");
+      assert(state.conditioning.fit.lineageKey === "new-fit", "replacement fit was not installed");
+    },
+  },
+  {
     name: "source edits invalidate compilation and artifacts",
     fn: () => {
       let state = initialState();

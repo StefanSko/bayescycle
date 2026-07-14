@@ -4,6 +4,10 @@ from typing import Any
 from playwright.sync_api import Page
 
 CASES = [
+    "scoped attempts preserve successful ancestors on failure",
+    "selection invalidates only generated conditioning descendants",
+    "inference edits preserve fit and independent generation",
+    "replacement fits invalidate posterior-sourced collections",
     "source edits invalidate compilation and artifacts",
     "document edits retain compilation but invalidate artifacts",
     "sampler edits invalidate runs but retain compilation",
