@@ -482,6 +482,15 @@ def _verify_generated_output(plan: Draw, output_path: Path) -> None:
         model_bytes=plan.distribution.outcomes.model_ir_bytes,
         design_bytes=plan.distribution.outcomes.design_bytes,
         fixed_parameters_bytes=fixed.parameters_bytes if isinstance(fixed, Fixed) else None,
+        expected_source_kind=(
+            "fixed"
+            if isinstance(fixed, Fixed)
+            else "model-prior"
+            if isinstance(fixed, ModelPrior)
+            else "posterior"
+        ),
+        expected_count=plan.count,
+        expected_seed=plan.seed,
     )
 
 

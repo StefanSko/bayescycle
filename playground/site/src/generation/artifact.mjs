@@ -193,6 +193,24 @@ export function parseGeneratedDatasets(input) {
  * @param {{modelBytes: Uint8Array, designBytes: Uint8Array, fixedParametersBytes?: Uint8Array}} sources
  */
 export async function verifyGeneratedDatasets(artifact, sources) {
+  if (
+    sources.expectedSourceKind !== undefined &&
+    artifact.sourceKind !== sources.expectedSourceKind
+  ) {
+    throw new GeneratedDatasetsArtifactError(
+      `generated source kind ${artifact.sourceKind} does not match requested source kind ${sources.expectedSourceKind}`,
+    );
+  }
+  if (sources.expectedCount !== undefined && artifact.count !== sources.expectedCount) {
+    throw new GeneratedDatasetsArtifactError(
+      `generated count ${artifact.count} does not match requested count ${sources.expectedCount}`,
+    );
+  }
+  if (sources.expectedSeed !== undefined && artifact.seed !== sources.expectedSeed) {
+    throw new GeneratedDatasetsArtifactError(
+      `generated seed ${artifact.seed} does not match requested seed ${sources.expectedSeed}`,
+    );
+  }
   if (await sha256(sources.modelBytes) !== artifact.generationModelHash) {
     throw new GeneratedDatasetsArtifactError("generation model hash does not match resolved bytes");
   }

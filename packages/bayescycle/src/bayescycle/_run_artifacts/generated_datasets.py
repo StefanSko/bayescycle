@@ -251,8 +251,24 @@ def verify_generated_datasets(
     model_bytes: bytes,
     design_bytes: bytes,
     fixed_parameters_bytes: bytes | None = None,
+    expected_source_kind: str | None = None,
+    expected_count: int | None = None,
+    expected_seed: int | None = None,
 ) -> None:
-    """Verify hash-resolved model, design, and fixed-source lineage."""
+    """Verify hash-resolved inputs and requested plan identity."""
+    if expected_source_kind is not None and artifact.source_kind != expected_source_kind:
+        raise GeneratedDatasetsArtifactError(
+            f"generated source kind {artifact.source_kind!r} does not match "
+            f"requested source kind {expected_source_kind!r}"
+        )
+    if expected_count is not None and artifact.count != expected_count:
+        raise GeneratedDatasetsArtifactError(
+            f"generated count {artifact.count} does not match requested count {expected_count}"
+        )
+    if expected_seed is not None and artifact.seed != expected_seed:
+        raise GeneratedDatasetsArtifactError(
+            f"generated seed {artifact.seed} does not match requested seed {expected_seed}"
+        )
     if _sha256(model_bytes) != artifact.generation_model_hash:
         raise GeneratedDatasetsArtifactError("generation model hash does not match resolved bytes")
     if _sha256(design_bytes) != artifact.design_hash:
