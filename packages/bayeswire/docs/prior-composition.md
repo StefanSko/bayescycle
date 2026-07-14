@@ -45,9 +45,12 @@ site.value == ParamRef(param_name)
 site.distribution == params[param_name].distribution
 ```
 
-The site's label need not equal the Param name. Exactly one site must match each
-Param, and one site cannot own multiple declarations. Ownership never follows
-from a general expression reference or stochastic-site position.
+The site's label need not equal the Param name unless the Param free slot uses
+`VectorBounds`. A `VectorBounds` free slot follows the specialized IR rule: its
+unique structural Param owner must also be the unique same-name stochastic
+site. Exactly one site must match each Param, and one site cannot own multiple
+declarations. Ownership never follows from a general expression reference or
+stochastic-site position.
 
 An observed declaration is associated structurally with a site whose value is
 the direct `DataRef` of the observed name and whose distribution equals the

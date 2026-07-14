@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
 import subprocess
 import sys
 from dataclasses import dataclass, fields, is_dataclass, replace
+from typing import cast
 
 import pytest
 
@@ -20,6 +22,7 @@ from bayeswire import (
     model_dimensions,
     with_prior,
 )
+from bayeswire.constraints import VectorBounds
 from bayeswire.distributions import Normal
 from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
 from bayeswire.model import model_meta
@@ -426,6 +429,104 @@ def test_composition_rejects_unused_dimension_coordinates() -> None:
 
     with pytest.raises(ValueError, match="unused dimension coordinates.*unused"):
         with_prior(target, prior=source)
+
+
+@pytest.mark.parametrize("owner_role", ["source", "target"])
+def test_vector_bounds_param_requires_its_structural_owner_to_be_same_name(
+    owner_role: str,
+) -> None:
+    @model
+    class TargetDeclaration:
+        lower = Data.vector(2)
+        theta = Param(Normal(0.0, 1.0), size=2)
+
+    @model
+    class PriorDeclaration:
+        lower = Data.vector(2)
+        theta = Param(Normal(1.0, 0.5), size=2)
+
+    def with_vector_bounds(model_cls: type[object], *, rename_owner: bool) -> type[object]:
+        meta = model_meta(model_cls)
+        constraint = VectorBounds(lower=DataRef("lower"), upper=None)
+        params = {"theta": replace(meta.params["theta"], constraint=constraint)}
+        free_values = {"theta": replace(meta.free_values["theta"], constraint=constraint)}
+        owner = meta.stochastic_sites[0]
+        if rename_owner:
+            owner = replace(owner, name="renamed_theta_prior")
+        return bindable_from_meta(
+            replace(meta, params=params, free_values=free_values, stochastic_sites=(owner,)),
+            dimensions=model_dimensions(model_cls),
+        )
+
+    target = with_vector_bounds(TargetDeclaration, rename_owner=owner_role == "target")
+    source = with_vector_bounds(PriorDeclaration, rename_owner=owner_role == "source")
+
+    with pytest.raises(ValueError, match="VectorBounds parameter 'theta'.*same-name owner"):
+        with_prior(target, prior=source)
+
+
+@pytest.mark.parametrize(
+    ("variable_names", "coords", "message"),
+    [
+        (("",), {"": ("a", "b")}, "dimension names must be non-empty"),
+        (("axis",), {"axis": (math.nan, math.nan)}, "coordinate floats must be finite"),
+        (
+            ("axis",),
+            {"axis": (cast(CoordValue, object()), cast(CoordValue, object()))},
+            "coordinates must be JSON scalar values",
+        ),
+    ],
+)
+def test_composition_rejects_malformed_dimension_names_and_coordinates(
+    variable_names: tuple[str, ...],
+    coords: dict[str, tuple[CoordValue, ...]],
+    message: str,
+) -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0), size=2)
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5), size=2)
+
+    malformed = _malformed_dimensions(variable_names=variable_names, coords=coords)
+    target = bindable_from_meta(model_meta(TargetDeclaration), dimensions=malformed)
+    source = bindable_from_meta(model_meta(PriorDeclaration), dimensions=malformed)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        with_prior(target, prior=source)
+
+
+def test_composition_rejects_empty_dimension_variable_names() -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    def with_empty_param_name(model_cls: type[object]) -> type[object]:
+        meta = model_meta(model_cls)
+        renamed = replace(meta.stochastic_sites[0], name="", value=ParamRef(""))
+        renamed_meta = replace(
+            meta,
+            params={"": meta.params["theta"]},
+            free_values={"": meta.free_values["theta"]},
+            stochastic_sites=(renamed,),
+        )
+        dimensions = ResolvedModelDimensions(
+            variables={"": ResolvedVariableDims(())},
+            coords={},
+        )
+        return bindable_from_meta(renamed_meta, dimensions=dimensions)
+
+    with pytest.raises(ValueError, match="dimension variable names must be non-empty"):
+        with_prior(
+            with_empty_param_name(TargetDeclaration),
+            prior=with_empty_param_name(PriorDeclaration),
+        )
 
 
 def test_composition_rejects_coordinate_length_incompatible_with_static_size() -> None:
