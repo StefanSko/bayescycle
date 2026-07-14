@@ -54,10 +54,24 @@ class _RenamedLaplace:
 
 
 @dataclass(frozen=True)
+class _MapDistribution:
+    """Extension used to verify nested map values remain wire values."""
+
+    values: dict[str, object]
+
+
+@dataclass(frozen=True)
 class _TupleDistribution:
     """Extension used to verify registered tuple field kinds at runtime."""
 
     values: tuple[object, ...]
+
+
+@dataclass
+class _MutableDistribution:
+    """Invalid mutable extension used to protect metadata immutability."""
+
+    loc: object
 
 
 class _PlainDistribution:
@@ -113,6 +127,19 @@ def test_registered_distribution_rejects_runtime_field_kind_mismatches() -> None
 
     with pytest.raises(UnserializableValue, match=r"_TupleDistribution.*values.*tuple"):
         meta_to_dict(_meta_with(malformed))
+
+
+@pytest.mark.parametrize("nested", [{"x": 1}, (1, 2)])
+def test_registered_distribution_rejects_nested_bare_containers(nested: object) -> None:
+    register_distribution(_MapDistribution)
+
+    with pytest.raises(UnserializableValue, match=r"bare (dict|tuple)"):
+        meta_to_dict(_meta_with(_MapDistribution({"nested": nested})))
+
+
+def test_register_distribution_rejects_mutable_dataclasses() -> None:
+    with pytest.raises(UnserializableDistribution, match=r"_MutableDistribution.*frozen=True"):
+        register_distribution(_MutableDistribution)
 
 
 def test_register_distribution_rejects_non_dataclass_with_repair_instruction() -> None:
