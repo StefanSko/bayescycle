@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import fields, is_dataclass
 
 from bayeswire.constraints import VectorBounds
@@ -234,9 +235,30 @@ def _validate_static_dimensions(
     *,
     role: str,
 ) -> None:
-    """Validate sidecar roles and all ranks/lengths known without binding."""
+    """Validate sidecar syntax, roles, and all shapes known without binding."""
     if dimensions is None:
         return
+
+    for variable, names in dimensions.variables:
+        if not isinstance(variable, str) or variable == "":
+            raise ValueError(f"{role} dimension variable names must be non-empty strings")
+        for name in names:
+            if not isinstance(name, str) or name == "":
+                raise ValueError(f"{role} dimension names must be non-empty strings")
+    for name, values in dimensions.coords:
+        if not isinstance(name, str) or name == "":
+            raise ValueError(f"{role} dimension coordinate names must be non-empty strings")
+        for value in values:
+            if value is None or isinstance(value, bool | int | str):
+                continue
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    raise ValueError(f"{role} dimension coordinate floats must be finite")
+                continue
+            raise TypeError(
+                f"{role} dimension coordinates must be JSON scalar values: "
+                "str, int, float, bool, or None"
+            )
 
     params = {name for name, _value in model.params}
     data = {name for name, _value in model.data}

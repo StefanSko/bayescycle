@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
 
+from bayeswire.constraints import VectorBounds
 from bayeswire.model._closure import _validate_model_closure
 from bayeswire.model._components import (
     _DimensionSnapshot,
@@ -61,6 +62,25 @@ def _declaration_site(
             "the Param's resolved distribution"
         )
     return matches[0]
+
+
+def _validate_vector_bounds_param_owner(
+    name: str,
+    free_value: ResolvedFreeValue,
+    owner: ResolvedStochasticSite,
+    sites: tuple[ResolvedStochasticSite, ...],
+    *,
+    role: str,
+) -> None:
+    """Apply the specialized same-name owner rule for VectorBounds Params."""
+    if not isinstance(free_value.constraint, VectorBounds):
+        return
+    named_sites = tuple(site for site in sites if site.name == name)
+    if len(named_sites) != 1 or named_sites[0] is not owner:
+        raise ValueError(
+            f"{role} VectorBounds parameter {name!r} must use its structural Param "
+            "site as the unique same-name owner"
+        )
 
 
 def _validate_param_free_value(
@@ -243,6 +263,13 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
             model.stochastic_sites,
             role="prior",
         )
+        _validate_vector_bounds_param_owner(
+            name,
+            free_value,
+            site,
+            model.stochastic_sites,
+            role="prior",
+        )
         owner_indices.add(owner_index)
         exports.append(
             _ParameterExport(
@@ -357,6 +384,13 @@ def _factor_outcome_model(target: object) -> _OutcomeKernel:
         owner_index, site = _declaration_site(
             name,
             param,
+            model.stochastic_sites,
+            role="target",
+        )
+        _validate_vector_bounds_param_owner(
+            name,
+            free_value,
+            site,
             model.stochastic_sites,
             role="target",
         )
