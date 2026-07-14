@@ -70,9 +70,18 @@ def test_application_reaches_workers_only_through_runtime() -> None:
     assert "runtime.run(" in application_source
 
 
-def test_application_uses_no_private_generation_commands() -> None:
+def test_application_uses_only_workflow_generation_and_conditioning_operations() -> None:
     application_source = (SITE_ROOT / "src" / "app" / "main.mjs").read_text()
-    for command in ('"simulate"', '"prior-predictive"', '"posterior-predictive"'):
+    assert 'operation: "generate"' in application_source
+    assert 'operation: "condition"' in application_source
+    for command in (
+        '"simulate"',
+        '"prior-predictive"',
+        '"posterior-predictive"',
+        'operation: "sample"',
+        'operation: "diagnose"',
+        'operation: "recover-check"',
+    ):
         assert command not in application_source
 
 

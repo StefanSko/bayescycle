@@ -354,6 +354,30 @@ export default [
     },
   },
   {
+    name: "runtime conditions on one dataset through the workflow operation",
+    fn: async () => {
+      const runtime = new BrowserRuntime();
+      const progress = [];
+      const result = await runtime.run({
+        type: "run",
+        id: "condition-1",
+        operation: "condition",
+        modelIr: await text("model.ir.json"),
+        data: await text("data.json"),
+        settings: {
+          chains: 1, num_warmup: 4, num_draws: 4, seed: 17,
+          max_treedepth: 4, target_accept: 0.8,
+        },
+      }, (event) => progress.push(event));
+      assert(result.artifacts.some((artifact) => artifact.name === "posterior.ndjson"),
+        "condition posterior artifact missing");
+      assert(result.artifacts.some((artifact) => artifact.name === "diagnostics.json"),
+        "condition diagnostics artifact missing");
+      assert(result.fitArtifact !== undefined, "condition did not issue runtime fit authority");
+      assert(progress.some((event) => event.chainId === 0), "condition progress missing");
+    },
+  },
+  {
     name: "runtime sampling returns valid merged posterior and progress",
     fn: async () => {
       const runtime = new BrowserRuntime();
