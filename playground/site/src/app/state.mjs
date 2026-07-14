@@ -20,6 +20,7 @@ export function initialState() {
     compile: Object.freeze({ status: "idle" }),
     run: Object.freeze({ status: "idle" }),
     artifacts: Object.freeze([]),
+    fitDatasetSource: null,
     notice: null,
   });
 }
@@ -35,6 +36,7 @@ export function reduce(state, event) {
         compile: { status: "idle" },
         run: { status: "idle" },
         artifacts: [],
+        fitDatasetSource: null,
         notice: null,
       });
     case "documents-edited":
@@ -44,6 +46,7 @@ export function reduce(state, event) {
         projectRevision: event.revision,
         run: { status: "idle" },
         artifacts: [],
+        fitDatasetSource: null,
         notice: null,
       });
     case "settings-edited":
@@ -53,29 +56,44 @@ export function reduce(state, event) {
         FIT_DESCENDANT_ARTIFACTS,
         state.run.status === "running" &&
           ["simulate", "prior-predictive"].includes(state.run.operation),
+        null,
       );
-    case "generation-settings-edited":
+    case "generation-settings-edited": {
+      const generatedLineage = state.fitDatasetSource === "generated";
       return invalidateSettings(
         state,
         event,
-        GENERATION_DESCENDANT_ARTIFACTS,
-        state.run.status === "running" && state.run.operation === "sample",
+        generatedLineage
+          ? [...GENERATION_DESCENDANT_ARTIFACTS, ...FIT_DESCENDANT_ARTIFACTS]
+          : GENERATION_DESCENDANT_ARTIFACTS,
+        state.run.status === "running" && state.run.operation === "sample" &&
+          state.run.datasetSource === "observed",
+        generatedLineage ? null : state.fitDatasetSource,
       );
+    }
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
-      return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [] });
+      return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
     case "compile-succeeded":
       if (!matches(state.compile, event, "compiling") || event.revision !== state.sourceRevision) return state;
-      return freeze({ ...state, compile: { status: "compiled", irBytes: event.irBytes, irHash: event.irHash, revision: event.revision }, run: { status: "idle" }, artifacts: [] });
+      return freeze({ ...state, compile: { status: "compiled", irBytes: event.irBytes, irHash: event.irHash, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
     case "compile-failed":
       if (!matches(state.compile, event, "compiling")) return state;
-      return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" }, artifacts: [] });
+      return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
     case "run-started":
       if (event.revision !== state.projectRevision) return state;
-      return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision, operation: event.operation }, notice: null });
+      return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision, operation: event.operation, datasetSource: event.datasetSource ?? null }, notice: null });
     case "run-succeeded":
       if (!matches(state.run, event, "running") || event.revision !== state.projectRevision) return state;
-      return freeze({ ...state, run: { status: "completed", revision: event.revision }, artifacts: mergeArtifacts(state.artifacts, event.artifacts), notice: event.notice ?? null });
+      return freeze({
+        ...state,
+        run: { status: "completed", revision: event.revision },
+        artifacts: mergeArtifacts(state.artifacts, event.artifacts),
+        fitDatasetSource: state.run.operation === "sample"
+          ? state.run.datasetSource
+          : state.fitDatasetSource,
+        notice: event.notice ?? null,
+      });
     case "run-failed":
       if (!matches(state.run, event, "running")) return state;
       return freeze({ ...state, run: { status: "failed", error: event.error }, notice: null });
@@ -84,7 +102,13 @@ export function reduce(state, event) {
   }
 }
 
-function invalidateSettings(state, event, invalidatedArtifacts, preserveRun) {
+function invalidateSettings(
+  state,
+  event,
+  invalidatedArtifacts,
+  preserveRun,
+  fitDatasetSource,
+) {
   return freeze({
     ...state,
     ...(preserveRun ? {} : {
@@ -95,6 +119,7 @@ function invalidateSettings(state, event, invalidatedArtifacts, preserveRun) {
     artifacts: state.artifacts.filter(
       (artifact) => !invalidatedArtifacts.includes(artifact.name),
     ),
+    fitDatasetSource,
   });
 }
 

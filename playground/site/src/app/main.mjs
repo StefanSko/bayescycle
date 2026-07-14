@@ -241,7 +241,7 @@ async function compileModel() {
 
 async function samplePosterior() {
   const dataBytes = documentBytes(observed.value);
-  await sampleData(dataBytes);
+  await sampleData(dataBytes, "observed");
 }
 
 async function runPriorPredictive() {
@@ -279,15 +279,21 @@ async function simulateData() {
 async function sampleSimulated() {
   const simulated = state.artifacts.find((artifact) => artifact.name === "simulated_data.json");
   if (simulated === undefined) return;
-  await sampleData(simulated.bytes, documentBytes(truth.value));
+  await sampleData(simulated.bytes, "generated", documentBytes(truth.value));
 }
 
-async function sampleData(dataBytes, recoveryTruth) {
+async function sampleData(dataBytes, datasetSource, recoveryTruth) {
   if (state.compile.status !== "compiled" || state.run.status === "running") return;
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
   element("#progress").replaceChildren();
-  dispatch({ type: "run-started", requestId, revision: projectRevision, operation: "sample" });
+  dispatch({
+    type: "run-started",
+    requestId,
+    revision: projectRevision,
+    operation: "sample",
+    datasetSource,
+  });
   try {
     const sampled = await runtime.run({
       type: "run",

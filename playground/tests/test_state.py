@@ -8,6 +8,8 @@ CASES = [
     "document edits retain compilation but invalidate artifacts",
     "sampler edits invalidate runs but retain compilation",
     "generation settings selectively invalidate artifacts and stale runs",
+    "generation edits invalidate a completed generated-data fit",
+    "generation edits orphan a running generated-data fit",
     "generation edits preserve an independent running sample",
     "sampler edits preserve an independent prior predictive run",
     "later runs clear stale follow-up notices",

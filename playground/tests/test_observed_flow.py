@@ -43,5 +43,11 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     page.locator("#generate-button").click()
     expect(page.locator("#artifact-posterior-predictive")).to_be_visible(timeout=120_000)
 
+    page.locator("#generation-seed").fill("1")
+    expect(page.locator("#artifact-posterior-predictive")).to_be_hidden()
+    expect(page.locator("#artifact-posterior")).to_be_visible()
+    expect(page.locator("#param-source-posterior")).to_be_enabled()
+    expect(page.locator("#param-source-posterior")).to_be_checked()
+
     page.locator("#examples-menu").select_option("linear-simulation")
     expect(page.locator("#progress")).to_be_empty()
