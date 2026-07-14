@@ -202,6 +202,9 @@ export class BrowserRuntime {
       fitDataBytes: parameters.kind === "posterior"
         ? parameters.fitArtifact.dataBytes
         : undefined,
+      posteriorAssociation: parameters.kind === "posterior"
+        ? parameters.fitArtifact.association
+        : undefined,
       expectedSourceKind: parameters.kind,
       expectedCount: plan.count,
       expectedSeed: plan.seed,

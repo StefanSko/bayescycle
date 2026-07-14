@@ -97,7 +97,22 @@ export default [
       const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
       const parameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
       const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{"y":{"dtype":"float64","shape":[],"values":[1.0]}}}\n');
-      const fit = bytes('{"draws_format":"v0-provisional"}\n{"trailer":{}}\n');
+      const fit = bytes([
+        {
+          draws_format: "v0-provisional",
+          artifact_kind: "posterior_draws",
+          artifact_scope: "observed_data_conditioned_parameter_draws",
+          params: [{ name: "theta", shape: [], coordinate_order: [[]] }],
+          parameter_count: 1,
+          parameter_order: ["theta"],
+          draw_count: 1,
+        },
+        {
+          draws_format: "v0-provisional", draw_index: 0, chain: 0, draw: 0,
+          parameter_order: ["theta"], values: { theta: 0.5 },
+        },
+        { trailer: { draws_format: "v0-provisional", draw_count: 1 } },
+      ].map((document) => JSON.stringify(document)).join("\n") + "\n");
       const requests = [];
       const executor = {
         execute: async (request) => {

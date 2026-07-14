@@ -1,4 +1,8 @@
 import { normalizeDocument } from "../data/documents.mjs";
+import {
+  PortablePosteriorError,
+  validatePortablePosterior,
+} from "./posterior-source.mjs";
 
 export const MAX_GENERATED_ARTIFACT_BYTES = 64 * 1024 * 1024;
 export const MAX_GENERATED_LINE_BYTES = 8 * 1024 * 1024;
@@ -146,7 +150,7 @@ export function parseGeneratedDatasets(input) {
     const dataset = canonicalDocument(draw.dataset, `draw ${drawIndex}.dataset`);
     matchesSchema(parameters, parameterSchema, `draw ${drawIndex}.parameters`);
     matchesSchema(dataset, datasetSchema, `draw ${drawIndex}.dataset`);
-    const sourceKind = lineage(draw.source_lineage, source.kind, drawIndex);
+    const sourceLineage = lineage(draw.source_lineage, source.kind, drawIndex);
     const line = lines[drawIndex + 1];
     const parameterSpan = topLevelValueSpan(line, "parameters", 0);
     const datasetSpan = topLevelValueSpan(line, "dataset", parameterSpan.end);
@@ -158,7 +162,8 @@ export function parseGeneratedDatasets(input) {
       drawIndex,
       parameters,
       dataset,
-      sourceKind,
+      sourceKind: sourceLineage.kind,
+      sourceLineage,
     });
   });
 
@@ -257,6 +262,60 @@ export async function verifyGeneratedDatasets(artifact, sources) {
     ) {
       throw new GeneratedDatasetsArtifactError(
         "model-prior descriptor does not match the requested source",
+      );
+    }
+    return;
+  }
+  if (sources.posteriorBytes === undefined || sources.fitDataBytes === undefined) {
+    throw new GeneratedDatasetsArtifactError(
+      "posterior and fit-data bytes are required for verification",
+    );
+  }
+  if (
+    await sha256(sources.posteriorBytes) !== artifact._source.fitHash ||
+    await sha256(sources.modelBytes) !== artifact._source.fitModelHash ||
+    await sha256(sources.fitDataBytes) !== artifact._source.fitDataHash
+  ) {
+    throw new GeneratedDatasetsArtifactError(
+      "posterior descriptor does not match the requested source",
+    );
+  }
+  let posterior;
+  try {
+    posterior = await validatePortablePosterior({
+      modelBytes: sources.modelBytes,
+      dataBytes: sources.fitDataBytes,
+      posteriorBytes: sources.posteriorBytes,
+      requireFingerprint: sources.posteriorAssociation !== "runtime",
+    });
+  } catch (error) {
+    if (error instanceof PortablePosteriorError) {
+      throw new GeneratedDatasetsArtifactError(error.message);
+    }
+    throw error;
+  }
+  const sourceShapes = posterior.parameters.map((parameter) => [
+    parameter.name, parameter.shape,
+  ]);
+  for (const draw of artifact.draws) {
+    const lineage = draw.sourceLineage;
+    const sourceDraw = posterior.draws[lineage.source_draw_index];
+    if (sourceDraw === undefined || sourceDraw.chain !== lineage.chain ||
+        sourceDraw.draw !== lineage.draw) {
+      throw new GeneratedDatasetsArtifactError(
+        `draw ${draw.drawIndex} posterior lineage does not match source`,
+      );
+    }
+    const actualShapes = Object.entries(draw.parameters.variables).map(([name, value]) => [
+      name, value.shape,
+    ]);
+    const actualValues = Object.entries(draw.parameters.variables).map(([name, value]) => [
+      name, value.values,
+    ]);
+    if (JSON.stringify(actualShapes) !== JSON.stringify(sourceShapes) ||
+        JSON.stringify(actualValues) !== JSON.stringify(sourceDraw.values)) {
+      throw new GeneratedDatasetsArtifactError(
+        `draw ${draw.drawIndex} parameters differ from posterior source`,
       );
     }
   }
@@ -499,7 +558,7 @@ function lineage(value, sourceKind, drawIndex) {
       `draw ${drawIndex} source lineage kind disagrees with parameter source`,
     );
   }
-  return sourceKind;
+  return Object.freeze({ ...source });
 }
 
 function integer(value, label, minimum, maximum) {

@@ -9,7 +9,9 @@ export class PortablePosteriorError extends Error {
   }
 }
 
-export async function validatePortablePosterior({ modelBytes, dataBytes, posteriorBytes }) {
+export async function validatePortablePosterior({
+  modelBytes, dataBytes, posteriorBytes, requireFingerprint = true,
+}) {
   if (!(posteriorBytes instanceof Uint8Array) ||
       posteriorBytes.byteLength === 0 || posteriorBytes.byteLength > MAX_BYTES) {
     throw new PortablePosteriorError("portable posterior source exceeds its byte bound");
@@ -46,9 +48,12 @@ export async function validatePortablePosterior({ modelBytes, dataBytes, posteri
     throw new PortablePosteriorError("portable posterior format is invalid");
   }
   const fingerprint = await modelDataFingerprint(modelBytes, dataBytes);
+  const hasFingerprint = header.model_data_fingerprint !== undefined ||
+    trailer.model_data_fingerprint !== undefined;
   if (
-    header.model_data_fingerprint !== fingerprint ||
-    trailer.model_data_fingerprint !== fingerprint
+    (requireFingerprint || hasFingerprint) &&
+    (header.model_data_fingerprint !== fingerprint ||
+      trailer.model_data_fingerprint !== fingerprint)
   ) {
     throw new PortablePosteriorError(
       "portable posterior fingerprint does not match exact model/data bytes",
@@ -58,7 +63,65 @@ export async function validatePortablePosterior({ modelBytes, dataBytes, posteri
   if (header.draw_count !== count || trailer.draw_count !== count || count < 1) {
     throw new PortablePosteriorError("portable posterior draw count is incomplete");
   }
-  return Object.freeze({ header, draws: Object.freeze(documents.slice(1, -1)), trailer });
+  if (!Array.isArray(header.params) || !Array.isArray(header.parameter_order)) {
+    throw new PortablePosteriorError("posterior parameter metadata is missing");
+  }
+  const parameters = header.params.map((raw, index) => {
+    const parameter = object(raw, `posterior params[${index}]`);
+    if (typeof parameter.name !== "string" || !Array.isArray(parameter.shape)) {
+      throw new PortablePosteriorError(`posterior params[${index}] is invalid`);
+    }
+    const shape = parameter.shape.map((value) => integer(value, "posterior shape"));
+    return Object.freeze({ name: parameter.name, shape: Object.freeze(shape) });
+  });
+  const names = parameters.map((parameter) => parameter.name);
+  if (new Set(names).size !== names.length ||
+      JSON.stringify(header.parameter_order) !== JSON.stringify(names)) {
+    throw new PortablePosteriorError("posterior parameter order is invalid");
+  }
+  const seen = new Set();
+  const draws = documents.slice(1, -1).map((raw, sourceDrawIndex) => {
+    const draw = object(raw, `posterior draw ${sourceDrawIndex}`);
+    if (draw.draws_format !== "v0-provisional") {
+      throw new PortablePosteriorError(`posterior draw ${sourceDrawIndex} format is invalid`);
+    }
+    if ((draw.draw_index ?? sourceDrawIndex) !== sourceDrawIndex) {
+      throw new PortablePosteriorError("posterior draw indices are not contiguous");
+    }
+    const chain = integer(draw.chain, "posterior chain");
+    const drawIndex = integer(draw.draw, "posterior draw");
+    const coordinate = `${chain}:${drawIndex}`;
+    if (seen.has(coordinate)) {
+      throw new PortablePosteriorError("posterior chain/draw coordinates are duplicated");
+    }
+    seen.add(coordinate);
+    if (JSON.stringify(draw.parameter_order) !== JSON.stringify(names)) {
+      throw new PortablePosteriorError("posterior draw parameter order is invalid");
+    }
+    const values = object(draw.values, `posterior draw ${sourceDrawIndex} values`);
+    if (JSON.stringify(Object.keys(values)) !== JSON.stringify(names)) {
+      throw new PortablePosteriorError("posterior draw values do not match parameter order");
+    }
+    const flattened = parameters.map((parameter) => {
+      const numbers = flatten(values[parameter.name], parameter.name);
+      const size = parameter.shape.length === 0
+        ? 1
+        : parameter.shape.reduce((left, right) => left * right, 1);
+      if (numbers.length !== size) {
+        throw new PortablePosteriorError(
+          `posterior value ${parameter.name} does not match declared shape`,
+        );
+      }
+      return Object.freeze([parameter.name, Object.freeze(numbers)]);
+    });
+    return Object.freeze({
+      sourceDrawIndex, chain, draw: drawIndex, values: Object.freeze(flattened),
+    });
+  });
+  return Object.freeze({
+    parameters: Object.freeze(parameters),
+    draws: Object.freeze(draws),
+  });
 }
 
 async function modelDataFingerprint(modelBytes, dataBytes) {
@@ -70,6 +133,21 @@ async function modelDataFingerprint(modelBytes, dataBytes) {
   framed.set(dataBytes, prefix.length + modelBytes.length + 1);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", framed));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function integer(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new PortablePosteriorError(`${label} must be a nonnegative safe integer`);
+  }
+  return value;
+}
+
+function flatten(value, label) {
+  if (Array.isArray(value)) return value.flatMap((item) => flatten(item, label));
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PortablePosteriorError(`posterior value ${label} must contain finite numbers`);
+  }
+  return [value];
 }
 
 function splitLines(bytes) {
