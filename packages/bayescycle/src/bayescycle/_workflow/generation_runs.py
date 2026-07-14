@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import stat
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from bayescycle._errors import WorkflowError
 from bayescycle._integrations.external_command import ExternalCommand, run_external_command
 from bayescycle._model_loader import load_model
 from bayescycle._run_artifacts.generated_datasets import (
+    MAX_GENERATED_ARTIFACT_BYTES,
     GeneratedDatasetsArtifactError,
     parse_generated_datasets,
     verify_generated_datasets,
@@ -64,6 +66,7 @@ class GenerationRunRecord:
     output_path: Path
     source_paths: tuple[tuple[str, Path], ...]
     checks: tuple[tuple[str, Path, str], ...]
+    artifact_bytes: tuple[tuple[str, bytes], ...]
 
 
 @dataclass(frozen=True)
@@ -140,10 +143,10 @@ def execute_generation_run(
     if code != 0:
         return code
     try:
-        _verify_generated_output(plan, execution.output_path)
+        output_bytes = _verify_generated_output(plan, execution.output_path)
     except GeneratedDatasetsArtifactError as exc:
         raise WorkflowError(f"generated-dataset output is invalid: {exc}") from exc
-    _write_generation_metadata(output_dir.expanduser().resolve(), plan, backend)
+    _write_generation_metadata(output_dir.expanduser().resolve(), plan, backend, output_bytes)
     return 0
 
 
@@ -222,13 +225,10 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
     root = run_dir.expanduser().resolve()
     if not root.is_dir():
         raise WorkflowError(f"run directory does not exist: {root}")
-    metadata_path = _contained_regular(root, "run.json", "metadata")
+    metadata_path, metadata_bytes = _contained_bytes(
+        root, "run.json", "metadata", _MAX_METADATA_BYTES
+    )
     try:
-        metadata_bytes = metadata_path.read_bytes()
-        if not metadata_bytes or len(metadata_bytes) > _MAX_METADATA_BYTES:
-            raise WorkflowError(
-                f"generation run metadata must contain 1..{_MAX_METADATA_BYTES} bytes"
-            )
         _validate_json_depth(metadata_bytes, "generation run metadata")
         raw = cast(
             object,
@@ -262,6 +262,7 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
     ):
         raise WorkflowError("generation run output declaration is invalid")
     paths: dict[str, Path] = {}
+    payloads: dict[str, bytes] = {}
     checks: list[tuple[str, Path, str]] = []
     for role, name, artifact_format, expected_hash in (
         ("plan", plan_entry[0], plan_entry[1], plan_entry[2]),
@@ -270,13 +271,21 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
         *((entry[0], entry[1], entry[2], entry[3]) for entry in outputs),
     ):
         del artifact_format
-        path = _contained_regular(root, name, role)
-        actual = _sha256(path.read_bytes())
+        maximum = (
+            MAX_GENERATED_ARTIFACT_BYTES
+            if role == "generated-datasets"
+            else _MAX_METADATA_BYTES
+            if role == "plan"
+            else _MAX_INPUT_BYTES
+        )
+        path, payload = _contained_bytes(root, name, role, maximum)
+        actual = _sha256(payload)
         if actual != expected_hash:
             raise WorkflowError(
                 f"hash mismatch for generation {role}: expected {expected_hash}, found {actual}"
             )
         paths[role] = path
+        payloads[role] = payload
         checks.append((role, path, actual))
     roles = tuple(entry[0] for entry in inputs)
     if roles == ("design", "fixed-parameters"):
@@ -298,29 +307,21 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
         raise WorkflowError("generation run input role-to-path mapping is invalid")
     if tuple(entry[2] for entry in inputs) != expected_formats:
         raise WorkflowError("generation run input format mapping is invalid")
-    input_paths = {entry[0]: _contained_regular(root, entry[1], entry[0]) for entry in inputs}
+    input_paths = {entry[0]: paths[entry[0]] for entry in inputs}
     try:
         plan = resolve_generation_plan_document(
-            paths["plan"].read_bytes(),
-            model_ir_bytes=paths["model"].read_bytes(),
-            design_bytes=input_paths["design"].read_bytes(),
-            fixed_parameters_bytes=(
-                input_paths["fixed-parameters"].read_bytes()
-                if "fixed-parameters" in input_paths
-                else None
-            ),
-            posterior_bytes=(
-                input_paths["source-posterior"].read_bytes()
-                if "source-posterior" in input_paths
-                else None
-            ),
-            fit_data_bytes=(
-                input_paths["source-fit-data"].read_bytes()
-                if "source-fit-data" in input_paths
-                else None
-            ),
+            payloads["plan"],
+            model_ir_bytes=payloads["model"],
+            design_bytes=payloads["design"],
+            fixed_parameters_bytes=payloads.get("fixed-parameters"),
+            posterior_bytes=payloads.get("source-posterior"),
+            fit_data_bytes=payloads.get("source-fit-data"),
         )
-        _verify_generated_output(plan, paths["generated-datasets"])
+        _verify_generated_output(
+            plan,
+            paths["generated-datasets"],
+            data=payloads["generated-datasets"],
+        )
     except (GenerationPlanError, GeneratedDatasetsArtifactError) as exc:
         raise WorkflowError(str(exc)) from exc
     return GenerationRunRecord(
@@ -333,6 +334,7 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
         output_path=paths["generated-datasets"],
         source_paths=tuple((role, input_paths[role]) for role in roles[1:]),
         checks=tuple(checks),
+        artifact_bytes=tuple(payloads.items()),
     )
 
 
@@ -364,20 +366,21 @@ def replay_generation_run(
         return code, {}
     replay = load_generation_run(target)
     references = (
-        ("model", record.model_path, replay.model_path),
-        ("design", record.design_path, replay.design_path),
-        ("plan", record.plan_path, replay.plan_path),
-        ("generated-datasets", record.output_path, replay.output_path),
-        *(
-            (role, original, dict(replay.source_paths)[role])
-            for role, original in record.source_paths
-        ),
+        ("model", record.model_path),
+        ("design", record.design_path),
+        ("plan", record.plan_path),
+        ("generated-datasets", record.output_path),
+        *record.source_paths,
     )
+    original_payloads = dict(record.artifact_bytes)
+    replay_payloads = dict(replay.artifact_bytes)
     artifacts = []
-    for role, original, regenerated in references:
-        original_hash = _sha256(original.read_bytes())
-        replay_hash = _sha256(regenerated.read_bytes())
-        identical = original.read_bytes() == regenerated.read_bytes()
+    for role, original in references:
+        original_bytes = original_payloads[role]
+        replay_bytes = replay_payloads[role]
+        original_hash = _sha256(original_bytes)
+        replay_hash = _sha256(replay_bytes)
+        identical = original_bytes == replay_bytes
         artifacts.append(
             {
                 "role": role,
@@ -406,20 +409,10 @@ def is_generation_run(run_dir: Path) -> bool:
     """Return whether bounded regular run.json advertises the generation profile."""
     root = run_dir.expanduser().resolve()
     metadata = root / "run.json"
-    try:
-        metadata_stat = metadata.lstat()
-    except FileNotFoundError:
+    if not metadata.exists() and not metadata.is_symlink():
         return False
-    except OSError as exc:
-        raise WorkflowError(f"cannot inspect run metadata: {exc}") from exc
-    if not stat.S_ISREG(metadata_stat.st_mode):
-        raise WorkflowError(f"run metadata must be a contained regular file: {metadata}")
-    if metadata_stat.st_size < 1 or metadata_stat.st_size > _MAX_METADATA_BYTES:
-        raise WorkflowError(
-            f"run metadata must contain 1..{_MAX_METADATA_BYTES} bytes before replay routing"
-        )
     try:
-        data = metadata.read_bytes()
+        data = _read_regular_path(metadata, "run metadata", _MAX_METADATA_BYTES)
         _validate_json_depth(data, "run metadata")
         value = cast(
             object,
@@ -478,18 +471,21 @@ def _planned_generation_execution(output_dir: Path, plan: Draw, engine: str) -> 
     )
 
 
-def _write_generation_metadata(run_dir: Path, plan: Draw, backend: str) -> None:
-    plan_path = run_dir / "generation-plan.json"
-    model_path = run_dir / "model.ir.json"
-    design_path = run_dir / "design.json"
-    output_path = run_dir / "generated_datasets.ndjson"
-    inputs = [_metadata_entry("design", design_path, "bayescycle.data.json.v1")]
+def _write_generation_metadata(
+    run_dir: Path, plan: Draw, backend: str, output_bytes: bytes
+) -> None:
+    outcomes = plan.distribution.outcomes
+    plan_bytes = serialize_generation_plan(plan)
+    inputs = [
+        _metadata_entry("design", "design.json", outcomes.design_bytes, "bayescycle.data.json.v1")
+    ]
     source = plan.distribution.parameters
     if isinstance(source, Fixed):
         inputs.append(
             _metadata_entry(
                 "fixed-parameters",
-                run_dir / "fixed-parameters.json",
+                "fixed-parameters.json",
+                source.parameters_bytes,
                 "bayescycle.data.json.v1",
             )
         )
@@ -498,12 +494,14 @@ def _write_generation_metadata(run_dir: Path, plan: Draw, backend: str) -> None:
             (
                 _metadata_entry(
                     "source-posterior",
-                    run_dir / "source-posterior.ndjson",
+                    "source-posterior.ndjson",
+                    source.fit_artifact.posterior_bytes,
                     "v0-provisional",
                 ),
                 _metadata_entry(
                     "source-fit-data",
-                    run_dir / "source-fit-data.json",
+                    "source-fit-data.json",
+                    source.fit_artifact.data_bytes,
                     "bayescycle.data.json.v1",
                 ),
             )
@@ -513,17 +511,24 @@ def _write_generation_metadata(run_dir: Path, plan: Draw, backend: str) -> None:
         "kind": "generate",
         "backend": backend,
         "plan": {
-            "path": plan_path.name,
-            "sha256": _sha256(plan_path.read_bytes()),
+            "path": "generation-plan.json",
+            "sha256": _sha256(plan_bytes),
             "format": "v0-provisional",
         },
         "model": {
-            "path": model_path.name,
-            "sha256": _sha256(model_path.read_bytes()),
+            "path": "model.ir.json",
+            "sha256": _sha256(outcomes.model_ir_bytes),
             "format": "bayeswire_ir.v1",
         },
         "inputs": inputs,
-        "outputs": [_metadata_entry("generated-datasets", output_path, "v0-provisional")],
+        "outputs": [
+            _metadata_entry(
+                "generated-datasets",
+                "generated_datasets.ndjson",
+                output_bytes,
+                "v0-provisional",
+            )
+        ],
     }
     metadata_path = run_dir / "run.json"
     metadata_text = json.dumps(document, separators=(",", ":"), allow_nan=False) + "\n"
@@ -536,19 +541,22 @@ def _write_generation_metadata(run_dir: Path, plan: Draw, backend: str) -> None:
         ) from exc
 
 
-def _metadata_entry(role: str, path: Path, artifact_format: str) -> dict[str, str]:
+def _metadata_entry(role: str, name: str, data: bytes, artifact_format: str) -> dict[str, str]:
     return {
         "role": role,
-        "path": path.name,
-        "sha256": _sha256(path.read_bytes()),
+        "path": name,
+        "sha256": _sha256(data),
         "format": artifact_format,
     }
 
 
-def _verify_generated_output(plan: Draw, output_path: Path) -> None:
-    if output_path.is_symlink() or not output_path.is_file():
-        raise WorkflowError(f"generation output must be a regular file: {output_path}")
-    artifact = parse_generated_datasets(output_path.read_bytes())
+def _verify_generated_output(plan: Draw, output_path: Path, *, data: bytes | None = None) -> bytes:
+    output_bytes = data
+    if output_bytes is None:
+        output_bytes = _read_regular_path(
+            output_path, "generation output", MAX_GENERATED_ARTIFACT_BYTES
+        )
+    artifact = parse_generated_datasets(output_bytes)
     fixed = plan.distribution.parameters
     verify_generated_datasets(
         artifact,
@@ -578,6 +586,7 @@ def _verify_generated_output(plan: Draw, output_path: Path) -> None:
         expected_count=plan.count,
         expected_seed=plan.seed,
     )
+    return output_bytes
 
 
 def _read_bounded(path: Path, label: str) -> bytes:
@@ -590,18 +599,41 @@ def _read_bounded(path: Path, label: str) -> bytes:
     return data
 
 
-def _contained_regular(root: Path, name: str, role: str) -> Path:
+def _contained_bytes(root: Path, name: str, role: str, maximum: int) -> tuple[Path, bytes]:
     if len(name.encode("utf-8")) > _MAX_PATH_BYTES:
         raise WorkflowError(f"generation {role} path exceeds {_MAX_PATH_BYTES} UTF-8 bytes")
     path = Path(name)
     if path.name != name or path.is_absolute() or name in {".", ".."}:
         raise WorkflowError(f"generation {role} path must be one normalized path segment")
     candidate = root / path
-    if candidate.is_symlink() or not candidate.is_file():
-        raise WorkflowError(f"generation {role} must be a contained regular file: {candidate}")
-    if candidate.resolve().parent != root:
-        raise WorkflowError(f"generation {role} escapes the run directory")
-    return candidate
+    return candidate, _read_regular_path(candidate, f"generation {role}", maximum)
+
+
+def _read_regular_path(path: Path, label: str, maximum: int) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise WorkflowError(f"{label} must be a contained regular file: {path}") from exc
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode):
+            raise WorkflowError(f"{label} must be a contained regular file: {path}")
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = os.read(descriptor, min(1024 * 1024, maximum + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > maximum:
+                raise WorkflowError(f"{label} exceeds {maximum} bytes")
+        if size == 0:
+            raise WorkflowError(f"{label} must not be empty")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

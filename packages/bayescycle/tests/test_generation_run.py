@@ -400,21 +400,21 @@ def test_generation_run_interprets_the_same_bytes_it_hashes(
     original = output.read_bytes()
     changed = original.replace(b',"dataset":', b', "dataset":', 1)
     assert changed != original
-    read_bytes = Path.read_bytes
+    target_inode = output.stat().st_ino
+    read_descriptor = os.read
     raced = False
 
-    def replace_after_first_read(path: Path) -> bytes:
+    def replace_after_first_read(descriptor: int, size: int) -> bytes:
         nonlocal raced
-        data = read_bytes(path)
-        if path == output and not raced:
+        data = read_descriptor(descriptor, size)
+        if os.fstat(descriptor).st_ino == target_inode and data and not raced:
             raced = True
             output.write_bytes(changed)
         return data
 
-    monkeypatch.setattr(Path, "read_bytes", replace_after_first_read)
-    record = load_generation_run(run_dir)
-    owned = dict(record.artifact_bytes)
-    assert owned["generated-datasets"] == original
+    monkeypatch.setattr(os, "read", replace_after_first_read)
+    with pytest.raises(WorkflowError, match="hash mismatch"):
+        load_generation_run(run_dir)
     assert output.read_bytes() == changed
 
 
