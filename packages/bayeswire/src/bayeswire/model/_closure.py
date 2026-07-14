@@ -174,6 +174,24 @@ def _validate_index_expression(value: object, *, label: str) -> None:
     raise TypeError(error)
 
 
+def _validate_data_only_expression(value: object, *, label: str) -> None:
+    error = f"{label} must depend only on data or constants"
+    if isinstance(value, DataRef | ConstNode):
+        return
+    if isinstance(value, BinOp):
+        _validate_data_only_expression(value.left, label=label)
+        _validate_data_only_expression(value.right, label=label)
+        return
+    if isinstance(value, UnaryOp):
+        _validate_data_only_expression(value.operand, label=label)
+        return
+    if isinstance(value, IndexOp):
+        _validate_data_only_expression(value.base, label=label)
+        _validate_index_spec(value.index, label=label)
+        return
+    raise TypeError(error)
+
+
 def _validate_index_spec(spec: object, *, label: str) -> None:
     if isinstance(spec, ScalarIndex):
         _validate_expression_structure(spec.expr, label=label)
@@ -287,6 +305,7 @@ def _validate_vector_scatter_static_roles(
     ):
         raise TypeError(f"{label} VectorScatter length must use integer constant or scalar data")
 
+    dimensions: dict[str, int | DataDimRef] = {}
     for field_name, reference in (
         ("observed_idx", value.observed_idx),
         ("observed_values", value.observed_values),
@@ -294,11 +313,17 @@ def _validate_vector_scatter_static_roles(
     ):
         if not isinstance(reference, DataRef):
             raise TypeError(f"{label} VectorScatter {field_name} must be a DataRef")
-        if _exact_vector_dimension(data_schemas.get(reference.name)) is None:
+        dimension = _exact_vector_dimension(data_schemas.get(reference.name))
+        if dimension is None:
             raise TypeError(
                 f"{label} VectorScatter {field_name} data {reference.name!r} "
                 "must have an exact vector schema"
             )
+        dimensions[field_name] = dimension
+    if dimensions["observed_values"] != dimensions["observed_idx"]:
+        raise ValueError(
+            f"{label} VectorScatter observed_values and observed_idx must use the same dimension"
+        )
     if not isinstance(value.missing_values, ParamRef):
         raise TypeError(f"{label} VectorScatter missing_values must be a ParamRef")
 
@@ -311,12 +336,32 @@ def _size_dimension(size: object) -> int | DataDimRef | None:
     return None
 
 
-def _validate_vector_bounds_static_roles(
+def _validate_free_value_scatter_static_roles(
     *,
     name: str,
-    constraint: VectorBounds,
     size: object,
     model: _ModelSnapshot,
+    data_schemas: dict[str, ResolvedDataSchema],
+    label: str,
+) -> None:
+    owner = next((site for site in model.stochastic_sites if site.name == name), None)
+    if owner is None or not isinstance(owner.value, VectorScatterOp):
+        return
+    expected_dimension = _size_dimension(size)
+    missing_idx = owner.value.missing_idx
+    if not isinstance(missing_idx, DataRef):
+        return
+    missing_dimension = _exact_vector_dimension(data_schemas.get(missing_idx.name))
+    if missing_dimension != expected_dimension:
+        raise ValueError(
+            f"{label} VectorScatter missing_idx must match the free-value size dimension"
+        )
+
+
+def _validate_vector_bounds_static_roles(
+    *,
+    constraint: VectorBounds,
+    size: object,
     data_schemas: dict[str, ResolvedDataSchema],
     label: str,
 ) -> None:
@@ -337,18 +382,6 @@ def _validate_vector_bounds_static_roles(
                 f"{label} VectorBounds {bound_name} data {bound.name!r} must match the "
                 "free-value size dimension"
             )
-
-    owner = next((site for site in model.stochastic_sites if site.name == name), None)
-    if owner is None or not isinstance(owner.value, VectorScatterOp):
-        return
-    missing_idx = owner.value.missing_idx
-    if not isinstance(missing_idx, DataRef):
-        return
-    missing_dimension = _exact_vector_dimension(data_schemas.get(missing_idx.name))
-    if missing_dimension != expected_dimension:
-        raise ValueError(
-            f"{label} VectorScatter missing_idx must match the free-value size dimension"
-        )
 
 
 def _validate_size_reference(
@@ -558,12 +591,17 @@ def _validate_model_closure(
             scalar_data=scalar_data,
             label=f"{role} free value {name!r} size",
         )
+        _validate_free_value_scatter_static_roles(
+            name=name,
+            size=free_value.size,
+            model=model,
+            data_schemas=data_schemas,
+            label=f"{role} free value {name!r}",
+        )
         if isinstance(free_value.constraint, VectorBounds):
             _validate_vector_bounds_static_roles(
-                name=name,
                 constraint=free_value.constraint,
                 size=free_value.size,
-                model=model,
                 data_schemas=data_schemas,
                 label=f"{role} free value {name!r}",
             )
@@ -598,6 +636,16 @@ def _validate_model_closure(
         )
 
     for site in model.stochastic_sites:
+        if _contains_discrete_distribution(site.distribution):
+            _validate_data_only_expression(
+                site.value,
+                label=f"Discrete stochastic site {site.name!r} value",
+            )
+        _validate_supported_truncated_distribution(
+            name=site.name,
+            distribution=site.distribution,
+            role="Stochastic site",
+        )
         _validate_value_references(
             site.distribution,
             free_values=free_values,

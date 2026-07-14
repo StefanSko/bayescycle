@@ -14,7 +14,7 @@ from bayeswire.model.decorator import (
     ResolvedParam,
     ResolvedStochasticSite,
 )
-from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions
+from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions, ResolvedVariableDims
 from bayeswire.model.expr import DataRef, ExprNode
 
 type ModelClass = type[object]
@@ -165,6 +165,13 @@ def _snapshot_dimensions(dimensions: ResolvedModelDimensions | None) -> _Dimensi
     """Copy an optional mutable sidecar into an immutable phase value."""
     if dimensions is None:
         return None
+    if not isinstance(dimensions.variables, dict) or not isinstance(dimensions.coords, dict):
+        raise TypeError("dimension variables and coordinates must be dicts")
+    if any(
+        not isinstance(variable_dimensions, ResolvedVariableDims)
+        for variable_dimensions in dimensions.variables.values()
+    ):
+        raise TypeError("dimension variables must contain ResolvedVariableDims values")
     return _DimensionSnapshot(
         variables=tuple(
             (name, variable_dimensions.names)

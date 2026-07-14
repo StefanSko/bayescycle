@@ -41,6 +41,15 @@ def _model_class_from_closed(
     from bayeswire.ir import bindable_from_meta, meta_from_dict, meta_to_dict
 
     validated_meta = meta_from_dict(meta_to_dict(closed.meta))
+
+    from bayeswire.model._closure import _validate_model_closure
+    from bayeswire.model._components import _snapshot_dimensions, _snapshot_model
+
+    _validate_model_closure(
+        _snapshot_model(validated_meta),
+        _snapshot_dimensions(closed.dimensions),
+        role="composed model",
+    )
     model_cls = bindable_from_meta(validated_meta, dimensions=closed.dimensions)
     target, source = closed.dependencies
     model_cls.__name__ = f"{target.__name__}With{source.__name__}Prior"
