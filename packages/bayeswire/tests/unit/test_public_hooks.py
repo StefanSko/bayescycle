@@ -194,8 +194,8 @@ def test_model_dependencies_rejects_cycles() -> None:
     class Second:
         second = Param(Normal(0.0, 1.0))
 
-    setattr(First, "_model_dependencies", (Second,))
-    setattr(Second, "_model_dependencies", (First,))
+    type.__setattr__(First, "_model_dependencies", (Second,))
+    type.__setattr__(Second, "_model_dependencies", (First,))
 
     with pytest.raises(ValueError, match="model dependency cycle.*First.*Second.*First"):
         model_dependencies(First)
@@ -206,7 +206,7 @@ def test_model_dependencies_rejects_malformed_private_state() -> None:
     class Root:
         theta = Param(Normal(0.0, 1.0))
 
-    setattr(Root, "_model_dependencies", (object,))
+    type.__setattr__(Root, "_model_dependencies", (object,))
 
     with pytest.raises(TypeError, match="dependency.*bayeswire model class"):
         model_dependencies(Root)
