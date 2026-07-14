@@ -16,7 +16,7 @@ from bayeswire.ir import bindable_from_meta, meta_to_dict
 from bayeswire.model import model_meta
 from bayeswire.model._data_schema import DataDimRef, ResolvedDataShapeSchema
 from bayeswire.model.decorator import ResolvedData
-from bayeswire.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
+from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions, ResolvedVariableDims
 from bayeswire.model.expr import DataRef, ParamRef
 
 
@@ -234,7 +234,7 @@ def test_dimensions_merge_source_then_retained_target_variables() -> None:
 def _malformed_dimensions(
     *,
     variable_names: tuple[str, ...],
-    coords: dict[str, tuple[str, ...]],
+    coords: dict[str, tuple[CoordValue, ...]],
 ) -> ResolvedModelDimensions:
     return ResolvedModelDimensions(
         variables={"theta": ResolvedVariableDims(variable_names)},
