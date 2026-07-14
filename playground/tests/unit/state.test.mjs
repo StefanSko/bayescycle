@@ -38,6 +38,26 @@ export default [
         datasetSource: "observed", guard: staleConditioning,
       });
       assert(state.conditioning.attempt.status === "idle", "stale conditioning start was accepted");
+
+      state = initialState();
+      const sourceGuard = {
+        compileRevision: null,
+        settingsRevision: state.conditioning.settingsRevision,
+        datasetSource: "observed",
+        observed: state.documents.observed,
+        selectionRevision: state.generation.selectionRevision,
+      };
+      state = reduce(state, {
+        type: "dataset-source-edited", source: "generated", revision: 3,
+      });
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "stale-source", dependencyKey: "fk",
+        datasetSource: "observed", guard: sourceGuard,
+      });
+      assert(
+        state.conditioning.attempt.status === "idle",
+        "dataset-source change did not cancel stale conditioning preflight",
+      );
     },
   },
   {
