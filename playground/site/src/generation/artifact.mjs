@@ -184,7 +184,7 @@ export function parseGeneratedDatasets(input) {
       });
     },
   };
-  Object.defineProperty(artifact, "_sourceHash", { value: source.sourceHash });
+  Object.defineProperty(artifact, "_source", { value: Object.freeze(source) });
   return Object.freeze(artifact);
 }
 
@@ -227,18 +227,36 @@ export async function verifyGeneratedDatasets(artifact, sources) {
       );
     }
   }
-  if (artifact.sourceKind !== "fixed") return;
-  if (sources.fixedParametersBytes === undefined) {
-    throw new GeneratedDatasetsArtifactError("fixed parameters bytes are required for verification");
+  if (artifact.sourceKind === "fixed") {
+    if (sources.fixedParametersBytes === undefined) {
+      throw new GeneratedDatasetsArtifactError("fixed parameters bytes are required for verification");
+    }
+    if (await sha256(sources.fixedParametersBytes) !== artifact._source.sourceHash) {
+      throw new GeneratedDatasetsArtifactError("fixed parameters hash does not match resolved bytes");
+    }
+    const fixed = parseCanonicalBytes(sources.fixedParametersBytes, "fixed parameters");
+    for (const draw of artifact.draws) {
+      if (JSON.stringify(draw.parameters) !== JSON.stringify(fixed)) {
+        throw new GeneratedDatasetsArtifactError(
+          `draw ${draw.drawIndex} parameters differ from fixed parameters`,
+        );
+      }
+    }
+    return;
   }
-  if (await sha256(sources.fixedParametersBytes) !== artifact._sourceHash) {
-    throw new GeneratedDatasetsArtifactError("fixed parameters hash does not match resolved bytes");
-  }
-  const fixed = parseCanonicalBytes(sources.fixedParametersBytes, "fixed parameters");
-  for (const draw of artifact.draws) {
-    if (JSON.stringify(draw.parameters) !== JSON.stringify(fixed)) {
+  if (artifact.sourceKind === "model-prior") {
+    if (sources.modelPriorBytes === undefined) {
       throw new GeneratedDatasetsArtifactError(
-        `draw ${draw.drawIndex} parameters differ from fixed parameters`,
+        "model-prior model bytes are required for verification",
+      );
+    }
+    const provenance = sources.authoredProvenance ?? null;
+    if (
+      await sha256(sources.modelPriorBytes) !== artifact._source.modelHash ||
+      JSON.stringify(provenance) !== JSON.stringify(artifact._source.authoredProvenance)
+    ) {
+      throw new GeneratedDatasetsArtifactError(
+        "model-prior descriptor does not match the requested source",
       );
     }
   }
@@ -383,12 +401,25 @@ function parameterSource(value) {
       hash(claims.claimed_source_model_hash, "claimed_source_model_hash");
       hash(claims.claimed_outcome_model_hash, "claimed_outcome_model_hash");
     }
-    return { kind: source.kind, sourceHash: null };
+    return {
+      kind: source.kind,
+      sourceHash: null,
+      modelHash: source.model_hash,
+      authoredProvenance: source.authored_provenance === null
+        ? null
+        : Object.freeze({ ...source.authored_provenance }),
+    };
   }
   if (source.kind === "posterior") {
     exactKeys(source, ["kind", "fit_hash", "fit_model_hash", "fit_data_hash"], "posterior parameter_source");
     for (const name of ["fit_hash", "fit_model_hash", "fit_data_hash"]) hash(source[name], name);
-    return { kind: source.kind, sourceHash: null };
+    return {
+      kind: source.kind,
+      sourceHash: null,
+      fitHash: source.fit_hash,
+      fitModelHash: source.fit_model_hash,
+      fitDataHash: source.fit_data_hash,
+    };
   }
   throw new GeneratedDatasetsArtifactError(`parameter_source has unknown kind ${String(source.kind)}`);
 }

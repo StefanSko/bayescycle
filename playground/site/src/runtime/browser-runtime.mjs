@@ -16,6 +16,7 @@ import {
   serializeGenerationPlan,
   validateGenerationPlan,
 } from "../generation/plan.mjs";
+import { validatePortablePosterior } from "../generation/posterior-source.mjs";
 
 const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
@@ -155,6 +156,13 @@ export class BrowserRuntime {
         fit: exactText(posteriorBytes, "fit posterior"),
         fit_data: exactText(fitDataBytes, "fit data"),
       };
+    }
+    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "portable") {
+      await validatePortablePosterior({
+        modelBytes: parameters.fitArtifact.modelIrBytes,
+        dataBytes: parameters.fitArtifact.dataBytes,
+        posteriorBytes: parameters.fitArtifact.posteriorBytes,
+      });
     }
     const output = requireOutput(await generate({
       model: exactText(modelBytes, "generation model IR"),
