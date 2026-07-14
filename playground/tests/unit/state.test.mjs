@@ -150,9 +150,29 @@ export default [
         type: "conditioning-succeeded", requestId: "f", dependencyKey: "fk",
         fit: { datasetSource: "generated", lineageKey: "fk", artifacts: [{ name: "posterior.ndjson" }] },
       });
+      const originalCollection = state.generation.collection;
+      state = reduce(state, {
+        type: "generation-started", requestId: "posterior", dependencyKey: "posterior-key",
+        guard: {
+          compileRevision: null,
+          inputRevision: state.generation.inputRevision,
+          settingsRevision: state.generation.settingsRevision,
+          sourceKind: "posterior",
+          fitLineageKey: "fk",
+        },
+      });
       state = reduce(state, { type: "selection-edited", revision: 2, index: 0, parametersBytes: new Uint8Array([3]), datasetBytes: new Uint8Array([4]) });
       assert(state.conditioning.fit === null, "selection edit retained a generated-data fit");
-      assert(state.generation.collection !== null, "selection edit erased its collection");
+      assert(state.generation.collection === originalCollection, "selection edit erased its collection");
+      assert(state.generation.attempt.status === "idle", "selection edit retained posterior generation");
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "posterior", dependencyKey: "posterior-key",
+        collection: { sourceKind: "posterior", sourceFitLineageKey: "fk" },
+      });
+      assert(
+        state.generation.collection === originalCollection,
+        "stale posterior generation replaced selected collection",
+      );
     },
   },
   {
