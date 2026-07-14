@@ -97,6 +97,12 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             "Decorate it with @dataclass(frozen=True) before calling "
             "bayeswire.ir.register_distribution, or replace it with a built-in distribution."
         )
+    if cls in NODE_SPECS_BY_CLASS and cls not in DISTRIBUTION_NODE_CLASSES:
+        raise UnserializableDistribution(
+            f"IR node {cls.__name__!r} is already registered with a non-distribution role "
+            "and cannot be reclassified as a distribution. Define a distinct frozen "
+            "dataclass for the distribution extension."
+        )
     _register_node(cls, tag=tag)
     DISTRIBUTION_NODE_CLASSES.add(cls)
 
@@ -155,9 +161,44 @@ def _encode_map(value: dict[object, object]) -> list[JsonValue]:
 
 def _encode_node(value: object, spec: NodeSpec) -> dict[str, JsonValue]:
     encoded: dict[str, JsonValue] = {NODE_KEY: spec.tag}
-    for name, _kind in spec.field_kinds:
-        encoded[name] = _encode_value(getattr(value, name))
+    for name, kind in spec.field_kinds:
+        encoded[name] = _encode_field(
+            getattr(value, name),
+            kind,
+            tag=spec.tag,
+            field_name=name,
+        )
     return encoded
+
+
+def _encode_field(
+    value: object,
+    kind: FieldKind,
+    *,
+    tag: str,
+    field_name: str,
+) -> JsonValue:
+    if kind is FieldKind.MAP:
+        if not isinstance(value, dict):
+            raise UnserializableValue(
+                f"IR node {tag!r} field {field_name!r} must be a string-keyed map, "
+                f"got {type(value).__name__!r}."
+            )
+        return _encode_map(cast("dict[object, object]", value))
+    if kind is FieldKind.TUPLE:
+        if not isinstance(value, tuple):
+            raise UnserializableValue(
+                f"IR node {tag!r} field {field_name!r} must be a tuple, "
+                f"got {type(value).__name__!r}."
+            )
+        return [_encode_value(item) for item in value]
+    if isinstance(value, dict | tuple):
+        raise UnserializableValue(
+            f"IR node {tag!r} value field {field_name!r} cannot contain a bare "
+            f"{type(value).__name__}; declare the field as dict or tuple so its wire kind "
+            "is explicit."
+        )
+    return _encode_value(value)
 
 
 def canonical_bytes(meta: ModelMeta) -> bytes:
