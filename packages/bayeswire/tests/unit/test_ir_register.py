@@ -67,6 +67,23 @@ class _TupleDistribution:
     values: tuple[object, ...]
 
 
+@dataclass(frozen=True, init=False)
+class _NoInitDistribution:
+    """Invalid extension whose class constructor accepts no encoded fields."""
+
+    loc: object = 0.0
+
+
+@dataclass(frozen=True)
+class _ExplicitInitDistribution:
+    """Invalid extension with a constructor incompatible with its encoded field."""
+
+    loc: object
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "loc", 0.0)
+
+
 @dataclass(frozen=True)
 class _CachedDistribution:
     """Invalid extension with state excluded from its constructor."""
@@ -157,6 +174,12 @@ def test_registered_distribution_rejects_nested_bare_containers(nested: object) 
 
     with pytest.raises(UnserializableValue, match=r"bare (dict|tuple)"):
         meta_to_dict(_meta_with(_MapDistribution({"nested": nested})))
+
+
+@pytest.mark.parametrize("cls", [_NoInitDistribution, _ExplicitInitDistribution])
+def test_register_distribution_rejects_incompatible_class_constructors(cls: type) -> None:
+    with pytest.raises(UnserializableDistribution, match=rf"{cls.__name__}.*constructor"):
+        register_distribution(cls)
 
 
 def test_register_distribution_rejects_nonconstructor_fields() -> None:
