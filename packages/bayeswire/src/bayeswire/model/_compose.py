@@ -170,7 +170,7 @@ def _close_composition(composed: _ComposedKernel) -> _ClosedComposition:
         observed_nodes=outcomes.model.observed_nodes,
         expressions=expressions,
         free_values=free_values,
-        stochastic_sites=tuple(export.site for export in source.exports) + outcomes.retained_sites,
+        stochastic_sites=source.model.stochastic_sites + outcomes.retained_sites,
     )
     dimensions = _merge_dimensions(source, outcomes)
     _validate_model_closure(

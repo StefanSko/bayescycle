@@ -288,17 +288,22 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
             f"prior density factor {factor.name!r} is not allowed; the source must contain "
             "only declaration-backed Param sites"
         )
-    ordered_owner_indices = tuple(
-        next(index for index, site in enumerate(model.stochastic_sites) if site is export.site)
-        for export in exports
-    )
-    if ordered_owner_indices != tuple(sorted(ordered_owner_indices)):
-        raise ValueError(
-            "prior stochastic sites must follow source Param order so hierarchical "
-            "generation remains ancestral"
-        )
     validated_exports = tuple(exports)
     _validate_ancestral_param_order(validated_exports)
+    owner_indices_by_name = {
+        export.interface.name: next(
+            index for index, site in enumerate(model.stochastic_sites) if site is export.site
+        )
+        for export in exports
+    }
+    for export in exports:
+        name = export.interface.name
+        for dependency in _param_references(export.param.distribution):
+            if owner_indices_by_name[dependency] > owner_indices_by_name[name]:
+                raise ValueError(
+                    f"prior stochastic site for parameter {name!r} must follow its "
+                    f"dependency {dependency!r}"
+                )
     _validate_model_closure(model, dimensions, role="source")
 
     return _ParameterKernel(

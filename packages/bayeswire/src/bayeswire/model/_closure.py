@@ -23,13 +23,22 @@ def _is_scalar_schema(schema: ResolvedDataSchema) -> bool:
 
 
 def _validate_size_reference(
-    size: DataRef | int | None,
+    size: object,
     *,
     scalar_data: set[str],
     label: str,
 ) -> None:
-    if isinstance(size, DataRef) and size.name not in scalar_data:
-        raise ValueError(f"{label} references unknown scalar data {size.name!r}")
+    if size is None:
+        return
+    if isinstance(size, DataRef):
+        if size.name not in scalar_data:
+            raise ValueError(f"{label} references unknown scalar data {size.name!r}")
+        return
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        error = f"{label} must be DataRef, a non-negative integer, or None"
+        if isinstance(size, int) and not isinstance(size, bool):
+            raise ValueError(error)
+        raise TypeError(error)
 
 
 def _validate_value_references(
@@ -91,6 +100,31 @@ def _is_canonical_free_value_owner(site: object, name: str) -> bool:
     return isinstance(site.value, VectorScatterOp) and site.value.missing_values == ParamRef(name)
 
 
+def _validate_param_owners(model: _ModelSnapshot, *, role: str) -> None:
+    """Revalidate structural and VectorBounds Param ownership after every merge."""
+    free_values = dict(model.free_values)
+    for name, param in model.params:
+        owners = tuple(
+            site
+            for site in model.stochastic_sites
+            if site.value == ParamRef(name) and site.distribution == param.distribution
+        )
+        if len(owners) != 1:
+            raise ValueError(
+                f"{role} parameter {name!r} must have exactly one structural owner site, "
+                f"found {len(owners)}"
+            )
+        free_value = free_values.get(name)
+        if free_value is None or not isinstance(free_value.constraint, VectorBounds):
+            continue
+        named_sites = tuple(site for site in model.stochastic_sites if site.name == name)
+        if len(named_sites) != 1 or named_sites[0] is not owners[0]:
+            raise ValueError(
+                f"{role} VectorBounds parameter {name!r} must use its structural Param "
+                "site as the unique same-name owner"
+            )
+
+
 def _validate_non_param_free_value_owners(
     model: _ModelSnapshot,
     *,
@@ -126,6 +160,7 @@ def _validate_model_closure(
     free_values = {name for name, _value in model.free_values}
     data = {name for name, _value in model.data}
     scalar_data = {name for name, resolved in model.data if _is_scalar_schema(resolved.schema)}
+    _validate_param_owners(model, role=role)
     _validate_non_param_free_value_owners(model, role=role)
 
     for name, resolved in model.data:
