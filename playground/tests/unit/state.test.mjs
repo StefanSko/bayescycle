@@ -36,11 +36,288 @@ export default [
       state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
       state = reduce(state, { type: "compile-started", requestId: "c1", revision: 1 });
       state = reduce(state, { type: "compile-succeeded", requestId: "c1", revision: 1, irBytes: new Uint8Array([1]), irHash: "abc" });
-      state = reduce(state, { type: "run-started", requestId: "r1", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "complete", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "complete", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, { type: "run-started", requestId: "stale", revision: 1, operation: "sample" });
       state = reduce(state, { type: "settings-edited", revision: 2 });
-      state = reduce(state, { type: "run-succeeded", requestId: "r1", revision: 1, artifacts: [{ name: "posterior.ndjson" }] });
       assert(state.compile.status === "compiled", "settings edit discarded compilation");
-      assert(state.run.status === "idle" && state.artifacts.length === 0, "stale run survived settings edit");
+      assert(state.projectRevision === 2, `project revision is ${state.projectRevision}`);
+      assert(state.run.status === "idle" && state.notice === null, "settings edit retained run state");
+      const names = state.artifacts.map((artifact) => artifact.name).join(",");
+      assert(names === "model.ir.json,prior_predictive.ndjson,simulated_data.json", `unexpected retained artifacts: ${names}`);
+      const edited = state;
+      state = reduce(state, { type: "run-succeeded", requestId: "stale", revision: 1, artifacts: [{ name: "stale.json" }] });
+      assert(state === edited, "stale completion at the old revision was accepted");
+    },
+  },
+  {
+    name: "generation settings selectively invalidate artifacts and stale runs",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, {
+        type: "run-started", requestId: "complete", revision: 1,
+        operation: "sample", datasetSource: "observed",
+      });
+      state = reduce(state, { type: "run-succeeded", requestId: "complete", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      assert(state.fitDatasetSource === "observed", "observed fit lineage was not recorded");
+      state = reduce(state, { type: "run-started", requestId: "stale", revision: 1, operation: "simulate" });
+      state = reduce(state, { type: "generation-settings-edited", revision: 2 });
+      assert(state.projectRevision === 2, `project revision is ${state.projectRevision}`);
+      assert(state.run.status === "idle" && state.notice === null, "generation edit retained run state");
+      assert(state.fitDatasetSource === "observed", "generation edit discarded observed fit lineage");
+      const names = state.artifacts.map((artifact) => artifact.name).join(",");
+      assert(names === "model.ir.json,data.json,posterior.ndjson,diagnostics.json,recovery_check.json", `unexpected retained artifacts: ${names}`);
+      const edited = state;
+      state = reduce(state, { type: "run-succeeded", requestId: "stale", revision: 1, artifacts: [{ name: "stale.json" }] });
+      assert(state === edited, "stale completion at the old revision was accepted");
+    },
+  },
+  {
+    name: "generation edits invalidate a completed generated-data fit",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, {
+        type: "run-started", requestId: "sample", revision: 1,
+        operation: "sample", datasetSource: "generated",
+      });
+      state = reduce(state, { type: "run-succeeded", requestId: "sample", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      assert(state.fitDatasetSource === "generated", "generated fit lineage was not recorded");
+      state = reduce(state, { type: "generation-settings-edited", revision: 2 });
+      assert(state.projectRevision === 2 && state.run.status === "idle", "generation edit did not invalidate completed fit");
+      assert(state.fitDatasetSource === null, "generated fit lineage survived invalidation");
+      assert(state.artifacts.map((artifact) => artifact.name).join(",") === "model.ir.json", "generated fit descendants survived invalidation");
+    },
+  },
+  {
+    name: "generation edits orphan a running generated-data fit",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "setup", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "setup", revision: 1, artifacts: [
+        { name: "simulated_data.json" },
+      ] });
+      state = reduce(state, {
+        type: "run-started", requestId: "sample", revision: 1,
+        operation: "sample", datasetSource: "generated",
+      });
+      state = reduce(state, { type: "generation-settings-edited", revision: 2 });
+      assert(state.projectRevision === 2 && state.run.status === "idle", "generation edit retained generated fit");
+      assert(state.artifacts.length === 0, "stale generated data survived edit");
+      const edited = state;
+      state = reduce(state, { type: "run-succeeded", requestId: "sample", revision: 1, artifacts: [
+        { name: "posterior.ndjson" },
+      ] });
+      assert(state === edited, "stale generated fit completion was accepted");
+    },
+  },
+  {
+    name: "generation edits preserve an independent running sample",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "setup", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "setup", revision: 1, artifacts: [
+        { name: "data.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, {
+        type: "run-started", requestId: "sample", revision: 1,
+        operation: "sample", datasetSource: "observed",
+      });
+      state = reduce(state, { type: "generation-settings-edited", revision: 2 });
+      assert(state.projectRevision === 1, `project revision changed to ${state.projectRevision}`);
+      assert(state.run.status === "running" && state.run.requestId === "sample", "generation edit orphaned sample");
+      assert(state.notice === null, "generation edit changed the active run notice");
+      assert(state.artifacts.map((artifact) => artifact.name).join(",") === "data.json", "generation descendants survived edit");
+      state = reduce(state, { type: "run-succeeded", requestId: "sample", revision: 1, artifacts: [
+        { name: "model.ir.json" }, { name: "data.json" }, { name: "posterior.ndjson" },
+      ] });
+      assert(state.run.status === "completed", "sample completion was rejected");
+      assert(state.fitDatasetSource === "observed", "observed fit lineage was not recorded");
+      assert(state.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "sample artifacts were not merged");
+    },
+  },
+  {
+    name: "sampler edits preserve an independent prior predictive run",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "setup", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "setup", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson", generation: "old" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, { type: "run-started", requestId: "prior", revision: 1, operation: "prior-predictive" });
+      state = reduce(state, { type: "settings-edited", revision: 2 });
+      assert(state.projectRevision === 1, `project revision changed to ${state.projectRevision}`);
+      assert(state.run.status === "running" && state.run.requestId === "prior", "sampler edit orphaned prior run");
+      assert(state.notice === null, "sampler edit changed the active run notice");
+      const names = state.artifacts.map((artifact) => artifact.name).join(",");
+      assert(names === "model.ir.json,prior_predictive.ndjson,simulated_data.json", `fit descendants survived: ${names}`);
+      state = reduce(state, { type: "run-succeeded", requestId: "prior", revision: 1, artifacts: [
+        { name: "prior_predictive.ndjson", generation: "new" },
+      ] });
+      assert(state.run.status === "completed", "prior completion was rejected");
+      assert(state.artifacts.find((artifact) => artifact.name === "prior_predictive.ndjson").generation === "new", "prior artifacts were not merged");
+    },
+  },
+  {
+    name: "predictive draw edits preserve fits and running samples",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, {
+        type: "run-started", requestId: "setup", revision: 1,
+        operation: "sample", datasetSource: "generated",
+      });
+      state = reduce(state, { type: "run-succeeded", requestId: "setup", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, {
+        type: "run-started", requestId: "sample", revision: 1,
+        operation: "sample", datasetSource: "generated",
+      });
+      state = reduce(state, { type: "predictive-draws-edited", revision: 2 });
+      assert(state.projectRevision === 1, `project revision changed to ${state.projectRevision}`);
+      assert(state.run.status === "running" && state.run.requestId === "sample", "predictive edit orphaned sample");
+      assert(state.fitDatasetSource === "generated", "predictive edit discarded fit lineage");
+      const names = state.artifacts.map((artifact) => artifact.name);
+      assert(!names.includes("prior_predictive.ndjson"), "prior predictive artifact survived edit");
+      for (const retained of ["data.json", "posterior.ndjson", "simulated_data.json", "posterior_predictive.ndjson"]) {
+        assert(names.includes(retained), `${retained} was incorrectly invalidated`);
+      }
+      state = reduce(state, { type: "run-succeeded", requestId: "sample", revision: 1, artifacts: [
+        { name: "model.ir.json" }, { name: "data.json" }, { name: "posterior.ndjson" },
+      ] });
+      assert(state.run.status === "completed", "sample completion was rejected");
+      assert(state.fitDatasetSource === "generated", "accepted sample lost fit lineage");
+    },
+  },
+  {
+    name: "predictive draw edits orphan running prior generation",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, {
+        type: "run-started", requestId: "setup", revision: 1,
+        operation: "sample", datasetSource: "generated",
+      });
+      state = reduce(state, { type: "run-succeeded", requestId: "setup", revision: 1, artifacts: [
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "prior_predictive.ndjson" },
+      ] });
+      state = reduce(state, { type: "run-started", requestId: "prior", revision: 1, operation: "prior-predictive" });
+      state = reduce(state, { type: "predictive-draws-edited", revision: 2 });
+      assert(state.projectRevision === 2 && state.run.status === "idle", "predictive edit retained prior run");
+      assert(state.fitDatasetSource === "generated", "predictive edit discarded fit lineage");
+      const names = state.artifacts.map((artifact) => artifact.name).join(",");
+      assert(names === "data.json,posterior.ndjson,simulated_data.json", `unexpected retained artifacts: ${names}`);
+      const edited = state;
+      state = reduce(state, { type: "run-succeeded", requestId: "prior", revision: 1, artifacts: [
+        { name: "prior_predictive.ndjson" },
+      ] });
+      assert(state === edited, "stale prior completion was accepted");
+    },
+  },
+  {
+    name: "settings notices follow their posterior artifacts",
+    fn: () => {
+      const completedFit = (datasetSource) => {
+        let state = initialState();
+        state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+        state = reduce(state, {
+          type: "run-started", requestId: "sample", revision: 1,
+          operation: "sample", datasetSource,
+        });
+        return reduce(state, {
+          type: "run-succeeded", requestId: "sample", revision: 1,
+          artifacts: [
+            { name: "data.json" },
+            { name: "posterior.ndjson" },
+            { name: "simulated_data.json" },
+            { name: "prior_predictive.ndjson" },
+          ],
+          notice: "diagnostics unavailable",
+        });
+      };
+
+      let observed = completedFit("observed");
+      observed = reduce(observed, { type: "generation-settings-edited", revision: 2 });
+      assert(observed.notice === "diagnostics unavailable", "generation edit discarded observed fit notice");
+      assert(observed.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "generation edit discarded observed fit");
+
+      let generated = completedFit("generated");
+      generated = reduce(generated, { type: "generation-settings-edited", revision: 2 });
+      assert(generated.notice === null, "generation edit retained generated fit notice");
+      assert(!generated.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "generation edit retained generated fit");
+
+      let predictive = completedFit("generated");
+      predictive = reduce(predictive, { type: "predictive-draws-edited", revision: 2 });
+      assert(predictive.notice === "diagnostics unavailable", "predictive edit discarded fit notice");
+      assert(predictive.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "predictive edit discarded fit");
+
+      let orphaned = completedFit("observed");
+      orphaned = reduce(orphaned, { type: "settings-edited", revision: 2 });
+      assert(orphaned.notice === null, "orphaning settings edit retained fit notice");
+
+      let preserved = completedFit("observed");
+      preserved = Object.freeze({
+        ...preserved,
+        run: Object.freeze({
+          status: "running", requestId: "prior", revision: 1,
+          operation: "prior-predictive", datasetSource: null,
+        }),
+      });
+      preserved = reduce(preserved, { type: "settings-edited", revision: 2 });
+      assert(preserved.run.status === "running", "settings edit did not exercise preserve-run branch");
+      assert(preserved.notice === null, "preserve-run settings edit retained fit notice");
     },
   },
   {
