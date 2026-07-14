@@ -21,6 +21,9 @@ from bayeswire.model.decorator import (
     ResolvedObserved,
     ResolvedParam,
     ResolvedStochasticSite,
+    _contains_discrete_distribution,
+    _validate_param_prior_constraint,
+    _validate_supported_truncated_distribution,
 )
 from bayeswire.model.expr import (
     BinOp,
@@ -60,6 +63,10 @@ def _validate_distribution(value: object, *, label: str) -> None:
     if not _is_registered_distribution(value):
         raise TypeError(f"{label} must be a registered distribution")
     if isinstance(value, Truncated):
+        if isinstance(value.base, Truncated):
+            raise ValueError(f"{label} must not contain nested Truncated distributions")
+        if value.lower is None and value.upper is None:
+            raise ValueError("Truncated distributions require at least one bound")
         _validate_distribution(value.base, label=f"{label} Truncated base")
         for name, bound in (("lower", value.lower), ("upper", value.upper)):
             if bound is not None:
@@ -80,6 +87,8 @@ def _validate_constraint(value: object, *, label: str) -> None:
     if value is not None and not isinstance(value, _CONSTRAINT_TYPES):
         raise TypeError(f"{label} must be a supported constraint or None")
     if isinstance(value, VectorBounds):
+        if value.lower is None and value.upper is None:
+            raise TypeError("VectorBounds requires at least one of lower or upper")
         for name, bound in (("lower", value.lower), ("upper", value.upper)):
             if bound is not None and not isinstance(bound, DataRef):
                 raise TypeError(f"{label} VectorBounds {name} must be DataRef or None")
@@ -93,7 +102,17 @@ def _validate_model_role_types(model: _ModelSnapshot, *, role: str) -> None:
         if not isinstance(name, str) or not isinstance(value, ResolvedParam):
             raise TypeError(f"{role} parameter {name!r} must be ResolvedParam")
         _validate_distribution(value.distribution, label=f"{role} parameter {name!r} distribution")
+        if _contains_discrete_distribution(value.distribution):
+            raise TypeError(
+                "Discrete distributions cannot be used as Param priors; use them for "
+                "Observed likelihoods or marginalize discrete latents"
+            )
         _validate_constraint(value.constraint, label=f"{role} parameter {name!r} constraint")
+        _validate_param_prior_constraint(
+            name=name,
+            distribution=value.distribution,
+            constraint=value.constraint,
+        )
     for name, value in model.data:
         if not isinstance(name, str) or not isinstance(value, ResolvedData):
             raise TypeError(f"{role} data {name!r} must be ResolvedData")
@@ -105,6 +124,11 @@ def _validate_model_role_types(model: _ModelSnapshot, *, role: str) -> None:
         _validate_distribution(
             value.distribution,
             label=f"{role} Observed {value.name!r} distribution",
+        )
+        _validate_supported_truncated_distribution(
+            name=value.name,
+            distribution=value.distribution,
+            role="Observed",
         )
     for name, _value in model.expressions:
         if not isinstance(name, str):
@@ -239,6 +263,94 @@ def _is_scalar_schema(schema: ResolvedDataSchema) -> bool:
     return schema.rank == 0
 
 
+def _exact_vector_dimension(schema: ResolvedDataSchema | None) -> int | DataDimRef | None:
+    if isinstance(schema, ResolvedDataShapeSchema) and len(schema.dims) == 1:
+        return schema.dims[0]
+    return None
+
+
+def _validate_vector_scatter_static_roles(
+    value: VectorScatterOp,
+    *,
+    data_schemas: dict[str, ResolvedDataSchema],
+    label: str,
+) -> None:
+    if isinstance(value.length, DataRef):
+        schema = data_schemas.get(value.length.name)
+        if schema is None or not _is_scalar_schema(schema):
+            raise TypeError(f"{label} VectorScatter length must reference scalar data")
+    elif (
+        not isinstance(value.length, ConstNode)
+        or isinstance(value.length.value, bool)
+        or not isinstance(value.length.value, int)
+        or value.length.value < 0
+    ):
+        raise TypeError(f"{label} VectorScatter length must use integer constant or scalar data")
+
+    for field_name, reference in (
+        ("observed_idx", value.observed_idx),
+        ("observed_values", value.observed_values),
+        ("missing_idx", value.missing_idx),
+    ):
+        if not isinstance(reference, DataRef):
+            raise TypeError(f"{label} VectorScatter {field_name} must be a DataRef")
+        if _exact_vector_dimension(data_schemas.get(reference.name)) is None:
+            raise TypeError(
+                f"{label} VectorScatter {field_name} data {reference.name!r} "
+                "must have an exact vector schema"
+            )
+    if not isinstance(value.missing_values, ParamRef):
+        raise TypeError(f"{label} VectorScatter missing_values must be a ParamRef")
+
+
+def _size_dimension(size: object) -> int | DataDimRef | None:
+    if isinstance(size, int) and not isinstance(size, bool):
+        return size
+    if isinstance(size, DataRef):
+        return DataDimRef(size.name)
+    return None
+
+
+def _validate_vector_bounds_static_roles(
+    *,
+    name: str,
+    constraint: VectorBounds,
+    size: object,
+    model: _ModelSnapshot,
+    data_schemas: dict[str, ResolvedDataSchema],
+    label: str,
+) -> None:
+    expected_dimension = _size_dimension(size)
+    if expected_dimension is None:
+        raise TypeError(f"{label} VectorBounds free value must declare a vector size")
+    for bound_name, bound in (("lower", constraint.lower), ("upper", constraint.upper)):
+        if bound is None:
+            continue
+        dimension = _exact_vector_dimension(data_schemas.get(bound.name))
+        if dimension is None:
+            raise TypeError(
+                f"{label} VectorBounds {bound_name} data {bound.name!r} must have an exact "
+                "vector schema"
+            )
+        if dimension != expected_dimension:
+            raise ValueError(
+                f"{label} VectorBounds {bound_name} data {bound.name!r} must match the "
+                "free-value size dimension"
+            )
+
+    owner = next((site for site in model.stochastic_sites if site.name == name), None)
+    if owner is None or not isinstance(owner.value, VectorScatterOp):
+        return
+    missing_idx = owner.value.missing_idx
+    if not isinstance(missing_idx, DataRef):
+        return
+    missing_dimension = _exact_vector_dimension(data_schemas.get(missing_idx.name))
+    if missing_dimension != expected_dimension:
+        raise ValueError(
+            f"{label} VectorScatter missing_idx must match the free-value size dimension"
+        )
+
+
 def _validate_size_reference(
     size: object,
     *,
@@ -263,12 +375,19 @@ def _validate_value_references(
     *,
     free_values: set[str],
     data: set[str],
+    data_schemas: dict[str, ResolvedDataSchema],
     observed_data: set[str],
     label: str,
 ) -> None:
     """Validate typed references recursively through registered dataclass-shaped values."""
     if is_final_expr_node(value):
         _validate_expression_structure(value, label=label)
+    if isinstance(value, VectorScatterOp):
+        _validate_vector_scatter_static_roles(
+            value,
+            data_schemas=data_schemas,
+            label=label,
+        )
     if isinstance(value, ParamRef):
         if value.name not in free_values:
             raise ValueError(f"{label} references unknown free value {value.name!r}")
@@ -283,6 +402,7 @@ def _validate_value_references(
                 item,
                 free_values=free_values,
                 data=data,
+                data_schemas=data_schemas,
                 observed_data=observed_data,
                 label=label,
             )
@@ -293,6 +413,7 @@ def _validate_value_references(
                 item,
                 free_values=free_values,
                 data=data,
+                data_schemas=data_schemas,
                 observed_data=observed_data,
                 label=label,
             )
@@ -303,6 +424,7 @@ def _validate_value_references(
                 getattr(value, value_field.name),
                 free_values=free_values,
                 data=data,
+                data_schemas=data_schemas,
                 observed_data=observed_data,
                 label=label,
             )
@@ -367,6 +489,22 @@ def _validate_non_param_free_value_owners(
                 f"{role} free value {name!r} must have exactly one canonical owner site, "
                 f"found {len(candidates)}"
             )
+        owner = candidates[0]
+        if _contains_discrete_distribution(owner.distribution):
+            raise TypeError(
+                "Discrete distributions cannot be partially observed NUTS values; "
+                "marginalize discrete missing values or impute them posterior-predictively"
+            )
+        if isinstance(free_value.constraint, VectorBounds) and isinstance(
+            owner.distribution,
+            Truncated,
+        ):
+            raise TypeError("VectorBounds on a partially observed value cannot use Truncated")
+        _validate_supported_truncated_distribution(
+            name=name,
+            distribution=owner.distribution,
+            role="PartiallyObserved",
+        )
 
 
 def _validate_model_closure(
@@ -383,7 +521,8 @@ def _validate_model_closure(
     if not param_names and not model.observed_nodes and not non_param_free_values:
         raise ValueError(f"{role} must contain at least one stochastic declaration")
 
-    data = {name for name, _value in model.data}
+    data_schemas = {name: value.schema for name, value in model.data}
+    data = set(data_schemas)
     for name, resolved in model.data:
         _validate_data_schema(resolved.schema, label=f"{role} data {name!r}")
     scalar_data = {name for name, resolved in model.data if _is_scalar_schema(resolved.schema)}
@@ -408,6 +547,7 @@ def _validate_model_closure(
             param.distribution,
             free_values=free_values,
             data=data,
+            data_schemas=data_schemas,
             observed_data=set(),
             label=f"{role} parameter {name!r} distribution",
         )
@@ -418,10 +558,20 @@ def _validate_model_closure(
             scalar_data=scalar_data,
             label=f"{role} free value {name!r} size",
         )
+        if isinstance(free_value.constraint, VectorBounds):
+            _validate_vector_bounds_static_roles(
+                name=name,
+                constraint=free_value.constraint,
+                size=free_value.size,
+                model=model,
+                data_schemas=data_schemas,
+                label=f"{role} free value {name!r}",
+            )
         _validate_value_references(
             free_value.constraint,
             free_values=free_values,
             data=data,
+            data_schemas=data_schemas,
             observed_data=set(),
             label=f"{role} free value {name!r} constraint",
         )
@@ -432,6 +582,7 @@ def _validate_model_closure(
             expression,
             free_values=free_values,
             data=data,
+            data_schemas=data_schemas,
             observed_data=set(),
             label=f"{role} expression {name!r}",
         )
@@ -441,6 +592,7 @@ def _validate_model_closure(
             node.distribution,
             free_values=free_values,
             data=data,
+            data_schemas=data_schemas,
             observed_data=set(),
             label=f"{role} Observed {node.name!r} distribution",
         )
@@ -450,6 +602,7 @@ def _validate_model_closure(
             site.distribution,
             free_values=free_values,
             data=data,
+            data_schemas=data_schemas,
             observed_data=set(),
             label=f"{role} stochastic site {site.name!r} distribution",
         )
@@ -466,6 +619,7 @@ def _validate_model_closure(
             site.value,
             free_values=free_values,
             data=data,
+            data_schemas=data_schemas,
             observed_data=owned_observed,
             label=f"{role} stochastic site {site.name!r} value",
         )

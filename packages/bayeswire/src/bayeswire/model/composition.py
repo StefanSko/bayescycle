@@ -38,10 +38,10 @@ def _model_class_from_closed(
     module_name: str,
 ) -> type[object]:
     """Construct the ordinary metadata class at the public closure boundary."""
-    from bayeswire.ir import bindable_from_meta, meta_to_dict
+    from bayeswire.ir import bindable_from_meta, meta_from_dict, meta_to_dict
 
-    meta_to_dict(closed.meta)
-    model_cls = bindable_from_meta(closed.meta, dimensions=closed.dimensions)
+    validated_meta = meta_from_dict(meta_to_dict(closed.meta))
+    model_cls = bindable_from_meta(validated_meta, dimensions=closed.dimensions)
     target, source = closed.dependencies
     model_cls.__name__ = f"{target.__name__}With{source.__name__}Prior"
     model_cls.__qualname__ = model_cls.__name__
