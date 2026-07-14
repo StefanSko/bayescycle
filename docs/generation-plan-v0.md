@@ -103,8 +103,8 @@ Posterior-source validation requires all of the following:
 
 1. exact fit-model bytes equal the outcome-model bytes;
 2. a complete `v0-provisional` posterior stream with the posterior-draw
-   kind/scope, one header, its declared number of contiguous draw records, and
-   one final trailer with no trailing records;
+   kind/scope, one header, at least one retained draw, its declared number of
+   contiguous draw records, and one final trailer with no trailing records;
 3. the header parameter order and shapes agree with every draw; trailer
    parameter order/count agree with the header; header and trailer chain
    order/count, draw count, optional posterior identity, and optional model/data
@@ -149,11 +149,67 @@ Draw(distribution, count, seed)
 `PosteriorOf.fit_artifact.model_ir_bytes` must byte-equal
 `OutcomesOf.model_ir_bytes`. Constructors reject other combinations.
 
-The JSON plan document is provenance, not an executable request. It contains
-hashes over the exact bytes held by the in-memory plan:
+### Executable request shape
+
+The UI-facing structured-clone value has the exact recursive shape below.
+Property names are normative. JavaScript byte fields are `Uint8Array`; Python
+uses immutable `bytes`. Constructors defensively copy every byte field and
+reject missing or unknown properties at every node.
+
+```text
+{
+  kind: "draw",
+  count: integer,
+  seed: integer,
+  distribution: {
+    kind: "joint-predict",
+    parameters: FixedExecutable | ModelPriorExecutable | PosteriorExecutable,
+    outcomes: {
+      kind: "model-outcomes",
+      modelIrBytes: bytes,
+      designBytes: bytes
+    }
+  }
+}
+
+FixedExecutable = {
+  kind: "fixed",
+  parametersBytes: bytes
+}
+
+ModelPriorExecutable = {
+  kind: "model-prior",
+  modelIrBytes: bytes,
+  authoredProvenance: null | {
+    claimedSourceModelHash: "sha256:...",
+    claimedOutcomeModelHash: "sha256:..."
+  }
+}
+
+PosteriorExecutable = {
+  kind: "posterior",
+  fitArtifact: {
+    kind: "fit-artifact",
+    modelIrBytes: bytes,
+    dataBytes: bytes,
+    posteriorBytes: bytes,
+    association: "runtime" | "portable"
+  }
+}
+```
+
+`runtime` association can be constructed only from the current runtime's
+successful conditioning result and permits the documented fingerprint-less
+Wasm profile. `portable` association requires matching header/trailer exact-byte
+fingerprints. Public parsers do not accept an arbitrary caller assertion as a
+runtime association.
+
+The JSON plan document is versioned provenance, not an executable request. It
+contains hashes over the exact bytes held by the in-memory plan:
 
 ```json
 {
+  "generation_plan_format": "v0-provisional",
   "kind": "draw",
   "count": 100,
   "seed": 0,
@@ -188,7 +244,9 @@ The other parameter-source records are exactly:
 }
 ```
 
-Objects reject unknown and missing keys. Verified hashes are lowercase SHA-256 strings with the `sha256:` prefix and
+The root requires `generation_plan_format` exactly equal to
+`"v0-provisional"` before interpreting node tags. Objects reject unknown and
+missing keys. Verified hashes are lowercase SHA-256 strings with the `sha256:` prefix and
 are recomputed from bytes owned by the plan. Claimed authored hashes are only
 syntax-checked and are never described as verified. Object key order is the
 order shown above. JSON identity uses compact UTF-8 JSON followed by one LF. Parsed plans are
@@ -440,13 +498,43 @@ resolve only to files in the same moved run directory:
 
 All JSON input files retain the exact bytes hashed by the plan. A generation run
 copies posterior source payloads; v0 does not use external or absolute artifact
-references. `run.json` is required for generation and names operation-local
-relative paths. Generation replay is a new `bayescycle.run.v1` operation profile:
-it resolves the closed IR and source payloads from the moved directory and does
-not re-execute or require the original Python model source. Existing operation
-profiles retain their current external-source verification behavior. Replay
-validates and executes the immutable generation plan after the directory is
-moved and original external inputs are removed.
+references.
+
+Generation `run.json` is a distinct exact-key profile:
+
+```json
+{
+  "format": "bayescycle.generation-run.v0",
+  "kind": "generate",
+  "backend": "bayesite",
+  "plan": {"path":"generation-plan.json","sha256":"sha256:...","format":"v0-provisional"},
+  "model": {"path":"model.ir.json","sha256":"sha256:...","format":"bayeswire_ir.v1"},
+  "inputs": [
+    {"role":"design","path":"design.json","sha256":"sha256:...","format":"bayescycle.data.json.v1"},
+    {"role":"fixed-parameters","path":"fixed-parameters.json","sha256":"sha256:...","format":"bayescycle.data.json.v1"}
+  ],
+  "outputs": [
+    {"role":"generated-datasets","path":"generated_datasets.ndjson","sha256":"sha256:...","format":"v0-provisional"}
+  ]
+}
+```
+
+`backend` is a non-empty backend identity; it does not embed an executable path.
+Input order is design first, then no source entry for model-prior, one
+`fixed-parameters` entry for fixed, or `source-posterior` followed by
+`source-fit-data` for posterior. The posterior formats are respectively
+`v0-provisional` and `bayescycle.data.json.v1`. All nested objects reject unknown
+or missing keys.
+
+Every path is a normalized non-empty POSIX relative path with no `.` or `..`
+segment. Resolution must remain beneath the run directory; required files must
+be regular files and no path component may be a symbolic link. Hashes are
+recomputed from exact file bytes before plan interpretation or replay.
+Generation replay branches on the distinct format marker, consumes closed IR
+directly, and does not re-execute or require the original Python model source.
+Existing `bayescycle.run.v1` profiles and their external-source verification
+remain unchanged. A moved directory therefore replays using only its local
+hash-matched payloads.
 
 Conditioning runs retain their existing `model.ir.json`, `data.json`, and
 `posterior.ndjson` required set. A selected generated dataset is materialized as

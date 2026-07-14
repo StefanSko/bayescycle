@@ -34,11 +34,12 @@ generation additionally requires copied `source-posterior.ndjson` and
 `source-fit-data.json`; its source model is the byte-identical
 `model.ir.json`. Model-prior generation needs no additional source payload.
 These local payloads make a generation run replayable after it is moved and the
-original external inputs are removed. For this operation profile `run.json`
-uses relative paths inside the run, replay consumes closed IR directly, and the
-original Python model source is not required. Existing run profiles retain their
-current external-source verification behavior. Generation-only runs do not
-require a posterior output.
+original external inputs are removed. Generation `run.json` uses the distinct
+exact-key `bayescycle.generation-run.v0` profile in the functional-generation
+contract. It accepts only contained non-symlink relative paths, consumes closed
+IR directly, and never requires the original Python model source. Existing run
+profiles retain their current external-source verification behavior.
+Generation-only runs do not require a posterior output.
 
 ## Optional files
 
@@ -72,26 +73,32 @@ backend-private materializations for generated outputs, such as
 `run/.bayesite/simulated_data.json` before canonicalization, but those files
 are not workflow-stage artifacts.
 
-`run.json` uses `bayescycle.run.v1` and records the prepared run kind, selected
-backend, replay-relevant CLI settings, Bayesite passthrough arguments when
-present, model source hash, input source hashes, materialized input paths, and
-expected output artifact paths. It is intended as a narrow provenance index for
-future study ledgers and replay checks; the run directory remains the durable
-artifact contract. For Bayesite-backed runs it also records an optional
-`engine` block: `kind` (`explicit`, `system`, or `provisioned`, describing how
-the engine executable was resolved), `path`, and an optional `version` and
-`sha256` (the latter only ever set for an auto-provisioned engine).
+For non-generation profiles, `run.json` uses `bayescycle.run.v1` and records the
+prepared run kind, selected backend, replay-relevant CLI settings, Bayesite
+passthrough arguments when present, model source hash, input source hashes,
+materialized input paths, and expected output artifact paths. It is intended as
+a narrow provenance index for future study ledgers and replay checks; the run
+directory remains the durable artifact contract. For Bayesite-backed runs it
+also records an optional `engine` block: `kind` (`explicit`, `system`, or
+`provisioned`, describing how the engine executable was resolved), `path`, and
+an optional `version` and `sha256` (the latter only ever set for an
+auto-provisioned engine). Generation instead uses
+`bayescycle.generation-run.v0` exactly as specified in
+[`../../../docs/generation-plan-v0.md`](../../../docs/generation-plan-v0.md).
 
 `dims.json` may only contain dimension labels and coordinates explicitly exposed
 by `bayeswire`; bayescycle must not infer labels from names, shapes, or data.
 
 ## Replay
 
-`bayescycle replay <run-dir> -o <new-run-dir>` reads `run.json`, verifies that
-the recorded model and input source hashes still match, reconstructs the original
-model-level operation, executes it into a fresh run directory, and compares the
-recorded model/input/output artifacts byte-for-byte. `--check-only` verifies the
-hashes and prints the reconstructed plan without creating the replay directory.
+`bayescycle replay <run-dir> -o <new-run-dir>` reads `run.json`. Existing
+`bayescycle.run.v1` profiles verify recorded external model/input source hashes
+and reconstruct the original model-level operation. The
+`bayescycle.generation-run.v0` profile verifies contained local payload hashes
+and reconstructs the closed generation plan without source execution. Both
+execute into a fresh run directory and compare recorded input/output artifacts
+byte-for-byte. `--check-only` verifies the applicable hashes and prints the
+reconstructed plan without creating the replay directory.
 A replay returns exit code 0 for byte-identical artifacts and exit code 1 when a
 completed replay differs.
 
