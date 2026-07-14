@@ -18,6 +18,77 @@ async function hash(value) {
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+function generatedOutput(request) {
+  const marker = {
+    generated_datasets_format: "v0-provisional",
+    artifact_kind: "generated_dataset_pairs",
+    artifact_scope: "parameter_and_complete_dataset_joint_draws",
+  };
+  const phases = [
+    "parse_json", "decode_ir", "bind_design", "draw_parameters",
+    "simulate_outcomes", "emit_artifact",
+  ];
+  const parameters = request.parameter_source.kind === "fixed"
+    ? JSON.parse(request.parameter_source.parameters)
+    : {
+        format: "bayescycle.data.json.v1",
+        variables: { theta: { dtype: "float64", shape: [], values: [0.5] } },
+      };
+  const dataset = JSON.parse(request.design);
+  const schema = (document) => Object.entries(document.variables).map(([name, value]) => ({
+    name, dtype: value.dtype, shape: value.shape,
+  }));
+  const source = request.parameter_source.kind === "fixed"
+    ? { kind: "fixed", parameters_hash: request.identities.parameters_hash }
+    : request.parameter_source.kind === "model-prior"
+      ? {
+          kind: "model-prior",
+          model_hash: request.identities.generation_model_hash,
+          authored_provenance: null,
+        }
+      : {
+          kind: "posterior",
+          fit_hash: request.identities.fit_hash,
+          fit_model_hash: request.identities.fit_model_hash,
+          fit_data_hash: request.identities.fit_data_hash,
+        };
+  const header = {
+    ...marker, workflow_phases: phases,
+    generation_model_hash: request.identities.generation_model_hash,
+    design_hash: request.identities.design_hash,
+    parameter_source: source,
+    count: request.count,
+    seed: request.seed,
+    draw_index_base: "zero_based_generation_order",
+    parameter_schema: schema(parameters),
+    dataset_schema: schema(dataset),
+  };
+  const draws = Array.from({ length: request.count }, (_, drawIndex) => ({
+    ...marker,
+    draw_index: drawIndex,
+    draw_count: request.count,
+    parameters,
+    dataset,
+    source_lineage: request.parameter_source.kind === "fixed"
+      ? { kind: "fixed" }
+      : request.parameter_source.kind === "model-prior"
+        ? { kind: "model-prior", source_draw_index: drawIndex }
+        : { kind: "posterior", source_draw_index: 0, chain: 0, draw: 0 },
+  }));
+  const trailer = {
+    ...marker, workflow_phases: phases,
+    generation_model_hash: request.identities.generation_model_hash,
+    design_hash: request.identities.design_hash,
+    parameter_source: source,
+    count: request.count,
+    seed: request.seed,
+    draw_count: request.count,
+    complete: true,
+  };
+  return bytes([... [header], ...draws, { trailer }]
+    .map((document) => JSON.stringify(document)).join("\n") + "\n");
+}
+
 export default [
   {
     name: "generation plans lower to one exact native request per source",
@@ -31,7 +102,7 @@ export default [
       const executor = {
         execute: async (request) => {
           requests.push(request);
-          return { rawBytes: bytes('{"generated_datasets_format":"v0-provisional"}\n{"trailer":{}}\n') };
+          return { rawBytes: generatedOutput(request) };
         },
       };
       const runtime = new BrowserRuntime(executor);
@@ -97,6 +168,34 @@ export default [
         portableError.includes("fingerprint") || portableError.includes("portable"),
         `invalid portable posterior was published: ${portableError}`,
       );
+    },
+  },
+  {
+    name: "runtime rejects malformed successful generation output",
+    fn: async () => {
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const parameters = bytes(
+        '{"format":"bayescycle.data.json.v1","variables":' +
+        '{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n',
+      );
+      const runtime = new BrowserRuntime({
+        execute: async () => ({ rawBytes: bytes('{"bad":true}\n') }),
+      });
+      let message = "";
+      try {
+        await runtime.run({
+          type: "run",
+          id: "malformed-generation",
+          operation: "generate",
+          plan: generateDatasets(model, {
+            design, parameterSource: fixed(parameters), count: 1, seed: 0,
+          }),
+        });
+      } catch (error) {
+        message = String(error);
+      }
+      assert(message.includes("generated-dataset"), `malformed output succeeded: ${message}`);
     },
   },
   {

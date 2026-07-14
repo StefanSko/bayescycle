@@ -124,6 +124,28 @@ Path(value("--out")).write_text(text, encoding="utf-8")
     return path
 
 
+def _write_malformed_generation_engine(tmp_path: Path) -> Path:
+    path = tmp_path / "malformed_bayesite.py"
+    script = f"""#!{sys.executable}
+import json, sys
+from pathlib import Path
+if sys.argv[1:] == ["capabilities"]:
+    print(json.dumps({{
+        "capabilities_format": "v0-provisional",
+        "version": "0.test",
+        "commands": ["generate"],
+        "ir": {{"bayeswire_ir": 1}},
+        "schemas": {{}},
+    }}))
+    raise SystemExit(0)
+args = sys.argv[1:]
+Path(args[args.index("--out") + 1]).write_text('{{"bad":true}}\\n')
+"""
+    path.write_text(textwrap.dedent(script), encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def _canonical(path: Path, variables: dict[str, dict[str, Any]]) -> Path:
     path.write_text(
         json.dumps(
@@ -156,6 +178,44 @@ def test_portable_posterior_requires_verified_file_fingerprint(tmp_path: Path) -
     with pytest.raises(WorkflowError, match="fingerprint|posterior"):
         materialize_generation_run(output_dir=output, plan=plan, engine="bayesite")
     assert not output.exists()
+
+
+def test_malformed_engine_output_fails_without_publishing_run_metadata(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = _write_model(tmp_path)
+    design = _canonical(
+        tmp_path / "malformed-design.json",
+        {"x": {"dtype": "float64", "shape": [1], "values": [0.0]}},
+    )
+    parameters = _canonical(
+        tmp_path / "malformed-parameters.json",
+        {"alpha": {"dtype": "float64", "shape": [], "values": [0.5]}},
+    )
+    output = tmp_path / "malformed-run"
+    code = main(
+        [
+            "generate",
+            str(model),
+            "--design",
+            str(design),
+            "--source",
+            "fixed",
+            "--parameters",
+            str(parameters),
+            "--count",
+            "1",
+            "--seed",
+            "0",
+            "--engine",
+            str(_write_malformed_generation_engine(tmp_path)),
+            "-o",
+            str(output),
+        ]
+    )
+    assert code == 2
+    assert "generated-dataset" in capsys.readouterr().err
+    assert not (output / "run.json").exists()
 
 
 def _make_fixed_run(tmp_path: Path) -> Path:
