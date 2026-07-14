@@ -10,6 +10,7 @@ from bayeswire.model import (
     dimension_metadata_to_dict,
     model,
     model_dimensions,
+    with_prior,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "dimension_metadata_to_dict",
     "model",
     "model_dimensions",
+    "with_prior",
 ]

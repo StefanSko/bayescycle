@@ -7,6 +7,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
+from bayeswire.model.composition import with_prior
 from bayeswire.model.core import (
     Data,
     Observed,
@@ -54,4 +55,5 @@ __all__ = [
     "resolved_free_values",
     "resolved_stochastic_sites",
     "submodel_target",
+    "with_prior",
 ]

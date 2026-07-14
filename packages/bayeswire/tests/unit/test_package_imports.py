@@ -23,4 +23,5 @@ def test_top_level_exports_the_declaration_language() -> None:
         "dimension_metadata_to_dict",
         "model",
         "model_dimensions",
+        "with_prior",
     }
