@@ -102,6 +102,30 @@ export default [
     },
   },
   {
+    name: "selects a with_prior result over its source and target",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Observed, Param, model, with_prior
+from bayeswire.distributions import Normal
+
+@model
+class Target:
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta, 1.0))
+
+@model
+class Prior:
+    theta = Param(Normal(2.0, 0.5))
+
+Composed = with_prior(Target, prior=Prior)
+`);
+      assert(result.ok, `with_prior root compilation failed: ${result.message}`);
+      const document = JSON.parse(UTF8.decode(result.irBytes));
+      const serialized = JSON.stringify(document);
+      assert(serialized.includes('"value":2'), "compiled IR did not use the source prior");
+      assert(serialized.includes('"name":"y"'), "compiled IR did not retain the target outcome");
+    },
+  },
+  {
     name: "compiler executes in a dedicated worker",
     fn: async () => {
       const source = await fetchText("linear_regression.py");

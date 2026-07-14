@@ -8,6 +8,7 @@ CASES = [
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "selects the sole unreferenced composed root",
+    "selects a with_prior result over its source and target",
     "compiler executes in a dedicated worker",
     "module poisoning cannot affect the next compiler worker",
     "compiler timeout resets the isolated worker",

@@ -7,7 +7,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataShapeDim,
     ResolvedDataShapeSchema,
 )
-from bayeswire.model.composition import with_prior
+from bayeswire.model.composition import model_dependencies, with_prior
 from bayeswire.model.core import (
     Data,
     Observed,
@@ -50,6 +50,7 @@ __all__ = [
     "dimension_metadata_to_dict",
     "is_model_class",
     "model",
+    "model_dependencies",
     "model_dimensions",
     "model_meta",
     "resolved_free_values",

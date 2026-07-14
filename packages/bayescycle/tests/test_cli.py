@@ -1893,6 +1893,135 @@ def test_sample_selects_only_unreferenced_submodel_root(
     assert json.loads(capsys.readouterr().out)["model"] == "Study"
 
 
+def test_sample_selects_with_prior_result_over_source_and_target(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from bayeswire import Observed, Param, model, with_prior\n"
+        "from bayeswire.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Target:\n"
+        "    theta = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(theta, 1.0))\n"
+        "\n"
+        "@model\n"
+        "class Prior:\n"
+        "    theta = Param(Normal(2.0, 0.5))\n"
+        "\n"
+        "Composed = with_prior(Target, prior=Prior)\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["model"] == "Composed"
+
+
+def test_sample_selects_composed_root_across_mixed_submodel_dependencies(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from bayeswire import Observed, Param, Submodel, model, with_prior\n"
+        "from bayeswire.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Child:\n"
+        "    child_y = Observed(Normal(0.0, 1.0))\n"
+        "\n"
+        "@model\n"
+        "class Target:\n"
+        "    child = Submodel(Child)\n"
+        "    theta = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(theta, 1.0))\n"
+        "\n"
+        "@model\n"
+        "class Prior:\n"
+        "    theta = Param(Normal(2.0, 0.5))\n"
+        "\n"
+        "Composed = with_prior(Target, prior=Prior)\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"child.child_y": 0.0, "y": 0.25}\n', encoding="utf-8")
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["model"] == "Composed"
+
+
+def test_sample_selects_parent_that_uses_composed_model_as_submodel(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_file = tmp_path / "model.py"
+    model_file.write_text(
+        "from bayeswire import Observed, Param, Submodel, model, with_prior\n"
+        "from bayeswire.distributions import Normal\n"
+        "\n"
+        "@model\n"
+        "class Target:\n"
+        "    theta = Param(Normal(0.0, 1.0))\n"
+        "\n"
+        "@model\n"
+        "class Prior:\n"
+        "    theta = Param(Normal(2.0, 0.5))\n"
+        "\n"
+        "Composed = with_prior(Target, prior=Prior)\n"
+        "\n"
+        "@model\n"
+        "class Root:\n"
+        "    component = Submodel(Composed)\n"
+        "    y = Observed(Normal(component.theta, 1.0))\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / "input.json"
+    data_file.write_text('{"y": 0.25}\n', encoding="utf-8")
+
+    code = main(
+        [
+            "sample",
+            str(model_file),
+            "--data",
+            str(data_file),
+            "-o",
+            str(tmp_path / "run"),
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["model"] == "Root"
+
+
 def test_sample_requires_explicit_model_when_file_declares_multiple_models(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
