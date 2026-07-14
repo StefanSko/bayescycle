@@ -79,6 +79,24 @@ export default [
       assert(requests[2].identities.fit_hash === await hash(fit), "fit identity changed");
       assert(requests[2].identities.fit_model_hash === await hash(model), "fit model identity changed");
       assert(requests[2].identities.fit_data_hash === await hash(fitData), "fit data identity changed");
+      const invalidPortable = generateDatasets(model, {
+        design,
+        parameterSource: posteriorOf(fitArtifact(model, fitData, fit, "portable")),
+        count: 1,
+        seed: 0,
+      });
+      let portableError = "";
+      try {
+        await runtime.run({
+          type: "run", id: "invalid-portable", operation: "generate", plan: invalidPortable,
+        });
+      } catch (error) {
+        portableError = String(error);
+      }
+      assert(
+        portableError.includes("fingerprint") || portableError.includes("portable"),
+        `invalid portable posterior was published: ${portableError}`,
+      );
     },
   },
   {

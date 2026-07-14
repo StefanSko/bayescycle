@@ -143,6 +143,24 @@ export default [
         expectedCount: 2,
         expectedSeed: 7,
       }), "source kind");
+      await verifyGeneratedDatasets(prior, {
+        modelBytes: MODEL_BYTES,
+        designBytes: DESIGN_BYTES,
+        expectedSourceKind: "model-prior",
+        expectedCount: 2,
+        expectedSeed: 7,
+        modelPriorBytes: MODEL_BYTES,
+        authoredProvenance: null,
+      });
+      await rejects(() => verifyGeneratedDatasets(prior, {
+        modelBytes: MODEL_BYTES,
+        designBytes: DESIGN_BYTES,
+        expectedSourceKind: "model-prior",
+        expectedCount: 2,
+        expectedSeed: 7,
+        modelPriorBytes: UTF8.encode("other model"),
+        authoredProvenance: null,
+      }), "model-prior");
       const fixed = parseGeneratedDatasets(fixture);
       await rejects(() => verifyGeneratedDatasets(fixed, {
         modelBytes: MODEL_BYTES,
