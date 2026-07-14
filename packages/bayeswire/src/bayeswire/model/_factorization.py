@@ -17,13 +17,14 @@ from bayeswire.model._components import (
 )
 from bayeswire.model.decorator import (
     ResolvedFreeValue,
+    ResolvedObserved,
     ResolvedParam,
     ResolvedStochasticSite,
     attached_model_dimensions,
     is_model_class,
     model_meta,
 )
-from bayeswire.model.expr import ParamRef, VectorScatterOp
+from bayeswire.model.expr import DataRef, ParamRef, VectorScatterOp
 
 
 def _parameter_interface(
@@ -190,11 +191,59 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
     )
 
 
+def _is_canonical_free_value_owner(site: ResolvedStochasticSite, name: str) -> bool:
+    """Return whether ``site`` has the existing same-name free-value owner form."""
+    if site.name != name:
+        return False
+    if site.value == ParamRef(name):
+        return True
+    return isinstance(site.value, VectorScatterOp) and site.value.missing_values == ParamRef(name)
+
+
+def _validate_target_non_param_owners(
+    model_free_values: tuple[tuple[str, ResolvedFreeValue], ...],
+    params: dict[str, ResolvedParam],
+    sites: tuple[ResolvedStochasticSite, ...],
+) -> None:
+    """Require exactly one canonical owner for each retained free value."""
+    for name, _free_value in model_free_values:
+        if name in params:
+            continue
+        matches = tuple(site for site in sites if _is_canonical_free_value_owner(site, name))
+        if len(matches) != 1:
+            raise ValueError(
+                f"target free value {name!r} must have exactly one canonical owner site, "
+                f"found {len(matches)}; use a same-name direct ParamRef or "
+                "VectorScatterOp missing-values owner"
+            )
+
+
+def _validate_target_observed_owners(
+    observed_nodes: tuple[ResolvedObserved, ...],
+    sites: tuple[ResolvedStochasticSite, ...],
+) -> None:
+    """Require one structurally associated site for every observed declaration."""
+    for candidate in observed_nodes:
+        matches = tuple(
+            site
+            for site in sites
+            if site.value == DataRef(candidate.name) and site.distribution == candidate.distribution
+        )
+        if len(matches) != 1:
+            raise ValueError(
+                f"target Observed {candidate.name!r} must have exactly one direct owner "
+                f"site, found {len(matches)}"
+            )
+
+
 def _factor_outcome_model(target: object) -> _OutcomeKernel:
     """Return a target view separating Param priors from retained factors."""
+    if not isinstance(target, type) or not is_model_class(target):
+        raise TypeError(
+            "target must be a bayeswire model class decorated with @model or produced "
+            "by bindable_from_meta(...)"
+        )
     meta = model_meta(target)
-    if not isinstance(target, type):
-        raise TypeError("target must be a bayeswire model class")
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(target))
 
@@ -202,7 +251,11 @@ def _factor_outcome_model(target: object) -> _OutcomeKernel:
     free_values = dict(model.free_values)
     param_free_values = tuple(name for name in free_values if name in params)
     if param_free_values != tuple(params):
-        raise ValueError("target parameter free values must match its parameters in order")
+        raise ValueError(
+            "target free slots must include every Param exactly once in parameter order"
+        )
+    _validate_target_non_param_owners(model.free_values, params, model.stochastic_sites)
+    _validate_target_observed_owners(model.observed_nodes, model.stochastic_sites)
 
     owner_indices: set[int] = set()
     inputs: list[_ParameterInput] = []
