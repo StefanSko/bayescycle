@@ -39,6 +39,7 @@ export async function validatePortablePosterior({
           "chain_count", "parameter_count", "params", "num_draws", "seed",
         ],
         integerArrayKeys: ["shape", "chain_order", "coordinate_order"],
+        unrestrictedObjectKeys: ["values"],
       });
       validateFinite(document);
       return document;

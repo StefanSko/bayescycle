@@ -1,6 +1,7 @@
 export function parseStrictJson(text, label, options = {}) {
   const integerKeys = new Set(options.integerKeys ?? []);
   const integerArrayKeys = new Set(options.integerArrayKeys ?? []);
+  const unrestrictedObjectKeys = new Set(options.unrestrictedObjectKeys ?? []);
   let index = 0;
 
   const fail = (message) => { throw new Error(`${label} ${message}`); };
@@ -20,11 +21,11 @@ export function parseStrictJson(text, label, options = {}) {
     fail("has malformed string");
   };
   const integerToken = (token) => /^-?(?:0|[1-9]\d*)$/u.test(token);
-  const value = (key = null, integerArray = false) => {
+  const value = (key = null, integerArray = false, unrestricted = false) => {
     whitespace();
     const character = text[index];
     if (character === "{") {
-      objectValue();
+      objectValue(unrestricted || unrestrictedObjectKeys.has(key));
       return { value: undefined, allIntegerTokens: false };
     }
     if (character === "[") {
@@ -37,7 +38,7 @@ export function parseStrictJson(text, label, options = {}) {
         return { value: undefined, allIntegerTokens: true };
       }
       while (true) {
-        const parsed = value(null, requireIntegers);
+        const parsed = value(null, requireIntegers, unrestricted);
         allIntegerTokens &&= parsed.allIntegerTokens;
         whitespace();
         if (text[index] === "]") {
@@ -49,7 +50,9 @@ export function parseStrictJson(text, label, options = {}) {
       }
     }
     if (character === '"') {
-      if (integerArray || integerKeys.has(key)) fail(`field ${String(key)} must use an integer token`);
+      if (!unrestricted && (integerArray || integerKeys.has(key))) {
+        fail(`field ${String(key)} must use an integer token`);
+      }
       return { value: string(), allIntegerTokens: false };
     }
     const start = index;
@@ -58,12 +61,12 @@ export function parseStrictJson(text, label, options = {}) {
     }
     const token = text.slice(start, index);
     const isIntegerToken = integerToken(token);
-    if ((integerArray || integerKeys.has(key)) && !isIntegerToken) {
+    if (!unrestricted && (integerArray || integerKeys.has(key)) && !isIntegerToken) {
       fail(`field ${String(key)} must use an integer token`);
     }
     return { value: token, allIntegerTokens: isIntegerToken };
   };
-  const objectValue = () => {
+  const objectValue = (unrestricted = false) => {
     index += 1;
     const keys = new Set();
     let integerTypedValues = false;
@@ -84,7 +87,9 @@ export function parseStrictJson(text, label, options = {}) {
       whitespace();
       if (text[index] !== ":") fail("has malformed object field");
       index += 1;
-      const parsed = value(key, key === "values" && integerTypedValues);
+      const parsed = value(
+        key, key === "values" && integerTypedValues, unrestricted,
+      );
       if (key === "dtype") {
         integerTypedValues = parsed.value === "int32" || parsed.value === "int64";
       } else if (key === "values") {
