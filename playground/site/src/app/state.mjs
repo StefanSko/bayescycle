@@ -294,15 +294,23 @@ function reduceScopedWorkflow(state, event) {
         conditioning: clearGeneratedFit(state.conditioning),
       };
     }
-    case "dataset-source-edited":
+    case "dataset-source-edited": {
+      const cancelsAttempt = state.conditioning.attempt.status === "running" &&
+        state.conditioning.attempt.datasetSource !== event.source;
       return {
         ...state,
+        ...(cancelsAttempt ? {
+          projectRevision: event.revision,
+          run: { status: "idle" },
+        } : {}),
         conditioning: {
           ...state.conditioning,
+          ...(cancelsAttempt ? { attempt: { status: "idle" } } : {}),
           datasetSource: event.source,
           datasetSourceRevision: event.revision,
         },
       };
+    }
     case "conditioning-started":
       if (event.guard !== undefined && !matchesConditioningGuard(state, event.guard)) {
         return state;
@@ -408,7 +416,8 @@ function matchesGenerationGuard(state, guard) {
 function matchesConditioningGuard(state, guard) {
   if (guard.compileRevision !== (state.compile.revision ?? null) ||
       guard.settingsRevision !== state.conditioning.settingsRevision ||
-      guard.datasetSource !== state.conditioning.datasetSource) return false;
+      guard.datasetSource !== state.conditioning.datasetSource ||
+      guard.datasetSourceRevision !== state.conditioning.datasetSourceRevision) return false;
   if (guard.datasetSource === "generated") {
     return guard.selectionRevision === state.generation.selectionRevision;
   }

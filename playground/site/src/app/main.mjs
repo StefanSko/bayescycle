@@ -365,6 +365,7 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     compileRevision: state.compile.revision,
     settingsRevision: state.conditioning.settingsRevision,
     datasetSource,
+    datasetSourceRevision: state.conditioning.datasetSourceRevision,
     observed: state.documents.observed,
     selectionRevision: state.generation.selectionRevision,
   };
