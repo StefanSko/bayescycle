@@ -53,6 +53,10 @@ def test_native_document_surfaces_are_present() -> None:
         "artifact-generated-datasets",
         "generated-dataset-index",
         "selected-pair-summary",
+        "artifact-generation-plan",
+        "artifact-generation-run",
+        "artifact-generation-design",
+        "artifact-fixed-parameters",
     ):
         assert f'id="{element_id}"' in html
     assert "codemirror" not in html.lower()

@@ -45,10 +45,23 @@ export default [
           seed: 9,
         }),
       ];
+      const artifactNames = [];
       for (const [index, plan] of plans.entries()) {
         const result = await runtime.run({ type: "run", id: `generation-${index}`, operation: "generate", plan });
-        assert(result.artifacts[0]?.name === "generated_datasets.ndjson", "generated artifact missing");
+        artifactNames.push(result.artifacts.map((artifact) => artifact.name));
+        assert(result.artifacts.some((artifact) => artifact.name === "generated_datasets.ndjson"), "generated artifact missing");
       }
+      assert(JSON.stringify(artifactNames[0]) === JSON.stringify([
+        "model.ir.json", "design.json", "generation-plan.json", "fixed-parameters.json",
+        "generated_datasets.ndjson", "run.json",
+      ]), `fixed publication is incomplete: ${JSON.stringify(artifactNames[0])}`);
+      assert(JSON.stringify(artifactNames[1]) === JSON.stringify([
+        "model.ir.json", "design.json", "generation-plan.json",
+        "generated_datasets.ndjson", "run.json",
+      ]), `model-prior publication is incomplete: ${JSON.stringify(artifactNames[1])}`);
+      assert(JSON.stringify(artifactNames[2]) === JSON.stringify([
+        "generated_datasets.ndjson",
+      ]), `runtime-only posterior was incorrectly published: ${JSON.stringify(artifactNames[2])}`);
       assert(requests.length === 3, `expected one request per plan, got ${requests.length}`);
       for (const request of requests) {
         assert(request.command === "generate", `unexpected command: ${request.command}`);
