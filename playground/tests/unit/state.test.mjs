@@ -61,6 +61,48 @@ export default [
     },
   },
   {
+    name: "conditioning commit installs fit and artifacts atomically",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "c", dependencyKey: "ck",
+        datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "c", revision: 0,
+        operation: "condition", datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "conditioning-committed", requestId: "c", dependencyKey: "ck", revision: 0,
+        fit: { datasetSource: "observed", lineageKey: "lineage", artifacts: [] },
+        artifacts: [{ name: "posterior.ndjson" }], notice: null,
+      });
+      assert(state.conditioning.fit?.lineageKey === "lineage", "atomic commit lost fit");
+      assert(
+        state.artifacts.some((artifact) => artifact.name === "posterior.ndjson"),
+        "atomic commit lost posterior artifact",
+      );
+
+      state = initialState();
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "stale", dependencyKey: "sk",
+        datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "stale", revision: 0,
+        operation: "condition", datasetSource: "observed",
+      });
+      state = reduce(state, { type: "inference-settings-edited", revision: 1 });
+      state = reduce(state, {
+        type: "conditioning-committed", requestId: "stale", dependencyKey: "sk", revision: 0,
+        fit: { datasetSource: "observed", lineageKey: "stale", artifacts: [] },
+        artifacts: [{ name: "posterior.ndjson" }], notice: null,
+      });
+      assert(state.conditioning.fit === null, "stale atomic commit installed fit");
+      assert(state.artifacts.length === 0, "stale atomic commit installed artifacts");
+    },
+  },
+  {
     name: "scoped attempts preserve successful ancestors on failure",
     fn: () => {
       let state = initialState();
