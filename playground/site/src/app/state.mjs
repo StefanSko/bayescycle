@@ -140,6 +140,9 @@ export function reduce(state, event) {
 function reduceScopedWorkflow(state, event) {
   switch (event.type) {
     case "generation-started":
+      if (event.guard !== undefined && !matchesGenerationGuard(state, event.guard)) {
+        return state;
+      }
       return {
         ...state,
         generation: {
@@ -260,6 +263,9 @@ function reduceScopedWorkflow(state, event) {
       };
     }
     case "conditioning-started":
+      if (event.guard !== undefined && !matchesConditioningGuard(state, event.guard)) {
+        return state;
+      }
       return {
         ...state,
         conditioning: {
@@ -324,6 +330,23 @@ function clearGeneratedFit(conditioning) {
     conditioning.attempt.datasetSource === "generated"
     ? { ...conditioning, attempt: { status: "idle" }, fit: null }
     : conditioning;
+}
+
+function matchesGenerationGuard(state, guard) {
+  return guard.compileRevision === (state.compile.revision ?? null) &&
+    guard.inputRevision === state.generation.inputRevision &&
+    guard.settingsRevision === state.generation.settingsRevision &&
+    (guard.sourceKind !== "posterior" ||
+      guard.fitLineageKey === (state.conditioning.fit?.lineageKey ?? null));
+}
+
+function matchesConditioningGuard(state, guard) {
+  if (guard.compileRevision !== (state.compile.revision ?? null) ||
+      guard.settingsRevision !== state.conditioning.settingsRevision) return false;
+  if (guard.datasetSource === "generated") {
+    return guard.selectionRevision === state.generation.selectionRevision;
+  }
+  return guard.observed === state.documents.observed;
 }
 
 function freezeCollection(collection) {

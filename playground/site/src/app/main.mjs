@@ -293,9 +293,17 @@ async function generateCollection() {
     count: settings.count,
     seed: settings.seed,
   });
+  const guard = {
+    compileRevision: state.compile.revision,
+    inputRevision: state.generation.inputRevision,
+    settingsRevision: state.generation.settingsRevision,
+    sourceKind: sourceKind === "prior" ? "model-prior" : sourceKind,
+    fitLineageKey: sourceFitLineageKey ?? null,
+  };
   const dependencyKey = await generationInvalidationKey(plan);
   const requestId = crypto.randomUUID();
-  dispatch({ type: "generation-started", requestId, dependencyKey });
+  dispatch({ type: "generation-started", requestId, dependencyKey, guard });
+  if (state.generation.attempt.requestId !== requestId) return;
   try {
     const result = await runtime.run({
       type: "run", id: requestId, operation: "generate", plan,
@@ -346,6 +354,13 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
   const settings = sampleSettings();
+  const guard = {
+    compileRevision: state.compile.revision,
+    settingsRevision: state.conditioning.settingsRevision,
+    datasetSource,
+    observed: state.documents.observed,
+    selectionRevision: state.generation.selectionRevision,
+  };
   const dependencyKey = await conditioningDependencyKey(
     state.compile.irBytes,
     dataBytes,
@@ -353,8 +368,9 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
   );
   element("#progress").replaceChildren();
   dispatch({
-    type: "conditioning-started", requestId, dependencyKey, datasetSource,
+    type: "conditioning-started", requestId, dependencyKey, datasetSource, guard,
   });
+  if (state.conditioning.attempt.requestId !== requestId) return;
   dispatch({
     type: "run-started",
     requestId,
