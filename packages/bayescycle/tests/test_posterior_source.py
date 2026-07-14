@@ -123,6 +123,16 @@ def test_portable_posterior_rejects_overflowing_standard_number() -> None:
         _validate(posterior)
 
 
+def test_portable_posterior_rejects_oversized_integer_metadata() -> None:
+    posterior = (
+        (FIXTURE / "posterior.ndjson")
+        .read_bytes()
+        .replace(b'"target_accept":0.8', b'"target_accept":' + b"9" * 400, 1)
+    )
+    with pytest.raises(PortablePosteriorError):
+        _validate(posterior)
+
+
 def test_real_posterior_fixture_has_portable_authority() -> None:
     parsed = validate_portable_posterior(
         model_bytes=(FIXTURE / "model.ir.json").read_bytes(),

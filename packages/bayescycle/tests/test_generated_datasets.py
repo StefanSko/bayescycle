@@ -340,6 +340,22 @@ def test_resolver_verifies_prior_descriptor_and_posterior_draw_lineage() -> None
             fit_data_bytes=FIT_DATA_BYTES,
         )
 
+    reshaped = json.loads(json.dumps(documents))
+    reshaped[0]["parameter_schema"][0]["shape"] = [1]
+    for draw in reshaped[1:-1]:
+        draw["parameters"]["variables"]["alpha"]["shape"] = [1]
+    with pytest.raises(GeneratedDatasetsArtifactError, match="posterior|shape"):
+        verify_generated_datasets(
+            parse_generated_datasets(_encode(cast(list[dict[str, JsonValue]], reshaped))),
+            model_bytes=MODEL_BYTES,
+            design_bytes=DESIGN_BYTES,
+            expected_source_kind="posterior",
+            expected_count=2,
+            expected_seed=7,
+            posterior_bytes=posterior_bytes,
+            fit_data_bytes=FIT_DATA_BYTES,
+        )
+
 
 def test_rejects_malformed_truncated_nonfinite_and_oversized_streams() -> None:
     fixture = _fixture_bytes()
@@ -347,6 +363,8 @@ def test_rejects_malformed_truncated_nonfinite_and_oversized_streams() -> None:
         (b"\n".join(fixture.splitlines()[:-1]) + b"\n", "trailer"),
         (fixture.replace(b'"count":2', b'"count":3', 1), "count"),
         (fixture.replace(b'"draw_index":1', b'"draw_index":3', 1), "draw_index"),
+        (fixture.replace(b'"draw_index":0', b'"draw_index":0.0', 1), "draw_index"),
+        (fixture.replace(b'"draw_count":2', b'"draw_count":2.0', 1), "draw_count"),
         (fixture.replace(b'"values":[0.5]', b'"values":[NaN]', 1), "finite"),
         (
             fixture.replace(b'"values":[0.5]', b'"values":[' + b"9" * 400 + b"]", 1),
