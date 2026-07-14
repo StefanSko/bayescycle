@@ -30,9 +30,16 @@ run/
   recovery.json               # single-scenario recovery factual report
   sbc.json                    # simulation-based calibration factual report
   recovery_check.json         # fit-vs-truth factual recovery report
+  generated_datasets.ndjson   # paired parameter/complete-dataset draws
   posterior_check.json        # observed-vs-replicated factual check report
   fit.nc                      # derived ArviZ/NetCDF export, not source state
 ```
+
+`generated_datasets.ndjson` uses the provisional functional-generation
+contract in [`../../../docs/generation-plan-v0.md`](../../../docs/generation-plan-v0.md).
+It retains one natural-scale parameter document and one complete canonical
+dataset per draw, plus exact model/design/source lineage. A selected dataset is
+passed to conditioning without model-aware transformation.
 
 `data.json` and `simulated_data.json` use the canonical
 `bayescycle.data.json.v1` format documented in
@@ -78,6 +85,15 @@ Bayesite is one producer/consumer of the bayescycle run-directory v0 contract.
 The in-process bayesjax backend currently writes compatible posterior and
 prior-predictive streams where it has public runtime support; unsupported
 workflow reports fail explicitly during preparation.
+
+## Generation compatibility
+
+The paired artifact is additive in v0. `simulated_data.json`,
+`prior_predictive.ndjson`, and `posterior_predictive.ndjson` retain their
+existing source-specific meanings. Producers may emit them as explicit
+compatibility views alongside `generated_datasets.ndjson`; they must not rename
+or reinterpret them. New generated-dataset selection and paired recovery use
+the paired artifact.
 
 ## Compatibility rule
 

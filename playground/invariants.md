@@ -69,16 +69,36 @@ input to a later compilation.
    document is sent to an engine worker.
 4. Runtime results are named, immutable artifacts using the Bayescycle
    run-directory vocabulary, including `model.ir.json`, `data.json`,
-   `posterior.ndjson`, and `diagnostics.json`.
-5. The UI may parse artifacts through pure renderers. It does not inspect raw
+   `posterior.ndjson`, `diagnostics.json`, and the paired
+   `generated_datasets.ndjson` artifact defined by
+   [`docs/generation-plan-v0.md`](../docs/generation-plan-v0.md).
+5. Generation reaches the runtime through one immutable exact-key `generate`
+   plan. Application/UI modules do not select fixed, prior-predictive, or
+   posterior-predictive engine commands. `BrowserRuntime` may lower the three
+   explicit parameter-source variants to private compatibility commands until
+   the pinned engine provides its native bounded generation operation.
+6. Generated records retain one natural-scale parameter document paired with
+   one complete canonical dataset per draw. A requested count redraws the
+   parameter source per dataset; fixed parameters repeat only because their
+   source is a point mass. Generation never launches one Wasm worker per draw.
+7. Conditioning is a separate runtime transition over a selected canonical
+   dataset. A posterior source is available only while its exact model/data/fit
+   lineage survives.
+8. The UI may parse artifacts through pure renderers. It does not inspect raw
    IR node tags to infer required data, defaults, dimensions, parameter truth,
    partial-observation behavior, or engine capabilities.
-6. Observed data, simulation design, and parameter truth remain explicit JSON
-   documents. The browser does not synthesize semantic forms from model IR.
-7. Source, document, and settings revisions invalidate descendant artifacts.
-   Unknown or stale asynchronous completions cannot mutate current state.
-8. A failed follow-up operation does not erase artifacts from an earlier
-   successful run.
+9. Observed data, generation design, and fixed parameter values remain explicit
+   canonical JSON documents. The browser does not synthesize semantic forms
+   from model IR.
+10. Model, observed-data, design, fixed-value, generation-setting,
+    inference-setting, selected-draw, and fit revisions invalidate only their
+    descendants. Unknown or stale asynchronous completions cannot mutate
+    current state.
+11. A failed follow-up operation does not erase artifacts from an earlier
+    successful run.
+12. Capability failures are visible and bounded. The frontend never drops
+    score factors or claims that every scoreable model is ancestrally
+    sampleable.
 
 ## Browser application constraints
 
@@ -119,7 +139,13 @@ Tests must freeze these observable claims before implementation changes:
 - external-origin compiler requests are blocked in a real browser;
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
-- project edits and stale completions obey the revisioned state contract.
+- project edits and stale completions obey the revisioned state contract;
+- fixed, model-prior, and posterior generation share one exact plan and redraw
+  law while preserving parameter/dataset pairs;
+- malformed, oversized, unsupported, and lineage-mismatched generation fails
+  without deleting earlier artifacts;
+- selection and setting edits invalidate only their documented descendants;
+- application/UI source contains no private generation command names.
 
 Behavioral changes follow strict RED then GREEN commits. A RED commit freezes a
 reviewed observable test. Its GREEN commit changes implementation without

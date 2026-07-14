@@ -59,7 +59,9 @@ Included:
 - plain JSON normalization and strict `bayescycle.data.json.v1` input;
 - posterior sampling with per-chain progress;
 - diagnostics and pure artifact-to-SVG plots;
-- prior predictive, simulate, sample simulated data, posterior predictive, and
+- one functional dataset-generation workflow with fixed, model-prior, and
+  posterior parameter sources, uniform count/seed semantics, paired
+  parameter/dataset artifacts, generated-dataset selection, conditioning, and
   engine-owned recovery checks;
 - byte-preserving artifact downloads;
 - reviewed URL-fragment shares which never compile automatically;
@@ -93,12 +95,26 @@ should expand, or which implementation node represents partial observation.
 Generated controls may return only after a normative producer exposes the
 metadata they require.
 
+## Generation and conditioning
+
+[`generation-plan-v0.md`](generation-plan-v0.md) defines the shared immutable
+plan and paired-artifact contract. The application asks the runtime to generate
+datasets; it does not choose Bayesite commands. Fixed values, the authored
+prior of one closed model, and a compatible posterior fit differ only by their
+explicit parameter-source variant. Every generated dataset remains paired with
+the natural-scale parameters that produced it.
+
+Conditioning is a separate transition over observed data or one selected
+complete generated dataset. A future model composed by another authoring API is
+just another closed IR document and requires no frontend composition logic.
+
 ## State discipline
 
-Project state is represented by explicit immutable transitions. Source and
-document revisions identify every asynchronous result; an edit invalidates all
-descendant artifacts, and stale worker messages are ignored. A failed follow-up
-operation cannot erase an already completed posterior.
+Project state is represented by explicit immutable transitions. Model,
+observed-data, design, fixed-value, generation-setting, inference-setting,
+selected-draw, and fit revisions identify asynchronous dependencies. An edit
+invalidates only descendant artifacts, stale worker messages are ignored, and a
+failed follow-up cannot erase an earlier successful artifact.
 
 ## Security and trust
 

@@ -38,24 +38,40 @@ attempt's worker before the promise settles.
 
 ## Run
 
+All requests and plans are structured-cloneable immutable values. Binary
+artifacts are defensively copied at construction and runtime boundaries.
+
 ```text
-RunRequest {
+GenerateRequest {
   type: "run",
   id,
-  operation,
+  operation: "generate",
+  plan: Draw(JointPredict(ParameterSource, OutcomesOf))
+}
+ConditionRequest {
+  type: "run",
+  id,
+  operation: "condition",
   modelIr,
-  data?,
-  truth?,
-  fit?,
-  settings?
+  data,
+  settings,
+  pairedParameters?
 }
 RunProgress {type: "progress", id, chainId, retainedDraws, divergences}
 RunSuccess  {type: "artifacts", id, artifacts: [{name, mediaType, bytes}]}
 RunFailure  {type: "run-error", id, error: {kind, message}}
 ```
 
-Initial operations are `sample`, `diagnose`, `prior-predictive`, `simulate`,
-`posterior-predictive`, and `recover-check`.
+Generation plans, source variants, byte identity, count/seed bounds, redraw
+semantics, and paired output are defined by
+[`generation-plan-v0.md`](generation-plan-v0.md). `condition` performs
+inference over one canonical dataset and may produce posterior, diagnostics,
+and paired recovery artifacts. Conditioning remains separate from generation.
+
+The application uses these two workflow operations. BrowserRuntime keeps
+Bayesite command names private; temporary source-specific compatibility
+lowering is an adapter detail and is removed when the pinned Wasm exposes the
+native bounded generation operation.
 
 ## Artifact names
 
@@ -69,6 +85,11 @@ Runtime results use the run-directory vocabulary:
 - `posterior_predictive.ndjson`
 - `simulated_data.json`
 - `recovery_check.json`
+- `generated_datasets.ndjson`
+
+The three source-specific generation artifacts remain compatibility artifacts
+with their existing meanings. New selection and recovery behavior uses
+`generated_datasets.ndjson`; no legacy artifact is silently reinterpreted.
 
 A runtime may return fewer artifacts when an operation does not produce them.
 An unsupported follow-up is a failure of that operation only and never removes
