@@ -231,6 +231,11 @@ export default [
       assert(documents.length === 3, `unexpected generated artifact length: ${documents.length}`);
       assert(documents[1].dataset.variables.x !== undefined, "complete dataset lost design");
       assert(documents[1].dataset.variables.y !== undefined, "complete dataset lost outcome");
+      const modelArtifact = result.artifacts.find((entry) => entry.name === "model.ir.json");
+      assert(modelArtifact !== undefined, "published model artifact missing");
+      const firstByte = modelArtifact.bytes[0];
+      modelArtifact.bytes[0] = 0;
+      assert(modelArtifact.bytes[0] === firstByte, "published artifact bytes escaped by alias");
     },
   },
   {
