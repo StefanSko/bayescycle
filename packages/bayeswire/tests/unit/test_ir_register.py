@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 import pytest
@@ -65,6 +65,13 @@ class _TupleDistribution:
     """Extension used to verify registered tuple field kinds at runtime."""
 
     values: tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class _IgnoredFieldDistribution:
+    """Invalid extension whose constructor field is excluded from equality."""
+
+    marker: int = field(compare=False)
 
 
 @dataclass(frozen=True, eq=False)
@@ -142,6 +149,13 @@ def test_registered_distribution_rejects_nested_bare_containers(nested: object) 
 
     with pytest.raises(UnserializableValue, match=r"bare (dict|tuple)"):
         meta_to_dict(_meta_with(_MapDistribution({"nested": nested})))
+
+
+def test_register_distribution_rejects_noncomparing_constructor_fields() -> None:
+    with pytest.raises(
+        UnserializableDistribution, match=r"_IgnoredFieldDistribution.*compare=True"
+    ):
+        register_distribution(_IgnoredFieldDistribution)
 
 
 def test_register_distribution_requires_structural_dataclass_equality() -> None:

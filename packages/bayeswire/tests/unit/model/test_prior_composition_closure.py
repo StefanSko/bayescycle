@@ -55,6 +55,17 @@ class MappedTestDistribution:
 register_distribution(MappedTestDistribution, tag="MappedTestDistribution")
 
 
+@dataclass(frozen=True)
+class AlwaysEqualTestDistribution:
+    marker: int
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, AlwaysEqualTestDistribution)
+
+
+register_distribution(AlwaysEqualTestDistribution, tag="AlwaysEqualTestDistribution")
+
+
 def test_composition_freezes_all_ordered_merges() -> None:
     @model
     class Target:
@@ -218,6 +229,39 @@ def test_data_dimension_references_must_name_declared_scalar_data() -> None:
     )
 
     with pytest.raises(ValueError, match="source data 'context'.*unknown scalar data 'missing'"):
+        with_prior(Target, prior=source)
+
+
+def test_source_owner_matching_ignores_custom_distribution_equality() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    source_meta = model_meta(PriorDeclaration)
+    source = bindable_from_meta(
+        replace(
+            source_meta,
+            params={
+                "theta": replace(
+                    source_meta.params["theta"],
+                    distribution=AlwaysEqualTestDistribution(1),
+                ),
+            },
+            stochastic_sites=(
+                replace(
+                    source_meta.stochastic_sites[0],
+                    distribution=AlwaysEqualTestDistribution(2),
+                ),
+            ),
+        ),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+
+    with pytest.raises(ValueError, match="parameter 'theta'.*direct owner.*found 0"):
         with_prior(Target, prior=source)
 
 
@@ -962,7 +1006,14 @@ def test_composition_rejects_malformed_vector_scatter_static_roles() -> None:
         latent_site.value,
         missing_idx=DataRef("observed_idx"),
     )
-    sites[latent_index] = replace(latent_site, value=mismatched_missing)
+    same_label_nonowner = ResolvedStochasticSite(
+        name="latent",
+        distribution=Normal(ConstNode(0.0), ConstNode(2.0)),
+        value=ParamRef("theta"),
+    )
+    sites = list(meta.stochastic_sites)
+    sites.insert(latent_index, same_label_nonowner)
+    sites[latent_index + 1] = replace(latent_site, value=mismatched_missing)
     malformed = bindable_from_meta(
         replace(
             meta,
