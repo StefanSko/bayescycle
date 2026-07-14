@@ -1,0 +1,221 @@
+"""Validation of portable posterior sources used by functional generation."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from dataclasses import dataclass
+from typing import cast
+
+from bayescycle._run_artifacts.canonical_data import JsonValue
+
+MAX_POSTERIOR_SOURCE_BYTES = 8 * 1024 * 1024
+MAX_POSTERIOR_LINE_BYTES = 8 * 1024 * 1024
+_MAX_DEPTH = 64
+_MAX_SAFE_INTEGER = 9_007_199_254_740_991
+
+
+class PortablePosteriorError(ValueError):
+    """Raised when posterior bytes do not carry portable fit authority."""
+
+
+class _DuplicateKey(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class PosteriorParameter:
+    name: str
+    shape: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PosteriorSourceDraw:
+    source_draw_index: int
+    chain: int
+    draw: int
+    values: tuple[tuple[str, tuple[float, ...]], ...]
+
+
+@dataclass(frozen=True)
+class PortablePosterior:
+    parameters: tuple[PosteriorParameter, ...]
+    draws: tuple[PosteriorSourceDraw, ...]
+
+
+def validate_portable_posterior(
+    *, model_bytes: bytes, data_bytes: bytes, posterior_bytes: bytes
+) -> PortablePosterior:
+    """Validate a complete fit stream and its exact model/data fingerprint."""
+    if not posterior_bytes or len(posterior_bytes) > MAX_POSTERIOR_SOURCE_BYTES:
+        raise PortablePosteriorError(
+            f"posterior source must contain 1..{MAX_POSTERIOR_SOURCE_BYTES} bytes"
+        )
+    if not posterior_bytes.endswith(b"\n"):
+        raise PortablePosteriorError("posterior source must end in LF")
+    lines = posterior_bytes.split(b"\n")[:-1]
+    if len(lines) < 3:
+        raise PortablePosteriorError("posterior source needs header, draws, and trailer")
+    documents: list[JsonValue] = []
+    for line_number, line in enumerate(lines, start=1):
+        if not line or len(line) + 1 > MAX_POSTERIOR_LINE_BYTES:
+            raise PortablePosteriorError(
+                f"posterior source line {line_number} is empty or oversized"
+            )
+        _validate_depth(line, line_number)
+        try:
+            documents.append(
+                cast(
+                    JsonValue,
+                    json.loads(line.decode("utf-8"), object_pairs_hook=_unique_object),
+                )
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey) as exc:
+            raise PortablePosteriorError(
+                f"posterior source line {line_number} is not strict JSON: {exc}"
+            ) from exc
+
+    header = _object(documents[0], "posterior header")
+    trailer_envelope = _object(documents[-1], "posterior trailer envelope")
+    if tuple(trailer_envelope) != ("trailer",):
+        raise PortablePosteriorError("posterior trailer envelope is invalid")
+    trailer = _object(trailer_envelope["trailer"], "posterior trailer")
+    _marker(header, "posterior header")
+    _marker(trailer, "posterior trailer")
+    expected_fingerprint = _fingerprint(model_bytes, data_bytes)
+    for document, label in ((header, "header"), (trailer, "trailer")):
+        if document.get("model_data_fingerprint") != expected_fingerprint:
+            raise PortablePosteriorError(
+                f"posterior {label} fingerprint does not match exact model/data bytes"
+            )
+
+    raw_parameters = header.get("params")
+    raw_order = header.get("parameter_order")
+    if not isinstance(raw_parameters, list) or not isinstance(raw_order, list):
+        raise PortablePosteriorError("posterior header parameter metadata is missing")
+    parameters: list[PosteriorParameter] = []
+    for index, raw in enumerate(raw_parameters):
+        parameter = _object(raw, f"posterior params[{index}]")
+        name = parameter.get("name")
+        shape = parameter.get("shape")
+        if not isinstance(name, str) or not name or not isinstance(shape, list):
+            raise PortablePosteriorError(f"posterior params[{index}] is invalid")
+        dimensions = tuple(_integer(value, "posterior parameter shape") for value in shape)
+        parameters.append(PosteriorParameter(name, dimensions))
+    names = tuple(parameter.name for parameter in parameters)
+    if len(set(names)) != len(names) or raw_order != list(names):
+        raise PortablePosteriorError("posterior parameter order is invalid")
+
+    draw_documents = documents[1:-1]
+    draw_count = _integer(header.get("draw_count"), "posterior draw_count")
+    trailer_count = _integer(trailer.get("draw_count"), "posterior trailer draw_count")
+    if draw_count != len(draw_documents) or trailer_count != draw_count or draw_count < 1:
+        raise PortablePosteriorError("posterior draw count is incomplete")
+    draws: list[PosteriorSourceDraw] = []
+    seen_coordinates: set[tuple[int, int]] = set()
+    for source_index, raw in enumerate(draw_documents):
+        document = _object(raw, f"posterior draw {source_index}")
+        _marker(document, f"posterior draw {source_index}")
+        raw_index = document.get("draw_index", source_index)
+        if _integer(raw_index, "posterior draw_index") != source_index:
+            raise PortablePosteriorError("posterior draw indices are not contiguous")
+        chain = _integer(document.get("chain"), "posterior chain")
+        draw = _integer(document.get("draw"), "posterior draw")
+        if (chain, draw) in seen_coordinates:
+            raise PortablePosteriorError("posterior chain/draw coordinates are duplicated")
+        seen_coordinates.add((chain, draw))
+        if document.get("parameter_order") != list(names):
+            raise PortablePosteriorError("posterior draw parameter order is invalid")
+        values = _object(document.get("values"), f"posterior draw {source_index} values")
+        if tuple(values) != names:
+            raise PortablePosteriorError("posterior draw values do not match parameter order")
+        flattened: list[tuple[str, tuple[float, ...]]] = []
+        for parameter in parameters:
+            numbers = tuple(_flatten(values[parameter.name], parameter.name))
+            size = math.prod(parameter.shape)
+            expected_size = size if parameter.shape else 1
+            if len(numbers) != expected_size:
+                raise PortablePosteriorError(
+                    f"posterior value {parameter.name} does not match declared shape"
+                )
+            flattened.append((parameter.name, numbers))
+        draws.append(PosteriorSourceDraw(source_index, chain, draw, tuple(flattened)))
+    return PortablePosterior(tuple(parameters), tuple(draws))
+
+
+def _fingerprint(model_bytes: bytes, data_bytes: bytes) -> str:
+    framed = b"bayescycle-model-data-v1\n" + model_bytes + b"\n" + data_bytes
+    return f"sha256:{hashlib.sha256(framed).hexdigest()}"
+
+
+def _flatten(value: JsonValue, label: str) -> list[float]:
+    if isinstance(value, list):
+        result: list[float] = []
+        for item in value:
+            result.extend(_flatten(item, label))
+        return result
+    if not isinstance(value, int | float) or isinstance(value, bool) or not math.isfinite(value):
+        raise PortablePosteriorError(f"posterior value {label} must contain finite numbers")
+    return [float(value)]
+
+
+def _integer(value: object, label: str) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+        or value > _MAX_SAFE_INTEGER
+    ):
+        raise PortablePosteriorError(f"{label} must be a nonnegative safe integer")
+    return value
+
+
+def _marker(document: dict[str, JsonValue], label: str) -> None:
+    if document.get("draws_format") != "v0-provisional":
+        raise PortablePosteriorError(f"{label} format is invalid")
+
+
+def _object(value: object, label: str) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise PortablePosteriorError(f"{label} must be an object")
+    return cast(dict[str, JsonValue], value)
+
+
+def _unique_object(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
+    result: dict[str, JsonValue] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateKey(key)
+        result[key] = value
+    return result
+
+
+def _validate_depth(line: bytes, line_number: int) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in line:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:
+                escaped = True
+            elif byte == 0x22:
+                in_string = False
+        elif byte == 0x22:
+            in_string = True
+        elif byte in (0x7B, 0x5B):
+            depth += 1
+            if depth > _MAX_DEPTH:
+                raise PortablePosteriorError(
+                    f"posterior source line {line_number} exceeds nesting depth"
+                )
+        elif byte in (0x7D, 0x5D):
+            depth -= 1
+            if depth < 0:
+                raise PortablePosteriorError(
+                    f"posterior source line {line_number} has malformed nesting"
+                )
+    if in_string or depth != 0:
+        raise PortablePosteriorError(f"posterior source line {line_number} has malformed nesting")

@@ -18,6 +18,10 @@ from bayescycle._run_artifacts.generated_datasets import (
     parse_generated_datasets,
     verify_generated_datasets,
 )
+from bayescycle._run_artifacts.posterior_source import (
+    PortablePosteriorError,
+    validate_portable_posterior,
+)
 from bayescycle._workflow.filesystem import _ensure_output_dir, _validate_output_dir
 from bayescycle._workflow.generation_plan import (
     Draw,
@@ -140,6 +144,14 @@ def materialize_generation_run(*, output_dir: Path, plan: Draw, engine: str) -> 
             raise WorkflowError(
                 "generation run publication requires a portable posterior fingerprint"
             )
+        try:
+            validate_portable_posterior(
+                model_bytes=fit.model_ir_bytes,
+                data_bytes=fit.data_bytes,
+                posterior_bytes=fit.posterior_bytes,
+            )
+        except PortablePosteriorError as exc:
+            raise WorkflowError(f"posterior source is not portable: {exc}") from exc
     _ensure_output_dir(run_dir)
     model_path = run_dir / "model.ir.json"
     design_path = run_dir / "design.json"
@@ -482,6 +494,19 @@ def _verify_generated_output(plan: Draw, output_path: Path) -> None:
         model_bytes=plan.distribution.outcomes.model_ir_bytes,
         design_bytes=plan.distribution.outcomes.design_bytes,
         fixed_parameters_bytes=fixed.parameters_bytes if isinstance(fixed, Fixed) else None,
+        model_prior_bytes=fixed.model_ir_bytes if isinstance(fixed, ModelPrior) else None,
+        authored_provenance=(
+            (
+                fixed.authored_provenance.claimed_source_model_hash,
+                fixed.authored_provenance.claimed_outcome_model_hash,
+            )
+            if isinstance(fixed, ModelPrior) and fixed.authored_provenance is not None
+            else None
+        ),
+        posterior_bytes=(
+            fixed.fit_artifact.posterior_bytes if isinstance(fixed, PosteriorOf) else None
+        ),
+        fit_data_bytes=(fixed.fit_artifact.data_bytes if isinstance(fixed, PosteriorOf) else None),
         expected_source_kind=(
             "fixed"
             if isinstance(fixed, Fixed)

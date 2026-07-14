@@ -262,7 +262,7 @@ def test_resolver_verifies_prior_descriptor_and_posterior_draw_lineage() -> None
 
     posterior_bytes = _posterior_source()
     documents = _documents()
-    source = {
+    source: dict[str, JsonValue] = {
         "kind": "posterior",
         "fit_hash": _sha256(posterior_bytes),
         "fit_model_hash": _sha256(MODEL_BYTES),

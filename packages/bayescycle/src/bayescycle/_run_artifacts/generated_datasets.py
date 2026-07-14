@@ -14,6 +14,10 @@ from bayescycle._run_artifacts.canonical_data import (
     JsonValue,
     parse_data_doc,
 )
+from bayescycle._run_artifacts.posterior_source import (
+    PortablePosteriorError,
+    validate_portable_posterior,
+)
 
 MAX_GENERATED_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_GENERATED_LINE_BYTES = 8 * 1024 * 1024
@@ -88,6 +92,17 @@ class _SchemaEntry:
 
 
 @dataclass(frozen=True)
+class _ParameterSourceDescriptor:
+    kind: str
+    source_hash: str | None = None
+    model_hash: str | None = None
+    provenance: tuple[str, str] | None = None
+    fit_hash: str | None = None
+    fit_model_hash: str | None = None
+    fit_data_hash: str | None = None
+
+
+@dataclass(frozen=True)
 class GeneratedDatasetDraw:
     """One validated parameter/dataset pair."""
 
@@ -95,6 +110,9 @@ class GeneratedDatasetDraw:
     parameters: DataDoc
     dataset: DataDoc
     source_kind: str
+    source_draw_index: int | None
+    source_chain: int | None
+    source_draw: int | None
     _parameters_bytes: bytes = field(repr=False)
     _dataset_bytes: bytes = field(repr=False)
 
@@ -119,7 +137,7 @@ class GeneratedDatasetsArtifact:
     seed: int
     draws: tuple[GeneratedDatasetDraw, ...]
     bytes: bytes
-    _source_hash: str | None = field(repr=False)
+    _source: _ParameterSourceDescriptor = field(repr=False)
 
     def select(self, draw_index: int) -> GeneratedDatasetSelection:
         """Select exact parameter and dataset bytes for one draw."""
@@ -163,7 +181,8 @@ def parse_generated_datasets(data: bytes) -> GeneratedDatasetsArtifact:
     _phases(header["workflow_phases"], "header")
     generation_model_hash = _hash(header["generation_model_hash"], "generation_model_hash")
     design_hash = _hash(header["design_hash"], "design_hash")
-    source_kind, source_hash = _parameter_source(header["parameter_source"])
+    source = _parameter_source(header["parameter_source"])
+    source_kind = source.kind
     count = _integer(header["count"], "count", minimum=1, maximum=_MAX_COUNT)
     seed = _integer(header["seed"], "seed", minimum=0, maximum=_MAX_SAFE_INTEGER)
     if header["draw_index_base"] != "zero_based_generation_order":
@@ -219,7 +238,9 @@ def parse_generated_datasets(data: bytes) -> GeneratedDatasetsArtifact:
         _validate_generation_doc(dataset, f"draw {draw_index}.dataset")
         _matches_schema(parameters, parameter_schema, f"draw {draw_index}.parameters")
         _matches_schema(dataset, dataset_schema, f"draw {draw_index}.dataset")
-        lineage_kind = _lineage(draw["source_lineage"], source_kind, draw_index)
+        lineage_kind, source_index, source_chain, source_draw = _lineage(
+            draw["source_lineage"], source_kind, draw_index
+        )
         parameters_span, after_parameters = _top_level_value_span(raw_line, b"parameters", 0)
         dataset_span, _ = _top_level_value_span(raw_line, b"dataset", after_parameters)
         draws.append(
@@ -228,6 +249,9 @@ def parse_generated_datasets(data: bytes) -> GeneratedDatasetsArtifact:
                 parameters=parameters,
                 dataset=dataset,
                 source_kind=lineage_kind,
+                source_draw_index=source_index,
+                source_chain=source_chain,
+                source_draw=source_draw,
                 _parameters_bytes=parameters_span + b"\n",
                 _dataset_bytes=dataset_span + b"\n",
             )
@@ -241,7 +265,7 @@ def parse_generated_datasets(data: bytes) -> GeneratedDatasetsArtifact:
         seed=seed,
         draws=tuple(draws),
         bytes=source_bytes,
-        _source_hash=source_hash,
+        _source=source,
     )
 
 
@@ -254,6 +278,10 @@ def verify_generated_datasets(
     expected_source_kind: str | None = None,
     expected_count: int | None = None,
     expected_seed: int | None = None,
+    model_prior_bytes: bytes | None = None,
+    authored_provenance: tuple[str, str] | None = None,
+    posterior_bytes: bytes | None = None,
+    fit_data_bytes: bytes | None = None,
 ) -> None:
     """Verify hash-resolved inputs and requested plan identity."""
     if expected_source_kind is not None and artifact.source_kind != expected_source_kind:
@@ -280,17 +308,77 @@ def verify_generated_datasets(
             raise GeneratedDatasetsArtifactError(
                 f"draw {draw.draw_index} dataset does not preserve the resolved design prefix"
             )
-    if artifact.source_kind != "fixed":
-        return
-    if fixed_parameters_bytes is None:
-        raise GeneratedDatasetsArtifactError("fixed parameters bytes are required for verification")
-    if _sha256(fixed_parameters_bytes) != artifact._source_hash:
-        raise GeneratedDatasetsArtifactError("fixed parameters hash does not match resolved bytes")
-    fixed = _strict_data_bytes(fixed_parameters_bytes, "fixed parameters")
-    for draw in artifact.draws:
-        if draw.parameters != fixed:
+    if artifact.source_kind == "fixed":
+        if fixed_parameters_bytes is None:
             raise GeneratedDatasetsArtifactError(
-                f"draw {draw.draw_index} parameters differ from fixed parameters"
+                "fixed parameters bytes are required for verification"
+            )
+        if _sha256(fixed_parameters_bytes) != artifact._source.source_hash:
+            raise GeneratedDatasetsArtifactError(
+                "fixed parameters hash does not match resolved bytes"
+            )
+        fixed = _strict_data_bytes(fixed_parameters_bytes, "fixed parameters")
+        for draw in artifact.draws:
+            if draw.parameters != fixed:
+                raise GeneratedDatasetsArtifactError(
+                    f"draw {draw.draw_index} parameters differ from fixed parameters"
+                )
+        return
+    if artifact.source_kind == "model-prior":
+        if model_prior_bytes is None:
+            raise GeneratedDatasetsArtifactError(
+                "model-prior model bytes are required for verification"
+            )
+        if (
+            _sha256(model_prior_bytes) != artifact._source.model_hash
+            or artifact._source.provenance != authored_provenance
+        ):
+            raise GeneratedDatasetsArtifactError(
+                "model-prior descriptor does not match the requested source"
+            )
+        return
+    if posterior_bytes is None or fit_data_bytes is None:
+        raise GeneratedDatasetsArtifactError(
+            "posterior and fit-data bytes are required for verification"
+        )
+    if (
+        _sha256(posterior_bytes) != artifact._source.fit_hash
+        or _sha256(model_bytes) != artifact._source.fit_model_hash
+        or _sha256(fit_data_bytes) != artifact._source.fit_data_hash
+    ):
+        raise GeneratedDatasetsArtifactError(
+            "posterior descriptor does not match the requested source"
+        )
+    try:
+        posterior = validate_portable_posterior(
+            model_bytes=model_bytes,
+            data_bytes=fit_data_bytes,
+            posterior_bytes=posterior_bytes,
+        )
+    except PortablePosteriorError as exc:
+        raise GeneratedDatasetsArtifactError(str(exc)) from exc
+    for draw in artifact.draws:
+        source_index = draw.source_draw_index
+        if source_index is None or source_index >= len(posterior.draws):
+            raise GeneratedDatasetsArtifactError(
+                f"draw {draw.draw_index} posterior source index is invalid"
+            )
+        source_draw = posterior.draws[source_index]
+        if (draw.source_chain, draw.source_draw) != (source_draw.chain, source_draw.draw):
+            raise GeneratedDatasetsArtifactError(
+                f"draw {draw.draw_index} posterior chain/draw lineage does not match"
+            )
+        expected = source_draw.values
+        actual = tuple(
+            (
+                entry.name,
+                tuple(float(value) for value in entry.variable.values),
+            )
+            for entry in draw.parameters.variables
+        )
+        if actual != expected:
+            raise GeneratedDatasetsArtifactError(
+                f"draw {draw.draw_index} parameters differ from posterior source"
             )
 
 
@@ -371,20 +459,22 @@ def _hash(value: JsonValue, label: str) -> str:
     return value
 
 
-def _parameter_source(value: JsonValue) -> tuple[str, str | None]:
+def _parameter_source(value: JsonValue) -> _ParameterSourceDescriptor:
     source = _object(value, "parameter_source")
     kind = source.get("kind")
     if kind == "fixed":
         _exact_keys(source, ("kind", "parameters_hash"), "fixed parameter_source")
-        return "fixed", _hash(source["parameters_hash"], "parameters_hash")
+        return _ParameterSourceDescriptor(
+            kind="fixed", source_hash=_hash(source["parameters_hash"], "parameters_hash")
+        )
     if kind == "model-prior":
         _exact_keys(
             source,
             ("kind", "model_hash", "authored_provenance"),
             "model-prior parameter_source",
         )
-        _hash(source["model_hash"], "model_hash")
         provenance = source["authored_provenance"]
+        resolved_provenance = None
         if provenance is not None:
             claims = _object(provenance, "authored_provenance")
             _exact_keys(
@@ -392,18 +482,27 @@ def _parameter_source(value: JsonValue) -> tuple[str, str | None]:
                 ("claimed_source_model_hash", "claimed_outcome_model_hash"),
                 "authored_provenance",
             )
-            _hash(claims["claimed_source_model_hash"], "claimed_source_model_hash")
-            _hash(claims["claimed_outcome_model_hash"], "claimed_outcome_model_hash")
-        return "model-prior", None
+            resolved_provenance = (
+                _hash(claims["claimed_source_model_hash"], "claimed_source_model_hash"),
+                _hash(claims["claimed_outcome_model_hash"], "claimed_outcome_model_hash"),
+            )
+        return _ParameterSourceDescriptor(
+            kind="model-prior",
+            model_hash=_hash(source["model_hash"], "model_hash"),
+            provenance=resolved_provenance,
+        )
     if kind == "posterior":
         _exact_keys(
             source,
             ("kind", "fit_hash", "fit_model_hash", "fit_data_hash"),
             "posterior parameter_source",
         )
-        for name in ("fit_hash", "fit_model_hash", "fit_data_hash"):
-            _hash(source[name], name)
-        return "posterior", None
+        return _ParameterSourceDescriptor(
+            kind="posterior",
+            fit_hash=_hash(source["fit_hash"], "fit_hash"),
+            fit_model_hash=_hash(source["fit_model_hash"], "fit_model_hash"),
+            fit_data_hash=_hash(source["fit_data_hash"], "fit_data_hash"),
+        )
     raise GeneratedDatasetsArtifactError(f"parameter_source has unknown kind {kind!r}")
 
 
@@ -461,7 +560,9 @@ def _matches_schema(document: DataDoc, schema: tuple[_SchemaEntry, ...], label: 
         raise GeneratedDatasetsArtifactError(f"{label} does not match declared schema")
 
 
-def _lineage(value: JsonValue, source_kind: str, draw_index: int) -> str:
+def _lineage(
+    value: JsonValue, source_kind: str, draw_index: int
+) -> tuple[str, int | None, int | None, int | None]:
     lineage = _object(value, f"draw {draw_index} source_lineage")
     if source_kind == "fixed":
         _exact_keys(lineage, ("kind",), f"draw {draw_index} fixed source_lineage")
@@ -487,7 +588,16 @@ def _lineage(value: JsonValue, source_kind: str, draw_index: int) -> str:
         raise GeneratedDatasetsArtifactError(
             f"draw {draw_index} source lineage kind disagrees with parameter source"
         )
-    return source_kind
+    if source_kind == "posterior":
+        return (
+            source_kind,
+            cast(int, lineage["source_draw_index"]),
+            cast(int, lineage["chain"]),
+            cast(int, lineage["draw"]),
+        )
+    if source_kind == "model-prior":
+        return source_kind, cast(int, lineage["source_draw_index"]), None, None
+    return source_kind, None, None, None
 
 
 def _integer(value: JsonValue, label: str, *, minimum: int, maximum: int) -> int:
