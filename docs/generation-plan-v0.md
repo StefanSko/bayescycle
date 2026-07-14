@@ -112,10 +112,11 @@ Posterior-source validation requires all of the following:
    required in the trailer;
 4. every draw has the declared finite constrained values and a unique global
    index whose chain/per-chain draw coordinates agree with stream order;
-5. `posterior_identity_hash`, when present, is present in both header and
-   trailer and equals the identity computed by the engine from the supplied
-   model and fit data. When absent from both, the engine validates the declared
-   parameter layout against the decoded model instead;
+5. the engine always validates the declared parameter names, order, shapes, and
+   constrained values against the decoded model bound to the fit data.
+   `posterior_identity_hash`, when present, is additionally present in both
+   header and trailer and equals the identity computed from that model and fit
+   data;
 6. `model_data_fingerprint` is either present in both header and trailer with
    equal values that match the normative exact-byte framing, or absent from
    both. An absent fingerprint is accepted only for a fit value produced by the
@@ -128,7 +129,11 @@ identity. A conforming backend fit without posterior identity remains usable
 when its exact fingerprint and model-checked layout succeed.
 
 The generation design may differ from the fit data, but must bind the same
-closed model. If this exact association is unavailable or stale, the posterior
+closed model. Before dispatch, the engine binds the outcome model to the new
+design and requires every posterior parameter name, order, resolved shape, and
+constraint to remain compatible with that generation-bound layout. A
+data-dependent size or constraint change therefore fails before source-draw
+selection. If the exact fit association is unavailable or stale, the posterior
 source is unavailable rather than reconstructed from parameter names.
 
 ## Immutable plan values
@@ -259,7 +264,10 @@ All boundaries reject values rather than clamp them:
 
 - `count`: safe JSON integer in `1..=1000`;
 - `seed`: safe JSON integer in `0..=9007199254740991`;
+- `generation-plan.json` or generation `run.json`: at most 1 MiB each;
 - model IR, design, fixed parameters, fit data, or fit input: at most 8 MiB each;
+- one metadata path: at most 255 UTF-8 bytes; backend identity: at most 64 ASCII
+  letters, digits, dots, underscores, or hyphens;
 - one paired-artifact NDJSON line: at most 8 MiB including its terminating LF;
 - complete paired artifact: at most 64 MiB including every LF;
 - JSON container depth: at most 64. The root object has depth 1; entering an
@@ -399,8 +407,9 @@ Source lineage is one exact variant:
 ```
 
 Posterior indices identify the retained fit record selected with replacement.
-For fixed sources, every `parameters` document byte-semantically equals the
-fixed source after canonical validation. For model-prior sources,
+For fixed sources, every `parameters` document is equal to the fixed source as
+an ordered strict canonical data value after parsing; insignificant source-file
+whitespace is not part of this equality. For model-prior sources,
 `source_draw_index` equals `draw_index`. For posterior sources, the global
 source index, chain, and per-chain draw identify one validated retained record,
 and `parameters` equals that record's declared constrained parameter values.
@@ -409,8 +418,11 @@ replacement; every repetition still receives a fresh outcome draw.
 
 A standalone parser verifies exact keys, stream structure, schemas, and internal
 index relationships. Resolver-backed verification additionally recomputes all
-verified hashes and checks fixed values or posterior parameters against the
-source payload. Only resolver-backed verification authorizes recovery claims.
+verified hashes, checks fixed values or posterior parameters against the source
+payload, and requires each dataset to begin with every design variable in exact
+design order with equal dtype, shape, and values. This comparison uses the
+hash-resolved canonical design document and requires no model-IR inspection.
+Only resolver-backed verification authorizes recovery claims.
 
 ### Trailer
 
@@ -440,9 +452,15 @@ non-finite or unsafe-integer values, invalid canonical documents, excessive
 depth, oversized input, and trailing records.
 
 Selection returns immutable copies of both the canonical parameter document and
-canonical complete dataset for one index. Download paths preserve the exact
-validated bytes; parsing does not authorize reserialization of the downloaded
-artifact.
+canonical complete dataset for one index. Their standalone bytes use one
+normative projection: recursively preserve recorded object/variable order,
+serialize compact UTF-8 JSON with no insignificant whitespace or non-finite
+values, and append exactly one LF. Python uses `separators=(",", ":")`; the
+JavaScript serializer must produce the same bytes. These projected bytes are the
+exact `data.json` bytes used for later conditioning and fingerprinting.
+
+The downloaded paired artifact itself preserves its exact validated input bytes;
+parsing and selection do not authorize reserialization of that download.
 
 ## Runtime request
 
@@ -519,17 +537,21 @@ Generation `run.json` is a distinct exact-key profile:
 }
 ```
 
-`backend` is a non-empty backend identity; it does not embed an executable path.
-Input order is design first, then no source entry for model-prior, one
-`fixed-parameters` entry for fixed, or `source-posterior` followed by
-`source-fit-data` for posterior. The posterior formats are respectively
-`v0-provisional` and `bayescycle.data.json.v1`. All nested objects reject unknown
-or missing keys.
+`backend` is a bounded backend identity; it does not embed an executable path.
+Role-to-path mappings are exact: plan → `generation-plan.json`, model →
+`model.ir.json`, design → `design.json`, fixed parameters →
+`fixed-parameters.json`, source posterior → `source-posterior.ndjson`, source fit
+data → `source-fit-data.json`, and output → `generated_datasets.ndjson`. Input
+order is design first, then no source entry for model-prior, one fixed entry for
+fixed, or source posterior followed by source fit data for posterior. The
+posterior formats are respectively `v0-provisional` and
+`bayescycle.data.json.v1`. Paths may not be duplicated. All nested objects
+reject unknown or missing keys.
 
-Every path is a normalized non-empty POSIX relative path with no `.` or `..`
-segment. Resolution must remain beneath the run directory; required files must
-be regular files and no path component may be a symbolic link. Hashes are
-recomputed from exact file bytes before plan interpretation or replay.
+The canonical names are single normalized POSIX path segments. Required files
+must be regular files, no required path may be a symbolic link, and resolution
+must remain beneath the run directory. Hashes are recomputed from exact file
+bytes before plan interpretation or replay.
 Generation replay branches on the distinct format marker, consumes closed IR
 directly, and does not re-execute or require the original Python model source.
 Existing `bayescycle.run.v1` profiles and their external-source verification

@@ -52,40 +52,40 @@ automated browser suite. Findings become a new RED test before a fix.
 The next work orders migrate the source-specific controls onto the contract in
 [`generation-plan-v0.md`](generation-plan-v0.md):
 
-18. **B0 contract reconciliation.** Freeze the source variants, redraw law,
-    conditioning boundary, capability failures, paired artifact, provenance,
-    scoped invalidation, compatibility behavior, and non-goals before behavior
-    code. Obtain an independent invariant review.
-19. **B1 paired artifact.** RED shared Python/JavaScript golden fixture,
-    malformed/oversized streams, exact order/count, finite values, selection,
-    and byte-preserving downloads. GREEN pure bounded codecs.
-20. **B2 generation plans.** RED exact immutable variants, bounds (including
-    safe integers in values, shapes, and indices), unknown-key rejection,
-    Python/JavaScript parity, convenience equivalence, identities, and
-    invalidation keys. GREEN typed Python values and pure browser values.
-21. **B3 runtime lowering.** RED one recording-executor `generate` operation,
-    byte preservation, visible capability failures, stale/failed preservation,
-    and no private generation verbs in application code. GREEN lowers only
-    exact legacy-compatible plans and rejects the rest before dispatch; native
-    paired-result execution replaces compatibility lowering at B4.
-22. **B4 native generation.** In a fresh Bayesite branch, RED one bounded pure
-    request with deterministic per-dataset redraw, fixed/posterior validation,
-    paired output, capability rejection, and CLI/Wasm parity. GREEN one core
-    operation; stage the reviewed Wasm release rather than worker fan-out.
-23. **B5 scoped reducer migration.** RED independent revisions and dependency
-    keys for model, documents, source, generation, selection, inference, and
-    fits. GREEN immutable reducer transitions and stale completion rejection.
-24. **B6 shared generation UI.** RED accessible source radios, conditional fixed
-    values, compatible-posterior availability, common count/seed, paired
-    download, bounded errors, and no automatic execution. GREEN native controls
-    that call the generation convenience operation only.
-25. **B7 selection and conditioning.** RED a `1..N` selector, canonical dataset
-    and paired-parameter previews, fit-selected action, generating/fit-model
-    lineage, recovery, and selection-scoped invalidation. GREEN immutable pair
-    selection and runtime-boundary dataset materialization.
-26. **B8 compatibility/publication.** Preserve legacy artifact meanings and
-    shared projects; update examples, version/deployment checks, release docs,
-    changelog, and fresh-browser publication smoke.
+- **B0 contract reconciliation.** Freeze the source variants, redraw law,
+  conditioning boundary, capability failures, paired artifact, provenance,
+  scoped invalidation, compatibility behavior, and non-goals before behavior
+  code. Obtain an independent invariant review.
+- **B1 paired artifact.** RED shared Python/JavaScript golden fixture,
+  malformed/oversized streams, exact order/count, finite values, selection,
+  and byte-preserving downloads. GREEN pure bounded codecs.
+- **B2 generation plans.** RED exact immutable variants, bounds (including
+  safe integers in values, shapes, and indices), unknown-key rejection,
+  Python/JavaScript parity, convenience equivalence, identities, and
+  invalidation keys. GREEN typed Python values and pure browser values.
+- **B3 runtime lowering.** RED one recording-executor `generate` operation,
+  byte preservation, visible capability failures, stale/failed preservation,
+  and no private generation verbs in application code. GREEN lowers only
+  exact legacy-compatible plans and rejects the rest before dispatch; native
+  paired-result execution replaces compatibility lowering at B4.
+- **B4 native generation.** In a fresh Bayesite branch, RED one bounded pure
+  request with deterministic per-dataset redraw, fixed/posterior validation,
+  paired output, capability rejection, and CLI/Wasm parity. GREEN one core
+  operation; stage the reviewed Wasm release rather than worker fan-out.
+- **B5 scoped reducer migration.** RED independent revisions and dependency
+  keys for model, documents, source, generation, selection, inference, and
+  fits. GREEN immutable reducer transitions and stale completion rejection.
+- **B6 shared generation UI.** RED accessible source radios, conditional fixed
+  values, compatible-posterior availability, common count/seed, paired
+  download, bounded errors, and no automatic execution. GREEN native controls
+  that call the generation convenience operation only.
+- **B7 selection and conditioning.** RED a `1..N` selector, canonical dataset
+  and paired-parameter previews, fit-selected action, generating/fit-model
+  lineage, recovery, and selection-scoped invalidation. GREEN immutable pair
+  selection and runtime-boundary dataset materialization.
+- **B8 compatibility/publication.** Preserve legacy artifact meanings and
+  shared projects; update examples, version/deployment checks, release docs,
+  changelog, and fresh-browser publication smoke.
 
 Each behavior work order is a reviewed RED commit followed by a minimum GREEN
 commit that does not alter the frozen RED tests. Specification defects receive
