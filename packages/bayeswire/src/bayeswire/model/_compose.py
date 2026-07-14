@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bayeswire.model._closure import _validate_model_closure
 from bayeswire.model._components import (
     _ClosedComposition,
     _ComposedKernel,
@@ -9,6 +10,8 @@ from bayeswire.model._components import (
     _ParameterExport,
     _ParameterInput,
     _ParameterKernel,
+    _snapshot_dimensions,
+    _snapshot_model,
     _variable_dimensions,
     _Wire,
     _Wiring,
@@ -170,6 +173,11 @@ def _close_composition(composed: _ComposedKernel) -> _ClosedComposition:
         stochastic_sites=tuple(export.site for export in source.exports) + outcomes.retained_sites,
     )
     dimensions = _merge_dimensions(source, outcomes)
+    _validate_model_closure(
+        _snapshot_model(meta),
+        _snapshot_dimensions(dimensions),
+        role="composed model",
+    )
     return _ClosedComposition(
         meta=meta,
         dimensions=dimensions,

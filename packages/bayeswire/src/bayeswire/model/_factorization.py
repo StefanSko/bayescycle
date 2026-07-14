@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
 
+from bayeswire.model._closure import _validate_model_closure
 from bayeswire.model._components import (
     _DimensionSnapshot,
     _ModelSnapshot,
@@ -269,6 +270,7 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
         )
     validated_exports = tuple(exports)
     _validate_ancestral_param_order(validated_exports)
+    _validate_model_closure(model, dimensions, role="source")
 
     return _ParameterKernel(
         model_cls=source,
@@ -366,6 +368,7 @@ def _factor_outcome_model(target: object) -> _OutcomeKernel:
             )
         )
 
+    _validate_model_closure(model, dimensions, role="target")
     return _OutcomeKernel(
         model_cls=target,
         model=model,
