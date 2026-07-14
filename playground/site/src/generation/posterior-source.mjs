@@ -33,13 +33,15 @@ export async function validatePortablePosterior({
     }
     validateDepth(line, index + 1);
     try {
-      return parseStrictJson(UTF8.decode(line), `portable posterior line ${index + 1}`, {
+      const document = parseStrictJson(UTF8.decode(line), `portable posterior line ${index + 1}`, {
         integerKeys: [
           "draw_index", "chain", "draw", "draw_count", "draws_per_chain",
           "chain_count", "parameter_count", "params", "num_draws", "seed",
         ],
         integerArrayKeys: ["shape", "chain_order", "coordinate_order"],
       });
+      validateFinite(document);
+      return document;
     } catch (error) {
       throw new PortablePosteriorError(
         `portable posterior line ${index + 1} is invalid JSON: ${String(error)}`,
@@ -155,15 +157,9 @@ export async function validatePortablePosterior({
       throw new PortablePosteriorError("posterior draw values do not match parameter order");
     }
     const flattened = parameters.map((parameter) => {
-      const numbers = flatten(values[parameter.name], parameter.name);
-      const size = parameter.shape.length === 0
-        ? 1
-        : parameter.shape.reduce((left, right) => left * right, 1);
-      if (numbers.length !== size) {
-        throw new PortablePosteriorError(
-          `posterior value ${parameter.name} does not match declared shape`,
-        );
-      }
+      const numbers = valuesForShape(
+        values[parameter.name], parameter.shape, parameter.name,
+      );
       return Object.freeze([parameter.name, Object.freeze(numbers)]);
     });
     return Object.freeze({
@@ -212,12 +208,31 @@ function integer(value, label) {
   return value;
 }
 
-function flatten(value, label) {
-  if (Array.isArray(value)) return value.flatMap((item) => flatten(item, label));
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new PortablePosteriorError(`posterior value ${label} must contain finite numbers`);
+function valuesForShape(value, shape, label) {
+  if (shape.length > 0) {
+    if (!Array.isArray(value) || value.length !== shape[0]) {
+      throw new PortablePosteriorError(
+        `posterior value ${label} does not match declared shape`,
+      );
+    }
+    return value.flatMap((item) => valuesForShape(item, shape.slice(1), label));
+  }
+  if (Array.isArray(value) || typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PortablePosteriorError(
+      `posterior value ${label} must be a finite scalar at declared rank`,
+    );
   }
   return [value];
+}
+
+function validateFinite(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) validateFinite(item);
+  } else if (typeof value === "object" && value !== null) {
+    for (const item of Object.values(value)) validateFinite(item);
+  } else if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new PortablePosteriorError("posterior source contains a non-finite number");
+  }
 }
 
 function splitLines(bytes) {

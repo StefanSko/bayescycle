@@ -65,16 +65,16 @@ def validate_portable_posterior(
             )
         _validate_depth(line, line_number)
         try:
-            documents.append(
-                cast(
-                    JsonValue,
-                    json.loads(
-                        line.decode("utf-8"),
-                        object_pairs_hook=_unique_object,
-                        parse_constant=_reject_constant,
-                    ),
-                )
+            document = cast(
+                JsonValue,
+                json.loads(
+                    line.decode("utf-8"),
+                    object_pairs_hook=_unique_object,
+                    parse_constant=_reject_constant,
+                ),
             )
+            _validate_finite(document)
+            documents.append(document)
         except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey) as exc:
             raise PortablePosteriorError(
                 f"posterior source line {line_number} is not strict JSON: {exc}"
@@ -183,13 +183,9 @@ def validate_portable_posterior(
             raise PortablePosteriorError("posterior draw values do not match parameter order")
         flattened: list[tuple[str, tuple[float, ...]]] = []
         for parameter in parameters:
-            numbers = tuple(_flatten(values[parameter.name], parameter.name))
-            size = math.prod(parameter.shape)
-            expected_size = size if parameter.shape else 1
-            if len(numbers) != expected_size:
-                raise PortablePosteriorError(
-                    f"posterior value {parameter.name} does not match declared shape"
-                )
+            numbers = tuple(
+                _values_for_shape(values[parameter.name], parameter.shape, parameter.name)
+            )
             flattened.append((parameter.name, numbers))
         draws.append(PosteriorSourceDraw(source_index, chain, draw, tuple(flattened)))
     return PortablePosterior(tuple(parameters), tuple(draws))
@@ -200,12 +196,16 @@ def _fingerprint(model_bytes: bytes, data_bytes: bytes) -> str:
     return f"sha256:{hashlib.sha256(framed).hexdigest()}"
 
 
-def _flatten(value: JsonValue, label: str) -> list[float]:
-    if isinstance(value, list):
+def _values_for_shape(value: JsonValue, shape: tuple[int, ...], label: str) -> list[float]:
+    if shape:
+        if not isinstance(value, list) or len(value) != shape[0]:
+            raise PortablePosteriorError(f"posterior value {label} does not match declared shape")
         result: list[float] = []
         for item in value:
-            result.extend(_flatten(item, label))
+            result.extend(_values_for_shape(item, shape[1:], label))
         return result
+    if isinstance(value, list):
+        raise PortablePosteriorError(f"posterior value {label} does not match declared shape")
     if not isinstance(value, int | float) or isinstance(value, bool):
         raise PortablePosteriorError(f"posterior value {label} must contain finite numbers")
     try:
@@ -217,6 +217,17 @@ def _flatten(value: JsonValue, label: str) -> list[float]:
     if not math.isfinite(converted):
         raise PortablePosteriorError(f"posterior value {label} must contain finite numbers")
     return [converted]
+
+
+def _validate_finite(value: JsonValue) -> None:
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_finite(item)
+    elif isinstance(value, list):
+        for item in value:
+            _validate_finite(item)
+    elif isinstance(value, float) and not math.isfinite(value):
+        raise PortablePosteriorError("posterior source contains a non-finite number")
 
 
 def _positive_integer(value: object, label: str) -> int:
