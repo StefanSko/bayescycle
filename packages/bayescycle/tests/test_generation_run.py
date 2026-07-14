@@ -392,6 +392,19 @@ def test_generation_run_routing_rejects_fifo_without_blocking(tmp_path: Path) ->
     assert completed.returncode == 0
 
 
+def test_generation_run_rejects_symlink_without_nofollow_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = _make_fixed_run(tmp_path)
+    design = run_dir / "design.json"
+    outside = tmp_path / "outside-design.json"
+    design.replace(outside)
+    design.symlink_to(outside)
+    monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+    with pytest.raises(WorkflowError, match="regular"):
+        load_generation_run(run_dir)
+
+
 def test_generation_run_interprets_the_same_bytes_it_hashes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
