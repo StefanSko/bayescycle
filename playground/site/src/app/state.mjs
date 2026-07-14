@@ -151,6 +151,8 @@ function reduceScopedWorkflow(state, event) {
           attempt: {
             status: "running", requestId: event.requestId,
             dependencyKey: event.dependencyKey,
+            sourceKind: event.guard?.sourceKind ?? null,
+            sourceFitLineageKey: event.guard?.fitLineageKey ?? null,
           },
         },
       };
@@ -207,19 +209,40 @@ function reduceScopedWorkflow(state, event) {
       };
     }
     case "observed-input-edited": {
-      const generatedConditioning = state.fitDatasetSource === "generated" ||
-        state.conditioning.fit?.datasetSource === "generated" ||
-        state.conditioning.attempt.datasetSource === "generated" ||
-        (state.run.status === "running" &&
-          ["sample", "condition"].includes(state.run.operation) &&
-          state.run.datasetSource === "generated");
-      if (generatedConditioning) {
+      const runningObserved = state.conditioning.attempt.status === "running" &&
+        state.conditioning.attempt.datasetSource === "observed";
+      const runningGenerated = state.conditioning.attempt.status === "running" &&
+        state.conditioning.attempt.datasetSource === "generated";
+      const completedGenerated = state.fitDatasetSource === "generated" ||
+        state.conditioning.fit?.datasetSource === "generated";
+      const generatedRun = state.run.status === "running" &&
+        ["sample", "condition"].includes(state.run.operation) &&
+        state.run.datasetSource === "generated";
+      const posteriorGeneration =
+        state.generation.collection?.sourceKind === "posterior" ||
+        (state.generation.attempt.status === "running" &&
+          state.generation.attempt.sourceKind === "posterior");
+      if (runningGenerated || generatedRun || (completedGenerated && !runningObserved)) {
         return {
           ...state,
           documents: event.documents,
         };
       }
-      const posteriorCollection = state.generation.collection?.sourceKind === "posterior";
+      if (runningObserved && completedGenerated) {
+        return {
+          ...state,
+          documents: event.documents,
+          projectRevision: event.revision,
+          run: { status: "idle" },
+          generation: posteriorGeneration
+            ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
+            : state.generation,
+          conditioning: {
+            ...state.conditioning,
+            attempt: { status: "idle" },
+          },
+        };
+      }
       return {
         ...state,
         documents: event.documents,
@@ -229,7 +252,7 @@ function reduceScopedWorkflow(state, event) {
           (artifact) => !FIT_DESCENDANT_ARTIFACTS.includes(artifact.name),
         ),
         fitDatasetSource: null,
-        generation: posteriorCollection
+        generation: posteriorGeneration
           ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
           : state.generation,
         conditioning: {

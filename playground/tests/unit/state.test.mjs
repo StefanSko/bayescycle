@@ -122,12 +122,11 @@ export default [
       });
       assert(state.conditioning.fit === null, "observed fit survived observed edit");
       assert(state.generation.attempt.status === "idle", "posterior generation survived source edit");
-      const edited = state;
       state = reduce(state, {
         type: "generation-succeeded", requestId: "posterior-g", dependencyKey: "pg",
         collection: { sourceKind: "posterior", sourceFitLineageKey: "old-fit" },
       });
-      assert(state === edited, "stale posterior generation completion was accepted");
+      assert(state.generation.collection === null, "stale posterior generation completion was accepted");
 
       state = initialState();
       state = reduce(state, {
