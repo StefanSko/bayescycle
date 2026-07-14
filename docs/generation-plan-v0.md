@@ -266,7 +266,7 @@ All boundaries reject values rather than clamp them:
 - `seed`: safe JSON integer in `0..=9007199254740991`;
 - `generation-plan.json` or generation `run.json`: at most 1 MiB each;
 - model IR, design, fixed parameters, fit data, or fit input: at most 8 MiB each;
-- one metadata path: at most 255 UTF-8 bytes; backend identity: at most 64 ASCII
+- one metadata path: at most 255 UTF-8 bytes; backend identity: 1..=64 ASCII
   letters, digits, dots, underscores, or hyphens;
 - one paired-artifact NDJSON line: at most 8 MiB including its terminating LF;
 - complete paired artifact: at most 64 MiB including every LF;
@@ -452,15 +452,18 @@ non-finite or unsafe-integer values, invalid canonical documents, excessive
 depth, oversized input, and trailing records.
 
 Selection returns immutable copies of both the canonical parameter document and
-canonical complete dataset for one index. Their standalone bytes use one
-normative projection: recursively preserve recorded object/variable order,
-serialize compact UTF-8 JSON with no insignificant whitespace or non-finite
-values, and append exactly one LF. Python uses `separators=(",", ":")`; the
-JavaScript serializer must produce the same bytes. These projected bytes are the
+canonical complete dataset for one index. The bounded NDJSON parser records the
+exact UTF-8 byte span of each nested `parameters` and `dataset` JSON value while
+validating it. Standalone selection bytes are that exact span followed by
+exactly one LF; they are never produced from parsed numbers or strings. Thus
+Python and JavaScript select byte-identical documents without defining a second
+cross-language JSON-number serializer. These selected dataset bytes become the
 exact `data.json` bytes used for later conditioning and fingerprinting.
 
-The downloaded paired artifact itself preserves its exact validated input bytes;
-parsing and selection do not authorize reserialization of that download.
+Writers emit nested documents compactly, but readers preserve any accepted
+insignificant whitespace inside the recorded span. The downloaded paired
+artifact itself also preserves its complete exact validated input bytes; parsing
+and selection do not authorize reserialization of that download.
 
 ## Runtime request
 
