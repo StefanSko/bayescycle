@@ -312,6 +312,30 @@ function reduceScopedWorkflow(state, event) {
           },
         },
       };
+    case "conditioning-committed": {
+      if (!matchesAttempt(state.conditioning.attempt, event) ||
+          !matches(state.run, event, "running") ||
+          event.revision !== state.projectRevision) return state;
+      const fit = freezeFit(event.fit);
+      const collection = state.generation.collection;
+      const stalePosteriorCollection = collection?.sourceKind === "posterior" &&
+        collection.sourceFitLineageKey !== fit.lineageKey;
+      return {
+        ...state,
+        run: { status: "completed", revision: event.revision },
+        artifacts: mergeArtifacts(state.artifacts, event.artifacts),
+        fitDatasetSource: fit.datasetSource,
+        notice: event.notice ?? null,
+        generation: stalePosteriorCollection
+          ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
+          : state.generation,
+        conditioning: {
+          ...state.conditioning,
+          attempt: { status: "completed", dependencyKey: event.dependencyKey },
+          fit,
+        },
+      };
+    }
     case "conditioning-succeeded": {
       if (!matchesAttempt(state.conditioning.attempt, event)) return state;
       const fit = freezeFit(event.fit);

@@ -399,18 +399,17 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     const posterior = sampled.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
     if (posterior === undefined) throw new Error("Runtime returned no posterior artifact");
     const artifacts = [...sampled.artifacts];
+    const lineageKey = await bytesHash(posterior.bytes);
     dispatch({
-      type: "run-succeeded",
+      type: "conditioning-committed",
       requestId,
+      dependencyKey,
       revision: projectRevision,
       artifacts,
       notice: sampled.notice,
-    });
-    dispatch({
-      type: "conditioning-succeeded", requestId, dependencyKey,
       fit: {
         datasetSource,
-        lineageKey: await bytesHash(posterior.bytes),
+        lineageKey,
         artifacts,
         fitArtifact: sampled.fitArtifact,
       },
