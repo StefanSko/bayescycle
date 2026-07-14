@@ -525,10 +525,15 @@ def _write_generation_metadata(run_dir: Path, plan: Draw, backend: str) -> None:
         "inputs": inputs,
         "outputs": [_metadata_entry("generated-datasets", output_path, "v0-provisional")],
     }
-    (run_dir / "run.json").write_text(
-        json.dumps(document, separators=(",", ":"), allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
+    metadata_path = run_dir / "run.json"
+    metadata_text = json.dumps(document, separators=(",", ":"), allow_nan=False) + "\n"
+    try:
+        with metadata_path.open("x", encoding="utf-8") as stream:
+            stream.write(metadata_text)
+    except FileExistsError as exc:
+        raise WorkflowError(
+            f"generation metadata already exists at {metadata_path}; refusing to overwrite it"
+        ) from exc
 
 
 def _metadata_entry(role: str, path: Path, artifact_format: str) -> dict[str, str]:
