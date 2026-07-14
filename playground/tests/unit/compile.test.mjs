@@ -31,11 +31,11 @@ function canonicalString(value) {
 
 export default [
   {
-    name: "all 10 corpus models match native hashes and golden IR",
+    name: "all 11 corpus models match native hashes and golden IR",
     fn: async () => {
       const hashes = JSON.parse(await fetchText("hashes.json"));
       const names = Object.keys(hashes);
-      assert(names.length === 10, `expected 10 corpus models, found ${names.length}`);
+      assert(names.length === 11, `expected 11 corpus models, found ${names.length}`);
 
       for (const name of names) {
         const [source, goldenText] = await Promise.all([

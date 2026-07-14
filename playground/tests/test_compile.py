@@ -4,7 +4,7 @@ from typing import Any
 from playwright.sync_api import Page
 
 CASES = [
-    "all 10 corpus models match native hashes and golden IR",
+    "all 11 corpus models match native hashes and golden IR",
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "selects the sole unreferenced composed root",
