@@ -31,7 +31,9 @@ for (const selector of [
 ]) {
   element(selector).addEventListener("input", settingsEdited);
 }
-element("#generation-seed").addEventListener("input", generationSettingsEdited);
+for (const selector of ["#generation-seed", "#predictive-draws"]) {
+  element(selector).addEventListener("input", generationSettingsEdited);
+}
 for (const selector of ["input[name='param-source']", "input[name='dataset-source']"]) {
   for (const radio of document.querySelectorAll(selector)) radio.addEventListener("change", render);
 }
@@ -110,7 +112,10 @@ async function shareProject() {
     design: design.value,
     truth: truth.value,
     sampler: samplerSettings(),
-    generation: { seed: integerValue("#generation-seed") },
+    generation: {
+      seed: integerValue("#generation-seed"),
+      num_draws: integerValue("#predictive-draws"),
+    },
   };
   const payload = await encodeProject(project);
   const url = new URL(window.location.href);
@@ -173,15 +178,22 @@ function applySamplerSettings(settings) {
 }
 
 function applyGenerationSettings(settings, legacySampler) {
-  const generationSeed = settings !== null && typeof settings === "object" &&
-    typeof settings.seed === "number" ? settings.seed : undefined;
-  const legacySeed = legacySampler !== null && typeof legacySampler === "object" &&
-    typeof legacySampler.seed === "number" ? legacySampler.seed : undefined;
-  const seed = generationSeed ?? legacySeed;
-  if (seed !== undefined) {
-    element("#generation-seed").value = String(seed);
-    generationSettingsEdited();
+  const generation = settings !== null && typeof settings === "object" ? settings : {};
+  const legacy = legacySampler !== null && typeof legacySampler === "object" ? legacySampler : {};
+  const seed = typeof generation.seed === "number"
+    ? generation.seed
+    : typeof legacy.seed === "number" ? legacy.seed : undefined;
+  const numDraws = typeof generation.num_draws === "number"
+    ? generation.num_draws
+    : typeof legacy.num_draws === "number" ? legacy.num_draws : undefined;
+  let applied = false;
+  for (const [value, selector] of [[seed, "#generation-seed"], [numDraws, "#predictive-draws"]]) {
+    if (value !== undefined) {
+      element(selector).value = String(value);
+      applied = true;
+    }
   }
+  if (applied) generationSettingsEdited();
 }
 
 function launchRun(operation) {
@@ -350,15 +362,22 @@ function sampleSettings() {
 }
 
 function generationSettings() {
-  const settings = { ...samplerSettings(), seed: integerValue("#generation-seed") };
+  const settings = {
+    seed: integerValue("#generation-seed"),
+    num_draws: integerValue("#predictive-draws"),
+  };
   if (!validGenerationSettings(settings)) {
-    throw new Error("Generation seed must be a nonnegative safe integer");
+    throw new Error("Generation requires a nonnegative seed and at least 1 predictive draw");
   }
   return settings;
 }
 
-function validGenerationSettings(settings = { seed: integerValue("#generation-seed") }) {
-  return Number.isSafeInteger(settings.seed) && settings.seed >= 0;
+function validGenerationSettings(settings = {
+  seed: integerValue("#generation-seed"),
+  num_draws: integerValue("#predictive-draws"),
+}) {
+  return Number.isSafeInteger(settings.seed) && settings.seed >= 0 &&
+    Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 1;
 }
 
 function validSeedSettings(settings = samplerSettings()) {

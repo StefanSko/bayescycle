@@ -65,8 +65,10 @@
         <label for="truth-data">Fixed parameter values</label>
         <textarea id="truth-data" rows="7" spellcheck="false" placeholder='{"alpha": 0, "beta": 1}'></textarea>
       </div>
-      <label for="generation-seed">Generation seed</label>
-      <input id="generation-seed" type="number" min="0" value="0">
+      <div class="settings">
+        <label for="generation-seed">Generation seed<input id="generation-seed" type="number" min="0" value="0"></label>
+        <label for="predictive-draws">Predictive draws<input id="predictive-draws" type="number" min="1" value="200"></label>
+      </div>
       <button id="generate-button" class="primary" type="button" disabled>Generate at fixed values</button>
       <p class="hint">Uses Design/context as x. Generated datasets keep their paired parameter values for recovery.</p>
     </section>

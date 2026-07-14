@@ -13,6 +13,7 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
 
     page.locator("#inference-seed").fill("17")
     page.locator("#generation-seed").fill("23")
+    page.locator("#predictive-draws").fill("37")
     page.locator("#share-button").click()
     expect(page.locator("#share-url")).to_be_visible()
     shared_url = page.locator("#share-url").input_value()
@@ -27,6 +28,7 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
         expect(fresh.locator("#model-source")).to_contain_text("EightSchools")
         expect(fresh.locator("#inference-seed")).to_have_value("17")
         expect(fresh.locator("#generation-seed")).to_have_value("23")
+        expect(fresh.locator("#predictive-draws")).to_have_value("37")
         expect(fresh.locator("#ir-hash")).to_be_hidden()
         fresh.locator("#compile-button").click()
         expect(fresh.locator("#ir-hash")).to_be_visible(timeout=120_000)
@@ -55,5 +57,6 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
         old.locator("#load-shared").click()
         expect(old.locator("#inference-seed")).to_have_value("31")
         expect(old.locator("#generation-seed")).to_have_value("31")
+        expect(old.locator("#predictive-draws")).to_have_value("4")
     finally:
         old.close()

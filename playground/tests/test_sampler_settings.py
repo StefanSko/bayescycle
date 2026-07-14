@@ -10,6 +10,11 @@ def test_predictive_controls_require_a_safe_seed(page: Page, base_url: str) -> N
     expect(page.locator("#generate-button")).to_be_disabled()
     page.locator("#param-source-prior").check()
     expect(page.locator("#generate-button")).to_be_disabled()
+    page.locator("#generation-seed").fill("0")
+    page.locator("#predictive-draws").fill("0")
+    expect(page.locator("#generate-button")).to_be_disabled()
+    page.locator("#predictive-draws").fill("200")
+    expect(page.locator("#generate-button")).to_be_enabled()
 
 
 def test_sample_controls_require_engine_minimum_draws(page: Page, base_url: str) -> None:
