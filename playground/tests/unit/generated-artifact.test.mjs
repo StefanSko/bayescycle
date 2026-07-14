@@ -302,6 +302,7 @@ export default [
         (value) => { value.at(-1).trailer.parameter_order = ["wrong"]; },
         (value) => { value.at(-1).trailer.posterior_identity_hash = "fnv1a64:wrong"; },
         (value) => { value.at(-1).trailer.chains[0].draw_count = 1; },
+        (value) => { value[1].values.z = [value[1].values.z]; },
       ];
       for (const mutate of mutations) {
         const changed = structuredClone(originals);
@@ -316,6 +317,7 @@ export default [
       for (const [changed, expected] of [
         [posteriorText.replace('"chain_count":2', '"chain_count":2.0000000000000001'), "integer"],
         [posteriorText.replace('"draw_index":0,', ""), "draw_index"],
+        [posteriorText.replace('"target_accept":0.8', '"target_accept":1e400'), "finite"],
         [posteriorText.replace(
           '"model_data_fingerprint":',
           '"model_data_fingerprint":"sha256:' + "0".repeat(64) + '","model_data_fingerprint":',

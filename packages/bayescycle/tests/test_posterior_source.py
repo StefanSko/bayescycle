@@ -78,6 +78,15 @@ def _non_json_number(documents: list[dict[str, Any]]) -> None:
     documents[0]["settings"]["target_accept"] = float("nan")
 
 
+def _overflowing_number(documents: list[dict[str, Any]]) -> None:
+    documents[0]["settings"]["target_accept"] = float("inf")
+
+
+def _wrong_value_rank(documents: list[dict[str, Any]]) -> None:
+    values = documents[1]["values"]["z"]
+    documents[1]["values"]["z"] = [values]
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -91,6 +100,8 @@ def _non_json_number(documents: list[dict[str, Any]]) -> None:
         _unrepresentable_value,
         _missing_draw_index,
         _non_json_number,
+        _overflowing_number,
+        _wrong_value_rank,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(
@@ -100,6 +111,16 @@ def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(
     mutate(documents)
     with pytest.raises(PortablePosteriorError):
         _validate(_encode(documents))
+
+
+def test_portable_posterior_rejects_overflowing_standard_number() -> None:
+    posterior = (
+        (FIXTURE / "posterior.ndjson")
+        .read_bytes()
+        .replace(b'"target_accept":0.8', b'"target_accept":1e400', 1)
+    )
+    with pytest.raises(PortablePosteriorError):
+        _validate(posterior)
 
 
 def test_real_posterior_fixture_has_portable_authority() -> None:
