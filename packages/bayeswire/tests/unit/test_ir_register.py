@@ -67,6 +67,13 @@ class _TupleDistribution:
     values: tuple[object, ...]
 
 
+@dataclass(frozen=True, eq=False)
+class _IdentityDistribution:
+    """Invalid extension whose decoded copies cannot compare structurally."""
+
+    loc: object
+
+
 @dataclass
 class _MutableDistribution:
     """Invalid mutable extension used to protect metadata immutability."""
@@ -135,6 +142,11 @@ def test_registered_distribution_rejects_nested_bare_containers(nested: object) 
 
     with pytest.raises(UnserializableValue, match=r"bare (dict|tuple)"):
         meta_to_dict(_meta_with(_MapDistribution({"nested": nested})))
+
+
+def test_register_distribution_requires_structural_dataclass_equality() -> None:
+    with pytest.raises(UnserializableDistribution, match=r"_IdentityDistribution.*eq=True"):
+        register_distribution(_IdentityDistribution)
 
 
 def test_register_distribution_rejects_mutable_dataclasses() -> None:
