@@ -47,6 +47,8 @@ export async function validatePortablePosterior({
   if (header.draws_format !== "v0-provisional" || trailer.draws_format !== "v0-provisional") {
     throw new PortablePosteriorError("portable posterior format is invalid");
   }
+  kindScope(header, "posterior header");
+  kindScope(trailer, "posterior trailer");
   const fingerprint = await modelDataFingerprint(modelBytes, dataBytes);
   const hasFingerprint = header.model_data_fingerprint !== undefined ||
     trailer.model_data_fingerprint !== undefined;
@@ -60,9 +62,6 @@ export async function validatePortablePosterior({
     );
   }
   const count = documents.length - 2;
-  if (header.draw_count !== count || trailer.draw_count !== count || count < 1) {
-    throw new PortablePosteriorError("portable posterior draw count is incomplete");
-  }
   if (!Array.isArray(header.params) || !Array.isArray(header.parameter_order)) {
     throw new PortablePosteriorError("posterior parameter metadata is missing");
   }
@@ -76,26 +75,71 @@ export async function validatePortablePosterior({
   });
   const names = parameters.map((parameter) => parameter.name);
   if (new Set(names).size !== names.length ||
-      JSON.stringify(header.parameter_order) !== JSON.stringify(names)) {
+      JSON.stringify(header.parameter_order) !== JSON.stringify(names) ||
+      integer(header.parameter_count, "posterior parameter_count") !== names.length) {
     throw new PortablePosteriorError("posterior parameter order is invalid");
   }
+  const settings = object(header.settings, "posterior settings");
+  const drawsPerChain = positiveInteger(settings.num_draws, "posterior settings.num_draws");
+  const chainOrder = integerArray(header.chain_order, "posterior chain_order");
+  const chainCount = positiveInteger(header.chain_count, "posterior chain_count");
+  if (chainOrder.length === 0 || new Set(chainOrder).size !== chainOrder.length ||
+      chainCount !== chainOrder.length || count !== chainCount * drawsPerChain ||
+      header.draw_count !== count) {
+    throw new PortablePosteriorError("posterior chain topology or draw count is invalid");
+  }
+  if (
+    JSON.stringify(trailer.parameter_order) !== JSON.stringify(names) ||
+    integer(trailer.parameter_count, "posterior trailer parameter_count") !== names.length ||
+    integer(trailer.params, "posterior trailer params") !== names.length ||
+    integer(trailer.draw_count, "posterior trailer draw_count") !== count ||
+    integer(trailer.draws_per_chain, "posterior trailer draws_per_chain") !== drawsPerChain ||
+    integer(trailer.chain_count, "posterior trailer chain_count") !== chainCount ||
+    JSON.stringify(integerArray(trailer.chain_order, "posterior trailer chain_order")) !==
+      JSON.stringify(chainOrder)
+  ) {
+    throw new PortablePosteriorError("posterior trailer metadata disagrees with header");
+  }
+  const headerIdentity = header.posterior_identity_hash;
+  const trailerIdentity = trailer.posterior_identity_hash;
+  if ((headerIdentity === undefined) !== (trailerIdentity === undefined) ||
+      (headerIdentity !== undefined && headerIdentity !== trailerIdentity)) {
+    throw new PortablePosteriorError("posterior identity disagrees between header and trailer");
+  }
+  if (!Array.isArray(trailer.chains) || trailer.chains.length !== chainCount) {
+    throw new PortablePosteriorError("posterior trailer chain statistics are incomplete");
+  }
+  trailer.chains.forEach((raw, index) => {
+    const statistic = object(raw, `posterior trailer chains[${index}]`);
+    if (integer(statistic.chain, "posterior trailer chain") !== chainOrder[index] ||
+        integer(statistic.draw_count, "posterior trailer chain draw_count") !== drawsPerChain) {
+      throw new PortablePosteriorError("posterior trailer chain statistics are out of order");
+    }
+  });
   const seen = new Set();
   const draws = documents.slice(1, -1).map((raw, sourceDrawIndex) => {
     const draw = object(raw, `posterior draw ${sourceDrawIndex}`);
     if (draw.draws_format !== "v0-provisional") {
       throw new PortablePosteriorError(`posterior draw ${sourceDrawIndex} format is invalid`);
     }
+    kindScope(draw, `posterior draw ${sourceDrawIndex}`);
     if ((draw.draw_index ?? sourceDrawIndex) !== sourceDrawIndex) {
       throw new PortablePosteriorError("posterior draw indices are not contiguous");
     }
     const chain = integer(draw.chain, "posterior chain");
     const drawIndex = integer(draw.draw, "posterior draw");
+    const expectedChain = chainOrder[Math.floor(sourceDrawIndex / drawsPerChain)];
+    const expectedDraw = sourceDrawIndex % drawsPerChain;
+    if (chain !== expectedChain || drawIndex !== expectedDraw) {
+      throw new PortablePosteriorError("posterior draws are not grouped in chain order");
+    }
     const coordinate = `${chain}:${drawIndex}`;
     if (seen.has(coordinate)) {
       throw new PortablePosteriorError("posterior chain/draw coordinates are duplicated");
     }
     seen.add(coordinate);
-    if (JSON.stringify(draw.parameter_order) !== JSON.stringify(names)) {
+    if (JSON.stringify(draw.parameter_order) !== JSON.stringify(names) ||
+        integer(draw.parameter_count, "posterior draw parameter_count") !== names.length) {
       throw new PortablePosteriorError("posterior draw parameter order is invalid");
     }
     const values = object(draw.values, `posterior draw ${sourceDrawIndex} values`);
@@ -133,6 +177,24 @@ async function modelDataFingerprint(modelBytes, dataBytes) {
   framed.set(dataBytes, prefix.length + modelBytes.length + 1);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", framed));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function kindScope(document, label) {
+  if (document.artifact_kind !== "posterior_draws" ||
+      document.artifact_scope !== "observed_data_conditioned_parameter_draws") {
+    throw new PortablePosteriorError(`${label} kind or scope is invalid`);
+  }
+}
+
+function positiveInteger(value, label) {
+  const result = integer(value, label);
+  if (result < 1) throw new PortablePosteriorError(`${label} must be positive`);
+  return result;
+}
+
+function integerArray(value, label) {
+  if (!Array.isArray(value)) throw new PortablePosteriorError(`${label} must be an array`);
+  return value.map((item) => integer(item, label));
 }
 
 function integer(value, label) {

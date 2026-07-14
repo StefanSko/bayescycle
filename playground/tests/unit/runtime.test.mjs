@@ -105,13 +105,33 @@ export default [
           params: [{ name: "theta", shape: [], coordinate_order: [[]] }],
           parameter_count: 1,
           parameter_order: ["theta"],
+          settings: { num_draws: 1 },
+          chain_count: 1,
+          chain_order: [0],
           draw_count: 1,
         },
         {
-          draws_format: "v0-provisional", draw_index: 0, chain: 0, draw: 0,
+          draws_format: "v0-provisional",
+          artifact_kind: "posterior_draws",
+          artifact_scope: "observed_data_conditioned_parameter_draws",
+          draw_index: 0, chain: 0, draw: 0, parameter_count: 1,
           parameter_order: ["theta"], values: { theta: 0.5 },
         },
-        { trailer: { draws_format: "v0-provisional", draw_count: 1 } },
+        {
+          trailer: {
+            draws_format: "v0-provisional",
+            artifact_kind: "posterior_draws",
+            artifact_scope: "observed_data_conditioned_parameter_draws",
+            draws_per_chain: 1,
+            chain_count: 1,
+            chain_order: [0],
+            draw_count: 1,
+            parameter_count: 1,
+            parameter_order: ["theta"],
+            params: 1,
+            chains: [{ chain: 0, draw_count: 1 }],
+          },
+        },
       ].map((document) => JSON.stringify(document)).join("\n") + "\n");
       const requests = [];
       const executor = {

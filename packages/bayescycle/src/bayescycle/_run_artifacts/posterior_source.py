@@ -83,6 +83,8 @@ def validate_portable_posterior(
     trailer = _object(trailer_envelope["trailer"], "posterior trailer")
     _marker(header, "posterior header")
     _marker(trailer, "posterior trailer")
+    _kind_scope(header, "posterior header")
+    _kind_scope(trailer, "posterior trailer")
     expected_fingerprint = _fingerprint(model_bytes, data_bytes)
     for document, label in ((header, "header"), (trailer, "trailer")):
         if document.get("model_data_fingerprint") != expected_fingerprint:
@@ -106,26 +108,71 @@ def validate_portable_posterior(
     names = tuple(parameter.name for parameter in parameters)
     if len(set(names)) != len(names) or raw_order != list(names):
         raise PortablePosteriorError("posterior parameter order is invalid")
-
+    if _integer(header.get("parameter_count"), "posterior parameter_count") != len(names):
+        raise PortablePosteriorError("posterior parameter count is invalid")
+    settings = _object(header.get("settings"), "posterior settings")
+    draws_per_chain = _positive_integer(settings.get("num_draws"), "posterior settings.num_draws")
+    chain_order = _integer_array(header.get("chain_order"), "posterior chain_order")
+    if not chain_order or len(set(chain_order)) != len(chain_order):
+        raise PortablePosteriorError("posterior chain_order must be non-empty and unique")
+    chain_count = _positive_integer(header.get("chain_count"), "posterior chain_count")
+    if chain_count != len(chain_order):
+        raise PortablePosteriorError("posterior chain_count disagrees with chain_order")
     draw_documents = documents[1:-1]
-    draw_count = _integer(header.get("draw_count"), "posterior draw_count")
-    trailer_count = _integer(trailer.get("draw_count"), "posterior trailer draw_count")
-    if draw_count != len(draw_documents) or trailer_count != draw_count or draw_count < 1:
+    draw_count = _positive_integer(header.get("draw_count"), "posterior draw_count")
+    if draw_count != chain_count * draws_per_chain or draw_count != len(draw_documents):
         raise PortablePosteriorError("posterior draw count is incomplete")
+    if (
+        trailer.get("parameter_order") != list(names)
+        or _integer(trailer.get("parameter_count"), "posterior trailer parameter_count")
+        != len(names)
+        or _integer(trailer.get("params"), "posterior trailer params") != len(names)
+        or _integer(trailer.get("draw_count"), "posterior trailer draw_count") != draw_count
+        or _integer(trailer.get("draws_per_chain"), "posterior trailer draws_per_chain")
+        != draws_per_chain
+        or _integer(trailer.get("chain_count"), "posterior trailer chain_count") != chain_count
+        or _integer_array(trailer.get("chain_order"), "posterior trailer chain_order")
+        != chain_order
+    ):
+        raise PortablePosteriorError("posterior trailer metadata disagrees with header")
+    header_identity = header.get("posterior_identity_hash")
+    trailer_identity = trailer.get("posterior_identity_hash")
+    if (header_identity is None) != (trailer_identity is None) or (
+        header_identity is not None and header_identity != trailer_identity
+    ):
+        raise PortablePosteriorError("posterior identity disagrees between header and trailer")
+    raw_chain_stats = trailer.get("chains")
+    if not isinstance(raw_chain_stats, list) or len(raw_chain_stats) != chain_count:
+        raise PortablePosteriorError("posterior trailer chain statistics are incomplete")
+    for index, raw_stat in enumerate(raw_chain_stats):
+        statistic = _object(raw_stat, f"posterior trailer chains[{index}]")
+        if (
+            _integer(statistic.get("chain"), "posterior trailer chain") != chain_order[index]
+            or _integer(statistic.get("draw_count"), "posterior trailer chain draw_count")
+            != draws_per_chain
+        ):
+            raise PortablePosteriorError("posterior trailer chain statistics are out of order")
     draws: list[PosteriorSourceDraw] = []
     seen_coordinates: set[tuple[int, int]] = set()
     for source_index, raw in enumerate(draw_documents):
         document = _object(raw, f"posterior draw {source_index}")
         _marker(document, f"posterior draw {source_index}")
+        _kind_scope(document, f"posterior draw {source_index}")
         raw_index = document.get("draw_index", source_index)
         if _integer(raw_index, "posterior draw_index") != source_index:
             raise PortablePosteriorError("posterior draw indices are not contiguous")
         chain = _integer(document.get("chain"), "posterior chain")
         draw = _integer(document.get("draw"), "posterior draw")
+        expected_chain = chain_order[source_index // draws_per_chain]
+        expected_draw = source_index % draws_per_chain
+        if chain != expected_chain or draw != expected_draw:
+            raise PortablePosteriorError("posterior draws are not grouped in chain order")
         if (chain, draw) in seen_coordinates:
             raise PortablePosteriorError("posterior chain/draw coordinates are duplicated")
         seen_coordinates.add((chain, draw))
-        if document.get("parameter_order") != list(names):
+        if document.get("parameter_order") != list(names) or _integer(
+            document.get("parameter_count"), "posterior draw parameter_count"
+        ) != len(names):
             raise PortablePosteriorError("posterior draw parameter order is invalid")
         values = _object(document.get("values"), f"posterior draw {source_index} values")
         if tuple(values) != names:
@@ -160,6 +207,19 @@ def _flatten(value: JsonValue, label: str) -> list[float]:
     return [float(value)]
 
 
+def _positive_integer(value: object, label: str) -> int:
+    result = _integer(value, label)
+    if result < 1:
+        raise PortablePosteriorError(f"{label} must be positive")
+    return result
+
+
+def _integer_array(value: object, label: str) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        raise PortablePosteriorError(f"{label} must be an array")
+    return tuple(_integer(item, label) for item in value)
+
+
 def _integer(value: object, label: str) -> int:
     if (
         not isinstance(value, int)
@@ -169,6 +229,14 @@ def _integer(value: object, label: str) -> int:
     ):
         raise PortablePosteriorError(f"{label} must be a nonnegative safe integer")
     return value
+
+
+def _kind_scope(document: dict[str, JsonValue], label: str) -> None:
+    if (
+        document.get("artifact_kind") != "posterior_draws"
+        or document.get("artifact_scope") != "observed_data_conditioned_parameter_draws"
+    ):
+        raise PortablePosteriorError(f"{label} kind or scope is invalid")
 
 
 def _marker(document: dict[str, JsonValue], label: str) -> None:
