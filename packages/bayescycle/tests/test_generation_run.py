@@ -146,6 +146,27 @@ Path(args[args.index("--out") + 1]).write_text('{{"bad":true}}\\n')
     return path
 
 
+def _write_symlink_generation_engine(tmp_path: Path) -> Path:
+    delegate = _write_fake_generation_engine(tmp_path)
+    path = tmp_path / "symlink_bayesite.py"
+    outside = tmp_path / "external-generated.ndjson"
+    script = f"""#!{sys.executable}
+import subprocess, sys
+from pathlib import Path
+args = sys.argv[1:]
+code = subprocess.run([{str(delegate)!r}, *args], check=False).returncode
+if code == 0 and args != ["capabilities"]:
+    output = Path(args[args.index("--out") + 1])
+    external = Path({str(outside)!r})
+    output.replace(external)
+    output.symlink_to(external)
+raise SystemExit(code)
+"""
+    path.write_text(textwrap.dedent(script), encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def _canonical(path: Path, variables: dict[str, dict[str, Any]]) -> Path:
     path.write_text(
         json.dumps(
@@ -215,6 +236,44 @@ def test_malformed_engine_output_fails_without_publishing_run_metadata(
     )
     assert code == 2
     assert "generated-dataset" in capsys.readouterr().err
+    assert not (output / "run.json").exists()
+
+
+def test_generation_rejects_symlinked_engine_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = _write_model(tmp_path)
+    design = _canonical(
+        tmp_path / "symlink-design.json",
+        {"x": {"dtype": "float64", "shape": [1], "values": [0.0]}},
+    )
+    parameters = _canonical(
+        tmp_path / "symlink-parameters.json",
+        {"alpha": {"dtype": "float64", "shape": [], "values": [0.5]}},
+    )
+    output = tmp_path / "symlink-run"
+    code = main(
+        [
+            "generate",
+            str(model),
+            "--design",
+            str(design),
+            "--source",
+            "fixed",
+            "--parameters",
+            str(parameters),
+            "--count",
+            "1",
+            "--seed",
+            "0",
+            "--engine",
+            str(_write_symlink_generation_engine(tmp_path)),
+            "-o",
+            str(output),
+        ]
+    )
+    assert code == 2
+    assert "regular" in capsys.readouterr().err
     assert not (output / "run.json").exists()
 
 
