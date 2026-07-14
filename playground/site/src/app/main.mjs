@@ -1,5 +1,5 @@
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
-import { parseGeneratedDatasets, verifyGeneratedDatasets } from "../generation/artifact.mjs";
+import { parseGeneratedDatasets } from "../generation/artifact.mjs";
 import {
   fitArtifact,
   fixed,
@@ -312,11 +312,6 @@ async function generateCollection() {
     );
     if (artifact === undefined) throw new Error("Runtime returned no generated collection");
     const parsed = parseGeneratedDatasets(artifact.bytes);
-    await verifyGeneratedDatasets(parsed, {
-      modelBytes,
-      designBytes,
-      ...(fixedParametersBytes === undefined ? {} : { fixedParametersBytes }),
-    });
     dispatch({
       type: "generation-succeeded", requestId, dependencyKey,
       collection: {
