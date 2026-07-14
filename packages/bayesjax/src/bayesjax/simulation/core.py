@@ -288,11 +288,19 @@ def _resolve_free_value_shapes(
 
 
 @dataclass(frozen=True)
+class _PriorPredictiveOutcomeSite:
+    """One factor plus the declaration name that receives its generated value."""
+
+    name: str
+    site: ResolvedStochasticSite
+    partially_observed: bool
+
+
+@dataclass(frozen=True)
 class _PriorPredictiveSitePlan:
     """Declaration-backed outcome sites in their ancestral factor order."""
 
-    outcome_sites: tuple[ResolvedStochasticSite, ...]
-    partially_observed_names: frozenset[str]
+    outcomes: tuple[_PriorPredictiveOutcomeSite, ...]
 
 
 def _claim_unique_generative_site(
@@ -344,7 +352,7 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
             ),
         )
 
-    observed_indices: set[int] = set()
+    outcome_names: dict[int, str] = {}
     for observed in meta.observed_nodes:
         index, _site = _claim_unique_generative_site(
             sites,
@@ -355,7 +363,7 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
                 and _structurally_equal(site.distribution, observed.distribution)
             ),
         )
-        observed_indices.add(index)
+        outcome_names[index] = observed.name
 
     partially_observed_indices: set[int] = set()
     for name in resolved_free_values(meta):
@@ -373,6 +381,7 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
                 "PartiallyObserved VectorScatter site"
             )
         partially_observed_indices.add(index)
+        outcome_names[index] = name
 
     factor_sites = [
         f"{site.name!r} at stochastic_sites[{index}]"
@@ -386,12 +395,16 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
             "model containing only declaration-backed generative sites"
         )
 
-    outcome_indices = observed_indices | partially_observed_indices
     return _PriorPredictiveSitePlan(
-        outcome_sites=tuple(site for index, site in enumerate(sites) if index in outcome_indices),
-        partially_observed_names=frozenset(
-            sites[index].name for index in partially_observed_indices
-        ),
+        outcomes=tuple(
+            _PriorPredictiveOutcomeSite(
+                name=outcome_names[index],
+                site=site,
+                partially_observed=index in partially_observed_indices,
+            )
+            for index, site in enumerate(sites)
+            if index in outcome_names
+        )
     )
 
 
@@ -426,10 +439,9 @@ def _simulate_one(
     param_shapes: dict[str, tuple[int, ...]],
     observed_shapes: dict[str, tuple[int, ...] | None],
     vector_bounds: Mapping[str, ResolvedVectorBounds],
-    outcome_sites: tuple[ResolvedStochasticSite, ...],
-    partially_observed_names: frozenset[str],
+    outcomes: tuple[_PriorPredictiveOutcomeSite, ...],
 ) -> tuple[dict[str, jax.Array], dict[str, jax.Array]]:
-    keys = jax.random.split(key, len(meta.params) + len(outcome_sites))
+    keys = jax.random.split(key, len(meta.params) + len(outcomes))
     key_index = 0
     parameters: dict[str, jax.Array] = {}
     values = dict(data)
@@ -447,9 +459,10 @@ def _simulate_one(
         key_index += 1
 
     observed_values: dict[str, jax.Array] = {}
-    for site in outcome_sites:
+    for outcome in outcomes:
+        site = outcome.site
         distribution = _evaluate_distribution(site.distribution, values)
-        if site.name in partially_observed_names:
+        if outcome.partially_observed:
             observed_value, free_value = _sample_partially_observed_site(
                 keys[key_index],
                 site,
@@ -457,9 +470,9 @@ def _simulate_one(
                 values,
                 vector_bounds,
             )
-            values[site.name] = free_value
+            values[outcome.name] = free_value
         else:
-            observed_target_shape = observed_shapes[site.name]
+            observed_target_shape = observed_shapes[outcome.name]
             if observed_target_shape is None:
                 if not is_sampleable(distribution):
                     raise TypeError(
@@ -472,8 +485,8 @@ def _simulate_one(
                 constraint=None,
                 target_shape=observed_target_shape,
             )
-            values[site.name] = observed_value
-        observed_values[site.name] = observed_value
+            values[outcome.name] = observed_value
+        observed_values[outcome.name] = observed_value
         key_index += 1
 
     return parameters, observed_values
@@ -510,8 +523,7 @@ def simulate_prior_predictive(
             param_shapes=param_shapes,
             observed_shapes=normalized_observed_shapes,
             vector_bounds=vector_bounds,
-            outcome_sites=site_plan.outcome_sites,
-            partially_observed_names=site_plan.partially_observed_names,
+            outcomes=site_plan.outcomes,
         )
 
     parameters, observed = jax.jit(jax.vmap(draw_one))(keys)

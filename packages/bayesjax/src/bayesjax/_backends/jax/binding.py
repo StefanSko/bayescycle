@@ -731,6 +731,44 @@ def _validate_bound_distribution_parameters(
         )
 
 
+def _validate_bound_distribution_field(
+    site_name: str,
+    value: object,
+    data: dict[str, jax.Array],
+    param_shapes: dict[str, tuple[int, ...]],
+    free_values: dict[str, ResolvedFreeValue],
+) -> None:
+    """Validate nested bind-time parameters through explicit field containers."""
+    if isinstance(value, dict):
+        for item in value.values():
+            _validate_bound_distribution_field(
+                site_name,
+                item,
+                data,
+                param_shapes,
+                free_values,
+            )
+        return
+    if isinstance(value, tuple):
+        for item in value:
+            _validate_bound_distribution_field(
+                site_name,
+                item,
+                data,
+                param_shapes,
+                free_values,
+            )
+        return
+    if is_dataclass(value) and not isinstance(value, type):
+        _validate_bound_distribution_parameter(
+            site_name,
+            cast(Distribution, value),
+            data,
+            param_shapes,
+            free_values,
+        )
+
+
 def _validate_bound_distribution_parameter(
     site_name: str,
     distribution: Distribution,
@@ -754,15 +792,13 @@ def _validate_bound_distribution_parameter(
     if not is_dataclass(distribution) or isinstance(distribution, type):
         return
     for distribution_field in fields(distribution):
-        value = getattr(distribution, distribution_field.name)
-        if is_dataclass(value) and not isinstance(value, type):
-            _validate_bound_distribution_parameter(
-                site_name,
-                cast(Distribution, value),
-                data,
-                param_shapes,
-                free_values,
-            )
+        _validate_bound_distribution_field(
+            site_name,
+            getattr(distribution, distribution_field.name),
+            data,
+            param_shapes,
+            free_values,
+        )
 
 
 def _is_valid_mvn_scale_tril_expr(
