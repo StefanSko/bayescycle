@@ -20,6 +20,13 @@ export function initialState() {
     projectRevision: 0,
     compile: Object.freeze({ status: "idle" }),
     run: Object.freeze({ status: "idle" }),
+    generation: freezeGeneration({
+      attempt: { status: "idle" }, collection: null, selected: null,
+      inputRevision: 0, settingsRevision: 0, selectionRevision: 0,
+    }),
+    conditioning: freezeConditioning({
+      attempt: { status: "idle" }, fit: null, settingsRevision: 0,
+    }),
     artifacts: Object.freeze([]),
     fitDatasetSource: null,
     notice: null,
@@ -27,6 +34,8 @@ export function initialState() {
 }
 
 export function reduce(state, event) {
+  const scoped = reduceScopedWorkflow(state, event);
+  if (scoped !== null) return freeze(scoped);
   switch (event.type) {
     case "source-edited":
       return freeze({
@@ -36,6 +45,13 @@ export function reduce(state, event) {
         projectRevision: event.revision,
         compile: { status: "idle" },
         run: { status: "idle" },
+        generation: {
+          attempt: { status: "idle" }, collection: null, selected: null,
+          inputRevision: event.revision, settingsRevision: 0, selectionRevision: 0,
+        },
+        conditioning: {
+          attempt: { status: "idle" }, fit: null, settingsRevision: 0,
+        },
         artifacts: [],
         fitDatasetSource: null,
         notice: null,
@@ -46,6 +62,15 @@ export function reduce(state, event) {
         documents: event.documents,
         projectRevision: event.revision,
         run: { status: "idle" },
+        generation: {
+          ...state.generation,
+          attempt: { status: "idle" }, collection: null, selected: null,
+          inputRevision: event.revision,
+        },
+        conditioning: {
+          ...state.conditioning,
+          attempt: { status: "idle" }, fit: null,
+        },
         artifacts: [],
         fitDatasetSource: null,
         notice: null,
@@ -112,6 +137,149 @@ export function reduce(state, event) {
   }
 }
 
+function reduceScopedWorkflow(state, event) {
+  switch (event.type) {
+    case "generation-started":
+      return {
+        ...state,
+        generation: {
+          ...state.generation,
+          attempt: {
+            status: "running", requestId: event.requestId,
+            dependencyKey: event.dependencyKey,
+          },
+        },
+      };
+    case "generation-succeeded":
+      if (!matchesAttempt(state.generation.attempt, event)) return state;
+      return {
+        ...state,
+        generation: {
+          ...state.generation,
+          attempt: { status: "completed", dependencyKey: event.dependencyKey },
+          collection: freezeCollection(event.collection),
+          selected: null,
+        },
+        conditioning: clearGeneratedFit(state.conditioning),
+      };
+    case "generation-failed":
+      if (!matchesAttempt(state.generation.attempt, event)) return state;
+      return {
+        ...state,
+        generation: {
+          ...state.generation,
+          attempt: { status: "failed", dependencyKey: event.dependencyKey, error: event.error },
+        },
+      };
+    case "generation-input-edited":
+    case "generation-settings-scoped-edited": {
+      const settings = event.type === "generation-settings-scoped-edited";
+      return {
+        ...state,
+        generation: {
+          ...state.generation,
+          attempt: { status: "idle" }, collection: null, selected: null,
+          ...(settings
+            ? { settingsRevision: event.revision }
+            : { inputRevision: event.revision }),
+        },
+        conditioning: clearGeneratedFit(state.conditioning),
+      };
+    }
+    case "selection-edited":
+      if (state.generation.collection === null) return state;
+      return {
+        ...state,
+        generation: {
+          ...state.generation,
+          selected: selectedValue(event),
+          selectionRevision: event.revision,
+        },
+        conditioning: clearGeneratedFit(state.conditioning),
+      };
+    case "conditioning-started":
+      return {
+        ...state,
+        conditioning: {
+          ...state.conditioning,
+          attempt: {
+            status: "running", requestId: event.requestId,
+            dependencyKey: event.dependencyKey, datasetSource: event.datasetSource,
+          },
+        },
+      };
+    case "conditioning-succeeded": {
+      if (!matchesAttempt(state.conditioning.attempt, event)) return state;
+      const fit = freezeFit(event.fit);
+      const collection = state.generation.collection;
+      const stalePosteriorCollection = collection?.sourceKind === "posterior" &&
+        collection.sourceFitLineageKey !== fit.lineageKey;
+      return {
+        ...state,
+        generation: stalePosteriorCollection
+          ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
+          : state.generation,
+        conditioning: {
+          ...state.conditioning,
+          attempt: { status: "completed", dependencyKey: event.dependencyKey },
+          fit,
+        },
+      };
+    }
+    case "conditioning-failed":
+      if (!matchesAttempt(state.conditioning.attempt, event)) return state;
+      return {
+        ...state,
+        conditioning: {
+          ...state.conditioning,
+          attempt: { status: "failed", dependencyKey: event.dependencyKey, error: event.error },
+        },
+      };
+    case "inference-settings-edited":
+      return {
+        ...state,
+        conditioning: {
+          ...state.conditioning,
+          attempt: { status: "idle" }, settingsRevision: event.revision,
+        },
+      };
+    default:
+      return null;
+  }
+}
+
+function matchesAttempt(attempt, event) {
+  return attempt.status === "running" && attempt.requestId === event.requestId &&
+    attempt.dependencyKey === event.dependencyKey;
+}
+
+function clearGeneratedFit(conditioning) {
+  return conditioning.fit?.datasetSource === "generated"
+    ? { ...conditioning, attempt: { status: "idle" }, fit: null }
+    : conditioning;
+}
+
+function freezeCollection(collection) {
+  return Object.freeze({ ...collection });
+}
+
+function freezeFit(fit) {
+  return Object.freeze({
+    ...fit,
+    artifacts: Object.freeze([...(fit.artifacts ?? [])]),
+  });
+}
+
+function selectedValue(event) {
+  const parameters = Uint8Array.from(event.parametersBytes);
+  const dataset = Uint8Array.from(event.datasetBytes);
+  return Object.freeze({
+    index: event.index,
+    get parametersBytes() { return Uint8Array.from(parameters); },
+    get datasetBytes() { return Uint8Array.from(dataset); },
+  });
+}
+
 function invalidateSettings(
   state,
   event,
@@ -149,12 +317,28 @@ function matches(active, event, status) {
   return active.status === status && active.requestId === event.requestId && active.revision === event.revision;
 }
 
+function freezeGeneration(generation) {
+  return Object.freeze({
+    ...generation,
+    attempt: Object.freeze({ ...generation.attempt }),
+  });
+}
+
+function freezeConditioning(conditioning) {
+  return Object.freeze({
+    ...conditioning,
+    attempt: Object.freeze({ ...conditioning.attempt }),
+  });
+}
+
 function freeze(state) {
   return Object.freeze({
     ...state,
     documents: Object.freeze({ ...state.documents }),
     compile: Object.freeze({ ...state.compile }),
     run: Object.freeze({ ...state.run }),
+    generation: freezeGeneration(state.generation),
+    conditioning: freezeConditioning(state.conditioning),
     artifacts: Object.freeze([...state.artifacts]),
   });
 }
