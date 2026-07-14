@@ -4,6 +4,7 @@ import {
   parseGeneratedDatasets,
   verifyGeneratedDatasets,
 } from "/site/src/generation/artifact.mjs";
+import { validatePortablePosterior } from "/site/src/generation/posterior-source.mjs";
 
 const UTF8 = new TextEncoder();
 const TEXT = new TextDecoder();
@@ -261,6 +262,38 @@ export default [
         expectedCount: 1,
         expectedSeed: 8,
       }), "count");
+    },
+  },
+  {
+    name: "portable posterior requires complete chain and trailer lineage",
+    fn: async () => {
+      const root = "/tests/fixtures/engine/eight_schools_non_centered/";
+      const [model, data, posterior] = await Promise.all(
+        ["model.ir.json", "data.json", "posterior.ndjson"].map(async (name) =>
+          new Uint8Array(await (await fetch(`${root}${name}`)).arrayBuffer())),
+      );
+      await validatePortablePosterior({
+        modelBytes: model, dataBytes: data, posteriorBytes: posterior,
+      });
+      const originals = documents(posterior);
+      const mutations = [
+        (value) => { value[0].artifact_kind = "wrong"; },
+        (value) => { delete value[0].settings; },
+        (value) => { value[0].chain_count = 99; },
+        (value) => { value[1].chain = 99; value[1].draw = 42; },
+        (value) => { value.at(-1).trailer.parameter_order = ["wrong"]; },
+        (value) => { value.at(-1).trailer.posterior_identity_hash = "fnv1a64:wrong"; },
+        (value) => { value.at(-1).trailer.chains[0].draw_count = 1; },
+      ];
+      for (const mutate of mutations) {
+        const changed = structuredClone(originals);
+        mutate(changed);
+        await rejects(() => validatePortablePosterior({
+          modelBytes: model,
+          dataBytes: data,
+          posteriorBytes: encodeDocuments(changed),
+        }), "posterior");
+      }
     },
   },
   {
