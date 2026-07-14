@@ -312,6 +312,18 @@ export default [
           posteriorBytes: encodeDocuments(changed),
         }), "posterior");
       }
+      const posteriorText = TEXT.decode(posterior);
+      for (const [changed, expected] of [
+        [posteriorText.replace('"chain_count":2', '"chain_count":2.0000000000000001'), "integer"],
+        [posteriorText.replace(
+          '"model_data_fingerprint":',
+          '"model_data_fingerprint":"sha256:' + "0".repeat(64) + '","model_data_fingerprint":',
+        ), "duplicate"],
+      ]) {
+        await rejects(() => validatePortablePosterior({
+          modelBytes: model, dataBytes: data, posteriorBytes: UTF8.encode(changed),
+        }), expected);
+      }
     },
   },
   {
@@ -325,6 +337,8 @@ export default [
         [UTF8.encode(text.replace('"count":2', '"count":3')), "count"],
         [UTF8.encode(text.replace('"draw_index":1', '"draw_index":3')), "draw_index"],
         [UTF8.encode(text.replace('"values":[0.5]', '"values":[NaN]')), "finite"],
+        [UTF8.encode(text.replace('"count":2', '"count":2.0000000000000001')), "integer"],
+        [UTF8.encode(text.replace('"seed":7', '"seed":9007199254740991.1')), "integer"],
       ];
       const unknown = documents(fixture);
       unknown[0].unexpected = true;

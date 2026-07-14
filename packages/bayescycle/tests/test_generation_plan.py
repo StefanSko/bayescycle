@@ -174,3 +174,7 @@ def test_rejects_unknown_or_missing_serialized_fields() -> None:
     )
     with pytest.raises(GenerationPlanError, match="depth"):
         parse_generation_plan_document(deep)
+
+    duplicate = FIXTURE.read_bytes().replace(b'"kind":"draw"', b'"kind":"wrong","kind":"draw"')
+    with pytest.raises(GenerationPlanError, match="duplicate"):
+        parse_generation_plan_document(duplicate)

@@ -334,6 +334,13 @@ def test_generation_run_rejects_external_unbounded_or_invalid_metadata(tmp_path:
     with pytest.raises(WorkflowError, match="backend"):
         load_generation_run(run_dir)
 
+    duplicate = outside.read_bytes().replace(
+        b'"backend":"bayesite"', b'"backend":"wrong","backend":"bayesite"'
+    )
+    metadata_path.write_bytes(duplicate)
+    with pytest.raises(WorkflowError, match="duplicate"):
+        load_generation_run(run_dir)
+
     metadata = json.loads(outside.read_text(encoding="utf-8"))
     metadata["inputs"][0]["format"] = "wrong"
     metadata_path.write_text(json.dumps(metadata, separators=(",", ":")) + "\n")

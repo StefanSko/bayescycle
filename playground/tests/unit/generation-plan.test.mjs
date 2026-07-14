@@ -142,6 +142,16 @@ export default [
         `{"kind":"fixed","parameters_hash":${nested},"ignored":`,
       );
       await rejects(() => parseGenerationPlanDocument(UTF8.encode(deep)), "depth");
+      const fixture = TEXT.decode(await fixtureBytes());
+      await rejects(() => parseGenerationPlanDocument(UTF8.encode(
+        fixture.replace('"kind":"draw"', '"kind":"wrong","kind":"draw"'),
+      )), "duplicate");
+      for (const fractional of [
+        fixture.replace('"count":2', '"count":2.0000000000000001'),
+        fixture.replace('"seed":7', '"seed":9007199254740991.1'),
+      ]) {
+        await rejects(() => parseGenerationPlanDocument(UTF8.encode(fractional)), "integer");
+      }
       assert(MAX_GENERATION_COUNT === 1000, "count bound changed");
       assert(MAX_GENERATION_INPUT_BYTES === 8 * 1024 * 1024, "input bound changed");
     },
