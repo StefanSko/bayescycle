@@ -145,6 +145,11 @@ export default [
       const unknown = documents(fixture);
       unknown[0].unexpected = true;
       malformed.push([encodeDocuments(unknown), "unknown"]);
+      const attacker = '{"format":"bayescycle.data.json.v1","variables":{}}';
+      malformed.push([
+        UTF8.encode(text.replace('"parameters":', `"parameters":${attacker},"parameters":`)),
+        "duplicate",
+      ]);
       const oversized = new Uint8Array(MAX_GENERATED_LINE_BYTES + fixture.byteLength);
       oversized.fill(0x20, 0, MAX_GENERATED_LINE_BYTES);
       oversized.set(fixture, MAX_GENERATED_LINE_BYTES);

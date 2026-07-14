@@ -174,6 +174,11 @@ def test_rejects_malformed_truncated_nonfinite_and_oversized_streams() -> None:
     documents = _documents()
     documents[0]["unexpected"] = True
     malformed.append((_encode(documents), "unknown"))
+    attacker = b'{"format":"bayescycle.data.json.v1","variables":{}}'
+    duplicate = fixture.replace(
+        b'"parameters":', b'"parameters":' + attacker + b',"parameters":', 1
+    )
+    malformed.append((duplicate, "duplicate"))
 
     for stream, expected in malformed:
         with pytest.raises(GeneratedDatasetsArtifactError, match=expected):
