@@ -121,6 +121,39 @@ backends bind and sample.
 
 ### Closed model composition
 
+Use `with_prior(...)` to create a new closed model with a complete replacement
+prior while retaining the target's outcomes and other factors:
+
+```python
+from bayeswire import Data, Observed, Param, model, with_prior
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
+
+@model
+class LinearRegression:
+    alpha = Param(Normal(0.0, 1.0))
+    beta = Param(Normal(0.0, 1.0))
+    sigma = Param(HalfNormal(1.0), constraint=Positive())
+    x = Data.vector()
+    y = Observed(Normal(alpha + beta * x, sigma))
+
+@model
+class SimulationPrior:
+    alpha = Param(Normal(-0.1, 0.2))
+    beta = Param(Normal(1.25, 0.1))
+    sigma = Param(HalfNormal(2.0), constraint=Positive())
+
+SimulationRegression = with_prior(LinearRegression, prior=SimulationPrior)
+```
+
+`SimulationRegression` is an ordinary model class and serializes to ordinary
+flat `bayeswire_ir` v1. Prior prediction uses `SimulationPrior`; the original
+`LinearRegression` remains unchanged. The source must be structurally
+prior-only and must supply every target Param by the same name with an exactly
+compatible constraint, size, and dimensions. See
+[`docs/prior-composition.md`](docs/prior-composition.md) for the complete v0
+contract.
+
 Use `Submodel` to reuse a complete, already-validated model under an explicit
 namespace rather than through Python inheritance:
 
