@@ -10,6 +10,7 @@ const GENERATION_DESCENDANT_ARTIFACTS = [
   "simulated_data.json",
   "posterior_predictive.ndjson",
 ];
+const PRIOR_PREDICTIVE_ARTIFACTS = ["prior_predictive.ndjson"];
 
 export function initialState() {
   return Object.freeze({
@@ -71,6 +72,15 @@ export function reduce(state, event) {
         generatedLineage ? null : state.fitDatasetSource,
       );
     }
+    case "predictive-draws-edited":
+      return invalidateSettings(
+        state,
+        event,
+        PRIOR_PREDICTIVE_ARTIFACTS,
+        state.run.status === "running" &&
+          state.run.operation !== "prior-predictive",
+        state.fitDatasetSource,
+      );
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
       return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });

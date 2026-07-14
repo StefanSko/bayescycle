@@ -71,6 +71,14 @@ def test_composed_actions_availability_fallback_and_separate_seeds(
     expect(page.locator("#generate-button")).to_have_text("Generate from posterior")
 
     page.locator("#predictive-draws").fill("201")
+    expect(page.locator("#artifact-posterior")).to_be_visible()
+    expect(page.locator("#artifact-simulated")).to_be_visible()
+    expect(page.locator("#param-source-posterior")).to_be_enabled()
+    expect(page.locator("#param-source-posterior")).to_be_checked()
+    expect(page.locator("#dataset-source-generated")).to_be_enabled()
+    expect(page.locator("#dataset-source-generated")).to_be_checked()
+
+    page.locator("#generation-seed").fill("124")
     expect(page.locator("#artifact-posterior")).to_be_hidden()
     expect(page.locator("#artifact-simulated")).to_be_hidden()
     expect(page.locator("#param-source-posterior")).to_be_disabled()

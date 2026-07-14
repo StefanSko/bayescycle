@@ -25,12 +25,13 @@ formats retain their own compatibility policies.
 - Rework the Playground run UI into two explicit Generate datasets and
   Condition on a dataset directions, with selectable parameter and dataset
   sources, separate generation and inference seeds, and a dedicated predictive
-  draw count instead of the sampler's retained-draw setting. Generation-setting
-  edits preserve fits to observed data but invalidate fits to generated data
-  together with their datasets and predictive draws; inference-setting edits
-  preserve generated datasets, and mid-run edits no longer cancel operations
-  they do not affect. Legacy share links reuse their sampler seed and draw count
-  for generation.
+  draw count instead of the sampler's retained-draw setting. Predictive draws
+  gate and invalidate only prior-predictive generation. Generation-seed edits
+  preserve fits to observed data but invalidate fits to generated data together
+  with their datasets and downstream artifacts; inference-setting edits preserve
+  generated datasets, and mid-run edits no longer cancel operations they do not
+  affect. Legacy share links reuse their sampler seed and draw count for
+  generation.
 - Trim the bundled Playground models to show only the Bayeswire imports each
   declaration actually uses.
 

@@ -31,9 +31,8 @@ for (const selector of [
 ]) {
   element(selector).addEventListener("input", settingsEdited);
 }
-for (const selector of ["#generation-seed", "#predictive-draws"]) {
-  element(selector).addEventListener("input", generationSettingsEdited);
-}
+element("#generation-seed").addEventListener("input", generationSettingsEdited);
+element("#predictive-draws").addEventListener("input", predictiveDrawsEdited);
 for (const selector of ["input[name='param-source']", "input[name='dataset-source']"]) {
   for (const radio of document.querySelectorAll(selector)) radio.addEventListener("change", render);
 }
@@ -213,6 +212,11 @@ function generationSettingsEdited() {
   dispatch({ type: "generation-settings-edited", revision: ++revision });
 }
 
+function predictiveDrawsEdited() {
+  element("#progress").replaceChildren();
+  dispatch({ type: "predictive-draws-edited", revision: ++revision });
+}
+
 function documentsEdited() {
   exampleLoadRevision += 1;
   element("#progress").replaceChildren();
@@ -249,7 +253,7 @@ async function runPriorPredictive() {
     operation: "prior-predictive",
     modelIr: compiledBytes(),
     data: documentBytes(design.value),
-    settings: generationSettings(),
+    settings: priorPredictiveSettings(),
   });
 }
 
@@ -368,22 +372,30 @@ function sampleSettings() {
 }
 
 function generationSettings() {
+  const seed = integerValue("#generation-seed");
+  if (!validGenerationSeed(seed)) {
+    throw new Error("Generation seed must be a nonnegative safe integer");
+  }
+  return { seed };
+}
+
+function priorPredictiveSettings() {
   const settings = {
-    seed: integerValue("#generation-seed"),
+    ...generationSettings(),
     num_draws: integerValue("#predictive-draws"),
   };
-  if (!validGenerationSettings(settings)) {
-    throw new Error("Generation requires a nonnegative seed and at least 1 predictive draw");
+  if (!validPredictiveDraws(settings.num_draws)) {
+    throw new Error("Prior predictive generation requires at least 1 predictive draw");
   }
   return settings;
 }
 
-function validGenerationSettings(settings = {
-  seed: integerValue("#generation-seed"),
-  num_draws: integerValue("#predictive-draws"),
-}) {
-  return Number.isSafeInteger(settings.seed) && settings.seed >= 0 &&
-    Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 1;
+function validGenerationSeed(seed = integerValue("#generation-seed")) {
+  return Number.isSafeInteger(seed) && seed >= 0;
+}
+
+function validPredictiveDraws(numDraws = integerValue("#predictive-draws")) {
+  return Number.isSafeInteger(numDraws) && numDraws >= 1;
 }
 
 function validSeedSettings(settings = samplerSettings()) {
@@ -471,7 +483,8 @@ function render() {
     : "Fit observed data";
 
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
-  element("#generate-button").disabled = unavailable || !validGenerationSettings() ||
+  element("#generate-button").disabled = unavailable || !validGenerationSeed() ||
+    (paramSource === "prior" && !validPredictiveDraws()) ||
     (paramSource !== "posterior" && design.value.trim() === "") ||
     (paramSource === "fixed" && truth.value.trim() === "") ||
     (paramSource === "posterior" && !posteriorAvailable);
