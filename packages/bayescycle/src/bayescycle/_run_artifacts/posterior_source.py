@@ -202,9 +202,17 @@ def _flatten(value: JsonValue, label: str) -> list[float]:
         for item in value:
             result.extend(_flatten(item, label))
         return result
-    if not isinstance(value, int | float) or isinstance(value, bool) or not math.isfinite(value):
+    if not isinstance(value, int | float) or isinstance(value, bool):
         raise PortablePosteriorError(f"posterior value {label} must contain finite numbers")
-    return [float(value)]
+    try:
+        converted = float(value)
+    except OverflowError as exc:
+        raise PortablePosteriorError(
+            f"posterior value {label} is outside the finite float range"
+        ) from exc
+    if not math.isfinite(converted):
+        raise PortablePosteriorError(f"posterior value {label} must contain finite numbers")
+    return [converted]
 
 
 def _positive_integer(value: object, label: str) -> int:
