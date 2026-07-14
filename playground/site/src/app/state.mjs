@@ -41,6 +41,18 @@ export function reduce(state, event) {
         artifacts: [],
         notice: null,
       });
+    case "generation-settings-edited":
+      return freeze({
+        ...state,
+        projectRevision: event.revision,
+        run: { status: "idle" },
+        artifacts: state.artifacts.filter((artifact) => ![
+          "prior_predictive.ndjson",
+          "simulated_data.json",
+          "posterior_predictive.ndjson",
+        ].includes(artifact.name)),
+        notice: null,
+      });
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
       return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [] });

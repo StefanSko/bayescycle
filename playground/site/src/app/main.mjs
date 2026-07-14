@@ -27,10 +27,11 @@ source.addEventListener("input", () => {
 for (const input of [observed, design, truth]) input.addEventListener("input", documentsEdited);
 for (const selector of [
   "#chains", "#warmup", "#draws", "#inference-seed", "#target-accept",
-  "#max-treedepth", "#generation-seed",
+  "#max-treedepth",
 ]) {
   element(selector).addEventListener("input", settingsEdited);
 }
+element("#generation-seed").addEventListener("input", generationSettingsEdited);
 for (const selector of ["input[name='param-source']", "input[name='dataset-source']"]) {
   for (const radio of document.querySelectorAll(selector)) radio.addEventListener("change", render);
 }
@@ -175,7 +176,7 @@ function applyGenerationSettings(settings) {
   if (settings === null || typeof settings !== "object") return;
   if (typeof settings.seed === "number") {
     element("#generation-seed").value = String(settings.seed);
-    settingsEdited();
+    generationSettingsEdited();
   }
 }
 
@@ -189,6 +190,11 @@ function launchRun(operation) {
 function settingsEdited() {
   element("#progress").replaceChildren();
   dispatch({ type: "settings-edited", revision: ++revision });
+}
+
+function generationSettingsEdited() {
+  element("#progress").replaceChildren();
+  dispatch({ type: "generation-settings-edited", revision: ++revision });
 }
 
 function documentsEdited() {

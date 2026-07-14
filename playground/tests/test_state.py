@@ -7,6 +7,7 @@ CASES = [
     "source edits invalidate compilation and artifacts",
     "document edits retain compilation but invalidate artifacts",
     "sampler edits invalidate runs but retain compilation",
+    "generation settings selectively invalidate artifacts and stale runs",
     "later runs clear stale follow-up notices",
     "successful follow-ups preserve earlier artifacts",
     "a replacement posterior drops artifacts derived from the old fit",

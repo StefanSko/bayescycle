@@ -44,6 +44,33 @@ export default [
     },
   },
   {
+    name: "generation settings selectively invalidate artifacts and stale runs",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+      state = reduce(state, { type: "run-started", requestId: "complete", revision: 1 });
+      state = reduce(state, { type: "run-succeeded", requestId: "complete", revision: 1, artifacts: [
+        { name: "model.ir.json" },
+        { name: "data.json" },
+        { name: "posterior.ndjson" },
+        { name: "diagnostics.json" },
+        { name: "recovery_check.json" },
+        { name: "prior_predictive.ndjson" },
+        { name: "simulated_data.json" },
+        { name: "posterior_predictive.ndjson" },
+      ] });
+      state = reduce(state, { type: "run-started", requestId: "stale", revision: 1 });
+      state = reduce(state, { type: "generation-settings-edited", revision: 2 });
+      assert(state.projectRevision === 2, `project revision is ${state.projectRevision}`);
+      assert(state.run.status === "idle" && state.notice === null, "generation edit retained run state");
+      const names = state.artifacts.map((artifact) => artifact.name).join(",");
+      assert(names === "model.ir.json,data.json,posterior.ndjson,diagnostics.json,recovery_check.json", `unexpected retained artifacts: ${names}`);
+      const edited = state;
+      state = reduce(state, { type: "run-succeeded", requestId: "stale", revision: 1, artifacts: [{ name: "stale.json" }] });
+      assert(state === edited, "stale completion at the old revision was accepted");
+    },
+  },
+  {
     name: "later runs clear stale follow-up notices",
     fn: () => {
       let state = initialState();
