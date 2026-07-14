@@ -92,7 +92,8 @@ export function reduce(state, event) {
         generatedLineage
           ? [...GENERATION_DESCENDANT_ARTIFACTS, ...FIT_DESCENDANT_ARTIFACTS]
           : GENERATION_DESCENDANT_ARTIFACTS,
-        state.run.status === "running" && state.run.operation === "sample" &&
+        state.run.status === "running" &&
+          ["sample", "condition"].includes(state.run.operation) &&
           state.run.datasetSource === "observed",
         generatedLineage ? null : state.fitDatasetSource,
       );
@@ -124,7 +125,7 @@ export function reduce(state, event) {
         ...state,
         run: { status: "completed", revision: event.revision },
         artifacts: mergeArtifacts(state.artifacts, event.artifacts),
-        fitDatasetSource: state.run.operation === "sample"
+        fitDatasetSource: ["sample", "condition"].includes(state.run.operation)
           ? state.run.datasetSource
           : state.fitDatasetSource,
         notice: event.notice ?? null,
@@ -209,7 +210,8 @@ function reduceScopedWorkflow(state, event) {
       const generatedConditioning = state.fitDatasetSource === "generated" ||
         state.conditioning.fit?.datasetSource === "generated" ||
         state.conditioning.attempt.datasetSource === "generated" ||
-        (state.run.status === "running" && state.run.operation === "sample" &&
+        (state.run.status === "running" &&
+          ["sample", "condition"].includes(state.run.operation) &&
           state.run.datasetSource === "generated");
       if (generatedConditioning) {
         return {

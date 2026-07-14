@@ -43,6 +43,9 @@ export class BrowserRuntime {
   async run(request, onProgress = () => {}) {
     let result;
     switch (request.operation) {
+      case "condition":
+        result = await this.#condition(request, onProgress);
+        break;
       case "sample":
         result = await this.#sample(request, onProgress);
         break;
@@ -257,6 +260,48 @@ export class BrowserRuntime {
     const runBytes = await generationRunBytes(published);
     published.push(artifact("run.json", "application/json", runBytes));
     return { artifacts: published };
+  }
+
+  async #condition(request, onProgress) {
+    const sampled = await this.#sample(request, onProgress);
+    const posterior = sampled.artifacts.find(
+      (entry) => entry.name === "posterior.ndjson",
+    );
+    if (posterior === undefined) {
+      throw new RuntimeError("MissingArtifact", "Conditioning produced no posterior artifact");
+    }
+    const artifacts = [...sampled.artifacts];
+    const warnings = [];
+    try {
+      const diagnosed = requireOutput(await diagnose({
+        fits: [exactText(posterior.bytes, "posterior")],
+        executor: this.executor,
+      }));
+      artifacts.push(artifact(
+        "diagnostics.json", "application/json", diagnosed.rawBytes,
+      ));
+    } catch (error) {
+      warnings.push(`Posterior completed; diagnostics unavailable: ${error.message}`);
+    }
+    if (request.pairedParameters !== undefined) {
+      try {
+        const recovery = requireOutput(await recoverCheck({
+          fit: exactText(posterior.bytes, "posterior"),
+          truth: asObject(request.pairedParameters, "paired parameters"),
+          executor: this.executor,
+        }));
+        artifacts.push(artifact(
+          "recovery_check.json", "application/json", recovery.rawBytes,
+        ));
+      } catch (error) {
+        warnings.push(`Posterior completed; recovery check unavailable: ${error.message}`);
+      }
+    }
+    return {
+      artifacts,
+      fitArtifact: sampled.fitArtifact,
+      notice: warnings.length === 0 ? null : warnings.join("\n"),
+    };
   }
 
   async #sample(request, onProgress) {

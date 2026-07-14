@@ -375,42 +375,28 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     type: "run-started",
     requestId,
     revision: projectRevision,
-    operation: "sample",
+    operation: "condition",
     datasetSource,
   });
   try {
     const sampled = await runtime.run({
       type: "run",
       id: requestId,
-      operation: "sample",
+      operation: "condition",
       modelIr: state.compile.irBytes,
       data: dataBytes,
       settings,
+      ...(recoveryTruth === undefined ? {} : { pairedParameters: recoveryTruth }),
     }, (event) => renderActiveProgress(requestId, projectRevision, event));
     const posterior = sampled.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
     if (posterior === undefined) throw new Error("Runtime returned no posterior artifact");
-    let artifacts = [...sampled.artifacts];
-    const warnings = [];
-    try {
-      const diagnosed = await runtime.run({ type: "run", id: crypto.randomUUID(), operation: "diagnose", fit: posterior.bytes });
-      artifacts = [...artifacts, ...diagnosed.artifacts];
-    } catch (error) {
-      warnings.push(`Posterior completed; diagnostics unavailable: ${message(error)}`);
-    }
-    if (recoveryTruth !== undefined) {
-      try {
-        const recovery = await runtime.run({ type: "run", id: crypto.randomUUID(), operation: "recover-check", fit: posterior.bytes, truth: recoveryTruth });
-        artifacts = [...artifacts, ...recovery.artifacts];
-      } catch (error) {
-        warnings.push(`Posterior completed; recovery check unavailable: ${message(error)}`);
-      }
-    }
+    const artifacts = [...sampled.artifacts];
     dispatch({
       type: "run-succeeded",
       requestId,
       revision: projectRevision,
       artifacts,
-      notice: warnings.length === 0 ? null : warnings.join("\n"),
+      notice: sampled.notice,
     });
     dispatch({
       type: "conditioning-succeeded", requestId, dependencyKey,
@@ -724,7 +710,7 @@ function renderPlots(artifacts) {
 
 function operationLabel(operation) {
   const labels = {
-    sample: "Fitting",
+    condition: "Fitting",
   };
   return labels[operation] ?? "Operation";
 }
