@@ -341,6 +341,102 @@ def test_final_closure_rejects_vector_bounds_owner_collision_from_source_site_la
         with_prior(Target, prior=source)
 
 
+def test_final_closure_rejects_retained_factor_that_becomes_second_param_owner() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(2.0, 0.5))
+
+    target_meta = model_meta(Target)
+    factor = ResolvedStochasticSite(
+        name="penalty",
+        distribution=Normal(ConstNode(2.0), ConstNode(0.5)),
+        value=ParamRef("theta"),
+    )
+    target = bindable_from_meta(
+        replace(target_meta, stochastic_sites=target_meta.stochastic_sites + (factor,)),
+        dimensions=model_dimensions(Target),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="composed model parameter 'theta'.*exactly one structural owner",
+    ):
+        with_prior(target, prior=Prior)
+
+
+def test_final_closure_rejects_source_vector_bounds_param_site_label_collision() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    target_meta = model_meta(Target)
+    factor = ResolvedStochasticSite(
+        name="hyper",
+        distribution=Normal(ConstNode(0.0), ConstNode(2.0)),
+        value=ParamRef("theta"),
+    )
+    target = bindable_from_meta(
+        replace(target_meta, stochastic_sites=target_meta.stochastic_sites + (factor,)),
+        dimensions=model_dimensions(Target),
+    )
+
+    @model
+    class PriorDeclaration:
+        lower = Data.vector(2)
+        theta = Param(Normal(2.0, 0.5))
+        hyper = Param(Normal(0.0, 1.0), size=2)
+
+    source_meta = model_meta(PriorDeclaration)
+    constraint = VectorBounds(lower=DataRef("lower"), upper=None)
+    params = dict(source_meta.params)
+    params["hyper"] = replace(params["hyper"], constraint=constraint)
+    free_values = dict(source_meta.free_values)
+    free_values["hyper"] = replace(free_values["hyper"], constraint=constraint)
+    source = bindable_from_meta(
+        replace(source_meta, params=params, free_values=free_values),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="composed model VectorBounds parameter 'hyper'.*unique same-name owner",
+    ):
+        with_prior(target, prior=source)
+
+
+@pytest.mark.parametrize("invalid_size", [ParamRef("theta"), True, -1, 1.5])
+def test_composition_rejects_invalid_resolved_size_node_kinds(invalid_size: object) -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    def with_size(model_cls: type[object]) -> type[object]:
+        meta = model_meta(model_cls)
+        return bindable_from_meta(
+            replace(
+                meta,
+                params={"theta": replace(meta.params["theta"], size=invalid_size)},
+                free_values={
+                    "theta": replace(meta.free_values["theta"], size=invalid_size),
+                },
+            )
+        )
+
+    with pytest.raises(
+        (TypeError, ValueError),
+        match="size must be DataRef, a non-negative integer, or None",
+    ):
+        with_prior(with_size(TargetDeclaration), prior=with_size(PriorDeclaration))
+
+
 def test_final_metadata_contains_only_resolved_public_ir_nodes() -> None:
     @model
     class Target:

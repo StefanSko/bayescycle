@@ -157,6 +157,30 @@ def test_source_accepts_legacy_empty_free_value_map() -> None:
     assert tuple(model_meta(composed).free_values) == ("theta",)
 
 
+def test_source_preserves_site_order_independently_for_independent_params() -> None:
+    @model
+    class Target:
+        first = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        first = Param(Normal(1.0, 0.5))
+        second = Param(Normal(-1.0, 0.25))
+
+    meta = model_meta(Prior)
+    source = _rebuilt_like(
+        Prior,
+        replace(meta, stochastic_sites=tuple(reversed(meta.stochastic_sites))),
+    )
+
+    composed = with_prior(Target, prior=source)
+    result = model_meta(composed)
+
+    assert tuple(result.params) == ("first", "second")
+    assert tuple(result.free_values) == ("first", "second")
+    assert tuple(site.name for site in result.stochastic_sites) == ("second", "first")
+
+
 def test_source_accepts_ordered_hierarchical_extra_params() -> None:
     @model
     class HierarchicalPrior:
