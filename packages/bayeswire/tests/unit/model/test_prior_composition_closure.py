@@ -25,7 +25,12 @@ from bayeswire import (
 from bayeswire.constraints import Positive, VectorBounds
 from bayeswire.distributions import Bernoulli, Normal, StudentT, Truncated
 from bayeswire.distributions.core import Distribution
-from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
+from bayeswire.ir import (
+    UnserializableValue,
+    bindable_from_meta,
+    meta_to_dict,
+    register_distribution,
+)
 from bayeswire.model import ModelMeta, model_meta
 from bayeswire.model._data_schema import (
     DataDimRef,
@@ -1096,6 +1101,40 @@ def test_composition_rejects_invalid_builtin_constructor_states() -> None:
     )
     with pytest.raises(ValueError, match="Truncated distributions require at least one bound"):
         with_prior(TargetDeclaration, prior=malformed_source)
+
+
+def test_composition_validates_discarded_target_prior_codec() -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    malformed_distribution = MappedTestDistribution({"nested": (1, 2)})
+    target = bindable_from_meta(
+        replace(
+            meta,
+            params={
+                "theta": replace(
+                    meta.params["theta"],
+                    distribution=malformed_distribution,
+                )
+            },
+            stochastic_sites=(
+                replace(
+                    meta.stochastic_sites[0],
+                    distribution=malformed_distribution,
+                ),
+            ),
+        ),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+
+    with pytest.raises(UnserializableValue, match="bare tuple"):
+        with_prior(target, prior=Prior)
 
 
 def test_composition_round_trip_detaches_nested_extension_maps() -> None:
