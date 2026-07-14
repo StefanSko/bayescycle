@@ -124,12 +124,12 @@ function invalidateSettings(
     ...(preserveRun ? {} : {
       projectRevision: event.revision,
       run: { status: "idle" },
-      notice: null,
     }),
     artifacts: state.artifacts.filter(
       (artifact) => !invalidatedArtifacts.includes(artifact.name),
     ),
     fitDatasetSource,
+    notice: invalidatedArtifacts.includes("posterior.ndjson") ? null : state.notice,
   });
 }
 

@@ -267,6 +267,60 @@ export default [
     },
   },
   {
+    name: "settings notices follow their posterior artifacts",
+    fn: () => {
+      const completedFit = (datasetSource) => {
+        let state = initialState();
+        state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
+        state = reduce(state, {
+          type: "run-started", requestId: "sample", revision: 1,
+          operation: "sample", datasetSource,
+        });
+        return reduce(state, {
+          type: "run-succeeded", requestId: "sample", revision: 1,
+          artifacts: [
+            { name: "data.json" },
+            { name: "posterior.ndjson" },
+            { name: "simulated_data.json" },
+            { name: "prior_predictive.ndjson" },
+          ],
+          notice: "diagnostics unavailable",
+        });
+      };
+
+      let observed = completedFit("observed");
+      observed = reduce(observed, { type: "generation-settings-edited", revision: 2 });
+      assert(observed.notice === "diagnostics unavailable", "generation edit discarded observed fit notice");
+      assert(observed.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "generation edit discarded observed fit");
+
+      let generated = completedFit("generated");
+      generated = reduce(generated, { type: "generation-settings-edited", revision: 2 });
+      assert(generated.notice === null, "generation edit retained generated fit notice");
+      assert(!generated.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "generation edit retained generated fit");
+
+      let predictive = completedFit("generated");
+      predictive = reduce(predictive, { type: "predictive-draws-edited", revision: 2 });
+      assert(predictive.notice === "diagnostics unavailable", "predictive edit discarded fit notice");
+      assert(predictive.artifacts.some((artifact) => artifact.name === "posterior.ndjson"), "predictive edit discarded fit");
+
+      let orphaned = completedFit("observed");
+      orphaned = reduce(orphaned, { type: "settings-edited", revision: 2 });
+      assert(orphaned.notice === null, "orphaning settings edit retained fit notice");
+
+      let preserved = completedFit("observed");
+      preserved = Object.freeze({
+        ...preserved,
+        run: Object.freeze({
+          status: "running", requestId: "prior", revision: 1,
+          operation: "prior-predictive", datasetSource: null,
+        }),
+      });
+      preserved = reduce(preserved, { type: "settings-edited", revision: 2 });
+      assert(preserved.run.status === "running", "settings edit did not exercise preserve-run branch");
+      assert(preserved.notice === null, "preserve-run settings edit retained fit notice");
+    },
+  },
+  {
     name: "later runs clear stale follow-up notices",
     fn: () => {
       let state = initialState();

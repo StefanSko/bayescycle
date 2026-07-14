@@ -14,6 +14,7 @@ CASES = [
     "sampler edits preserve an independent prior predictive run",
     "predictive draw edits preserve fits and running samples",
     "predictive draw edits orphan running prior generation",
+    "settings notices follow their posterior artifacts",
     "later runs clear stale follow-up notices",
     "successful follow-ups preserve earlier artifacts",
     "a replacement posterior drops artifacts derived from the old fit",
