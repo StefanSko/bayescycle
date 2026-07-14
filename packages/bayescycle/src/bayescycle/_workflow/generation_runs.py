@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -38,7 +39,11 @@ from bayescycle._workflow.generation_plan import (
 
 GENERATION_RUN_FORMAT = "bayescycle.generation-run.v0"
 _MAX_INPUT_BYTES = 8 * 1024 * 1024
+_MAX_METADATA_BYTES = 1024 * 1024
+_MAX_PATH_BYTES = 255
+_MAX_DEPTH = 64
 _HASH = "sha256:"
+_BACKEND = re.compile(r"[A-Za-z0-9._-]{1,64}\Z")
 
 
 @dataclass(frozen=True)
@@ -209,16 +214,26 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
     root = run_dir.expanduser().resolve()
     if not root.is_dir():
         raise WorkflowError(f"run directory does not exist: {root}")
-    metadata_path = root / "run.json"
+    metadata_path = _contained_regular(root, "run.json", "metadata")
     try:
-        raw = cast(object, json.loads(metadata_path.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError) as exc:
+        metadata_bytes = metadata_path.read_bytes()
+        if not metadata_bytes or len(metadata_bytes) > _MAX_METADATA_BYTES:
+            raise WorkflowError(
+                f"generation run metadata must contain 1..{_MAX_METADATA_BYTES} bytes"
+            )
+        _validate_json_depth(metadata_bytes, "generation run metadata")
+        raw = cast(object, json.loads(metadata_bytes.decode("utf-8")))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise WorkflowError(f"invalid generation run metadata: {exc}") from exc
     document = _object(raw, "generation run metadata")
     _exact(document, ("format", "kind", "backend", "plan", "model", "inputs", "outputs"))
     if document["format"] != GENERATION_RUN_FORMAT or document["kind"] != "generate":
         raise WorkflowError("run metadata is not a functional generation run")
     backend = _string(document["backend"], "backend")
+    if _BACKEND.fullmatch(backend) is None:
+        raise WorkflowError(
+            "backend must be 1..64 ASCII letters, digits, dots, underscores, or hyphens"
+        )
     plan_entry = _entry(document["plan"], "plan")
     model_entry = _entry(document["model"], "model")
     inputs = _entries(document["inputs"], "inputs")
@@ -255,14 +270,23 @@ def load_generation_run(run_dir: Path) -> GenerationRunRecord:
     roles = tuple(entry[0] for entry in inputs)
     if roles == ("design", "fixed-parameters"):
         expected_names = ("design.json", "fixed-parameters.json")
+        expected_formats = ("bayescycle.data.json.v1", "bayescycle.data.json.v1")
     elif roles == ("design",):
         expected_names = ("design.json",)
+        expected_formats = ("bayescycle.data.json.v1",)
     elif roles == ("design", "source-posterior", "source-fit-data"):
         expected_names = ("design.json", "source-posterior.ndjson", "source-fit-data.json")
+        expected_formats = (
+            "bayescycle.data.json.v1",
+            "v0-provisional",
+            "bayescycle.data.json.v1",
+        )
     else:
         raise WorkflowError(f"generation run input roles are invalid: {roles}")
     if tuple(entry[1] for entry in inputs) != expected_names:
         raise WorkflowError("generation run input role-to-path mapping is invalid")
+    if tuple(entry[2] for entry in inputs) != expected_formats:
+        raise WorkflowError("generation run input format mapping is invalid")
     input_paths = {entry[0]: _contained_regular(root, entry[1], entry[0]) for entry in inputs}
     try:
         plan = resolve_generation_plan_document(
@@ -368,10 +392,18 @@ def replay_generation_run(
 
 
 def is_generation_run(run_dir: Path) -> bool:
-    """Return whether run.json advertises the generation-specific profile."""
+    """Return whether bounded regular run.json advertises the generation profile."""
+    root = run_dir.expanduser().resolve()
+    metadata = root / "run.json"
+    if metadata.is_symlink():
+        raise WorkflowError(f"run metadata must be a contained regular file: {metadata}")
     try:
-        value = cast(object, json.loads((run_dir.expanduser().resolve() / "run.json").read_text()))
-    except (OSError, json.JSONDecodeError):
+        data = metadata.read_bytes()
+        if not data or len(data) > _MAX_METADATA_BYTES:
+            return False
+        _validate_json_depth(data, "run metadata")
+        value = cast(object, json.loads(data.decode("utf-8")))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, WorkflowError):
         return False
     return isinstance(value, dict) and value.get("format") == GENERATION_RUN_FORMAT
 
@@ -530,6 +562,8 @@ def _read_bounded(path: Path, label: str) -> bytes:
 
 
 def _contained_regular(root: Path, name: str, role: str) -> Path:
+    if len(name.encode("utf-8")) > _MAX_PATH_BYTES:
+        raise WorkflowError(f"generation {role} path exceeds {_MAX_PATH_BYTES} UTF-8 bytes")
     path = Path(name)
     if path.name != name or path.is_absolute() or name in {".", ".."}:
         raise WorkflowError(f"generation {role} path must be one normalized path segment")
@@ -539,6 +573,32 @@ def _contained_regular(root: Path, name: str, role: str) -> Path:
     if candidate.resolve().parent != root:
         raise WorkflowError(f"generation {role} escapes the run directory")
     return candidate
+
+
+def _validate_json_depth(data: bytes, label: str) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in data:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:
+                escaped = True
+            elif byte == 0x22:
+                in_string = False
+        elif byte == 0x22:
+            in_string = True
+        elif byte in (0x7B, 0x5B):
+            depth += 1
+            if depth > _MAX_DEPTH:
+                raise WorkflowError(f"{label} exceeds nesting depth {_MAX_DEPTH}")
+        elif byte in (0x7D, 0x5D):
+            depth -= 1
+            if depth < 0:
+                raise WorkflowError(f"{label} has malformed nesting")
+    if in_string or depth != 0:
+        raise WorkflowError(f"{label} has malformed nesting")
 
 
 def _entry(value: object, label: str) -> tuple[str, str, str]:
