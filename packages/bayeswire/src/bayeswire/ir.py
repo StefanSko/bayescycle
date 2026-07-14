@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 from dataclasses import fields, is_dataclass
+from inspect import signature
 from typing import cast
 
 from bayeswire._ir_registry import (
@@ -102,6 +103,14 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             f"Distribution {cls.__name__!r} must use @dataclass(frozen=True) so registered "
             "metadata cannot change after validation."
         )
+    constructor_fields = tuple(value_field for value_field in fields(cls) if value_field.init)
+    try:
+        signature(cls).bind(**{value_field.name: object() for value_field in constructor_fields})
+    except (TypeError, ValueError) as exc:
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} constructor must accept every encoded dataclass "
+            "field by keyword so IR decoding can reconstruct it."
+        ) from exc
     if any(not value_field.init for value_field in fields(cls)):
         raise UnserializableDistribution(
             f"Distribution {cls.__name__!r} must use init=True on every dataclass field "
