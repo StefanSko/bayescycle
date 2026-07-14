@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+from typing import cast
+
 import jax
 import jax.numpy as jnp
-from bayeswire import Data, Observed, Param, model, with_prior
+from bayeswire import Data, Observed, Param, model, model_dimensions, with_prior
 from bayeswire.constraints import Positive
 from bayeswire.distributions import HalfNormal, Normal
+from bayeswire.ir import bindable_from_meta, register_distribution
+from bayeswire.model import model_meta
 
 from bayesjax.compiler import compile_log_density
 from bayesjax.inference import sample
@@ -39,6 +44,33 @@ class HandwrittenAlternativeRegression:
     x = Data.vector()
     mu = alpha + beta * x
     y = Observed(Normal(mu, sigma))
+
+
+@dataclass(frozen=True)
+class MappedNormal:
+    parameters: dict[str, object]
+
+    def log_prob(self, x: object) -> object:
+        value = cast(jax.Array, x)
+        loc = cast(jax.Array, self.parameters["loc"])
+        scale = cast(jax.Array, self.parameters["scale"])
+        standardized = (value - loc) / scale
+        return -0.5 * standardized**2 - jnp.log(scale) - 0.5 * jnp.log(2.0 * jnp.pi)
+
+
+register_distribution(MappedNormal, tag="MappedNormalPriorCompositionTest")
+
+
+@model
+class MappedTarget:
+    offset = Data.scalar()
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta + offset, 1.0))
+
+
+@model
+class MappedPrior:
+    theta = Param(Normal(0.5, 0.75))
 
 
 AlternativeRegression = with_prior(RegressionTarget, prior=SimulationPrior)
@@ -86,6 +118,38 @@ def test_composed_seeded_prior_predictive_matches_handwritten_model() -> None:
     for name in composed.parameters:
         assert jnp.array_equal(composed.parameters[name], handwritten.parameters[name])
     assert jnp.array_equal(composed.observed["y"], handwritten.observed["y"])
+
+
+def test_composed_registered_map_fields_execute_after_binding() -> None:
+    meta = model_meta(MappedTarget)
+    observed = meta.observed_nodes[0]
+    assert isinstance(observed.distribution, Normal)
+    mapped = MappedNormal(
+        {
+            "loc": observed.distribution.loc,
+            "scale": observed.distribution.scale,
+        }
+    )
+    target = bindable_from_meta(
+        replace(
+            meta,
+            observed_nodes=(replace(observed, distribution=mapped),),
+            stochastic_sites=tuple(
+                replace(site, distribution=mapped) if site.name == "y" else site
+                for site in meta.stochastic_sites
+            ),
+        ),
+        dimensions=model_dimensions(MappedTarget),
+    )
+    composed = with_prior(target, prior=MappedPrior)
+    bound = bind_model(
+        composed,
+        {"offset": jnp.asarray(0.25), "y": jnp.asarray(0.5)},
+    )
+
+    value = compile_log_density(bound)(jnp.asarray([0.1]))
+
+    assert jnp.isfinite(value)
 
 
 def test_composed_model_completes_posterior_sampling_smoke() -> None:
