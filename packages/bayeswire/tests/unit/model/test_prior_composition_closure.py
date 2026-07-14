@@ -22,7 +22,7 @@ from bayeswire import (
     model_dimensions,
     with_prior,
 )
-from bayeswire.constraints import VectorBounds
+from bayeswire.constraints import Positive, VectorBounds
 from bayeswire.distributions import Normal
 from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
 from bayeswire.model import ModelMeta, model_meta
@@ -629,6 +629,84 @@ def test_composition_rejects_empty_source_target_and_factor_only_models() -> Non
     ):
         with pytest.raises(ValueError, match="at least one stochastic declaration"):
             with_prior(target, prior=source)
+
+
+def test_composition_rejects_resolved_role_type_mismatches() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    source_meta = model_meta(PriorDeclaration)
+    wrong_free_value = bindable_from_meta(
+        replace(source_meta, free_values={"theta": source_meta.params["theta"]}),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+    with pytest.raises(TypeError, match="free value 'theta'.*ResolvedFreeValue"):
+        with_prior(Target, prior=wrong_free_value)
+
+    wrong_distribution = bindable_from_meta(
+        replace(
+            source_meta,
+            params={
+                "theta": replace(source_meta.params["theta"], distribution=Positive()),
+            },
+            stochastic_sites=(replace(source_meta.stochastic_sites[0], distribution=Positive()),),
+        ),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+    with pytest.raises(TypeError, match="parameter 'theta' distribution.*registered distribution"):
+        with_prior(Target, prior=wrong_distribution)
+
+
+def test_composition_rejects_mutable_observed_and_site_sequences() -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+        y = Observed(Normal(theta, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    for malformed in (
+        replace(meta, observed_nodes=cast(tuple, list(meta.observed_nodes))),
+        replace(meta, stochastic_sites=cast(tuple, list(meta.stochastic_sites))),
+    ):
+        target = bindable_from_meta(malformed, dimensions=model_dimensions(TargetDeclaration))
+        with pytest.raises(TypeError, match="observed nodes and stochastic sites must be tuples"):
+            with_prior(target, prior=Prior)
+
+
+@pytest.mark.parametrize("index", [1.5, "parameter"])
+def test_composition_rejects_non_integer_or_parameter_dependent_indexes(index: object) -> None:
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    if index == "parameter":
+
+        @model
+        class Target:
+            x = Data.vector()
+            theta = Param(Normal(0.0, 1.0))
+            selected = x[theta]
+            y = Observed(Normal(selected, 1.0))
+    else:
+
+        @model
+        class Target:
+            x = Data.vector()
+            theta = Param(Normal(0.0, 1.0))
+            selected = x[index]
+            y = Observed(Normal(selected + theta, 1.0))
+
+    with pytest.raises(TypeError, match="index expressions must use integer data or constants"):
+        with_prior(Target, prior=Prior)
 
 
 def test_final_metadata_contains_only_resolved_public_ir_nodes() -> None:
