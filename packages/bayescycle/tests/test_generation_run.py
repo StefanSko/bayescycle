@@ -16,10 +16,12 @@ from bayescycle._errors import WorkflowError
 from bayescycle._workflow.generation_plan import (
     FitArtifact,
     FitAssociation,
+    Fixed,
     PosteriorOf,
     generate_datasets,
 )
 from bayescycle._workflow.generation_runs import (
+    execute_generation_run,
     load_generation_run,
     materialize_generation_run,
 )
@@ -169,6 +171,32 @@ raise SystemExit(code)
     return path
 
 
+def _write_colliding_generation_engine(tmp_path: Path, *, symlink: bool) -> Path:
+    delegate = _write_fake_generation_engine(tmp_path)
+    suffix = "symlink" if symlink else "regular"
+    path = tmp_path / f"colliding_{suffix}_bayesite.py"
+    outside = tmp_path / f"outside-{suffix}-run.json"
+    script = f"""#!{sys.executable}
+import subprocess, sys
+from pathlib import Path
+args = sys.argv[1:]
+code = subprocess.run([{str(delegate)!r}, *args], check=False).returncode
+if code == 0 and args != ["capabilities"]:
+    output = Path(args[args.index("--out") + 1])
+    metadata = output.parent / "run.json"
+    outside = Path({str(outside)!r})
+    if {symlink!r}:
+        outside.write_text("ENGINE SENTINEL\\n")
+        metadata.symlink_to(outside)
+    else:
+        metadata.write_text("ENGINE SENTINEL\\n")
+raise SystemExit(code)
+"""
+    path.write_text(textwrap.dedent(script), encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
 def _canonical(path: Path, variables: dict[str, dict[str, Any]]) -> Path:
     path.write_text(
         json.dumps(
@@ -239,6 +267,36 @@ def test_malformed_engine_output_fails_without_publishing_run_metadata(
     assert code == 2
     assert "generated-dataset" in capsys.readouterr().err
     assert not (output / "run.json").exists()
+
+
+@pytest.mark.parametrize("symlink", [False, True])
+def test_generation_refuses_engine_metadata_collision(tmp_path: Path, symlink: bool) -> None:
+    model_bytes = b'{"bayeswire_ir":1,"model":{}}\n'
+    design_bytes = (
+        b'{"format":"bayescycle.data.json.v1","variables":'
+        b'{"x":{"dtype":"float64","shape":[1],"values":[0.0]}}}\n'
+    )
+    parameter_bytes = (
+        b'{"format":"bayescycle.data.json.v1","variables":'
+        b'{"alpha":{"dtype":"float64","shape":[],"values":[0.5]}}}\n'
+    )
+    output = tmp_path / f"collision-{symlink}"
+    plan = generate_datasets(
+        model_bytes,
+        design=design_bytes,
+        parameter_source=Fixed(parameter_bytes),
+        count=1,
+        seed=0,
+    )
+    with pytest.raises(WorkflowError, match="run.json|metadata|exists"):
+        execute_generation_run(
+            output_dir=output,
+            plan=plan,
+            engine=str(_write_colliding_generation_engine(tmp_path, symlink=symlink)),
+        )
+    metadata = output / "run.json"
+    assert metadata.is_symlink() is symlink
+    assert metadata.read_text() == "ENGINE SENTINEL\n"
 
 
 def test_generation_rejects_symlinked_engine_output(
