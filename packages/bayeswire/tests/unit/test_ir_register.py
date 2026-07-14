@@ -68,6 +68,14 @@ class _TupleDistribution:
 
 
 @dataclass(frozen=True)
+class _CachedDistribution:
+    """Invalid extension with state excluded from its constructor."""
+
+    loc: object
+    cache: object = field(init=False, default=1.0)
+
+
+@dataclass(frozen=True)
 class _IgnoredFieldDistribution:
     """Invalid extension whose constructor field is excluded from equality."""
 
@@ -149,6 +157,11 @@ def test_registered_distribution_rejects_nested_bare_containers(nested: object) 
 
     with pytest.raises(UnserializableValue, match=r"bare (dict|tuple)"):
         meta_to_dict(_meta_with(_MapDistribution({"nested": nested})))
+
+
+def test_register_distribution_rejects_nonconstructor_fields() -> None:
+    with pytest.raises(UnserializableDistribution, match=r"_CachedDistribution.*init=True"):
+        register_distribution(_CachedDistribution)
 
 
 def test_register_distribution_rejects_noncomparing_constructor_fields() -> None:

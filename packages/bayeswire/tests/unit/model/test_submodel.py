@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from typing import Protocol, cast
 
 import pytest
 
-from bayeswire import Data, Observed, Param, PartiallyObserved, Submodel, model
+from bayeswire import Data, Observed, Param, PartiallyObserved, Submodel, model, model_dimensions
 from bayeswire.constraints import Positive, VectorBounds
 from bayeswire.distributions import HalfNormal, Normal
 from bayeswire.distributions.core import DistributionParameter
+from bayeswire.ir import bindable_from_meta, register_distribution
 from bayeswire.model import model_meta
 from bayeswire.model._data_schema import DataDimRef, ResolvedDataShapeSchema
 from bayeswire.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
+
+
+@dataclass(frozen=True)
+class MappedSubmodelDistribution:
+    parameters: dict[str, object]
+
+
+register_distribution(MappedSubmodelDistribution, tag="MappedSubmodelDistributionTest")
 
 
 class NormalFields(Protocol):
@@ -27,6 +37,39 @@ def dist_param(value: object) -> DistributionParameter:
 def normal_fields(value: object) -> NormalFields:
     assert isinstance(value, Normal)
     return cast(NormalFields, value)
+
+
+def test_submodel_prefixes_references_inside_registered_map_fields() -> None:
+    @model
+    class ChildDeclaration:
+        offset = Data.scalar()
+        theta = Param(Normal(0.0, 1.0))
+
+    child_meta = model_meta(ChildDeclaration)
+    distribution = MappedSubmodelDistribution({"loc": DataRef("offset")})
+    child_model = bindable_from_meta(
+        replace(
+            child_meta,
+            params={
+                "theta": replace(
+                    child_meta.params["theta"],
+                    distribution=distribution,
+                )
+            },
+            stochastic_sites=(replace(child_meta.stochastic_sites[0], distribution=distribution),),
+        ),
+        dimensions=model_dimensions(ChildDeclaration),
+    )
+
+    @model
+    class Parent:
+        child = Submodel(child_model)
+
+    prefixed = cast(
+        MappedSubmodelDistribution,
+        model_meta(Parent).params["child.theta"].distribution,
+    )
+    assert prefixed.parameters == {"loc": DataRef("child.offset")}
 
 
 def test_submodel_flattens_complete_model_under_closed_namespace() -> None:
