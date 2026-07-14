@@ -1,7 +1,7 @@
 from playwright.sync_api import Page, expect
 
 
-def test_composed_actions_availability_fallback_and_separate_seeds(
+def test_all_parameter_sources_use_one_native_generation_operation(
     page: Page, base_url: str
 ) -> None:
     page.add_init_script(
@@ -29,61 +29,43 @@ def test_composed_actions_availability_fallback_and_separate_seeds(
     )
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("linear-simulation")
-
-    expect(page.locator("#generate-button")).to_have_text("Generate at fixed values")
-    expect(page.locator("#fixed-values-field")).to_be_visible()
-    page.locator("#param-source-prior").check()
-    expect(page.locator("#generate-button")).to_have_text("Generate from model prior")
-    expect(page.locator("#fixed-values-field")).to_be_hidden()
-    page.locator("#param-source-fixed").check()
-    expect(page.locator("#fit-button")).to_have_text("Fit observed data")
-    expect(page.locator("#param-source-posterior")).to_be_disabled()
-
     page.locator("#chains").fill("1")
     page.locator("#warmup").fill("4")
     page.locator("#draws").fill("4")
+    page.locator("#generation-count").fill("2")
     page.locator("#generation-seed").fill("123")
     page.locator("#inference-seed").fill("456")
     page.locator("#compile-button").click()
+
     expect(page.locator("#generate-button")).to_be_enabled(timeout=120_000)
     page.locator("#generate-button").click()
-    expect(page.locator("#artifact-simulated")).to_be_visible(timeout=120_000)
-    assert (
-        page.evaluate("__engineRequests.find((request) => request.command === 'simulate').seed")
-        == 123
-    )
+    expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
-    expect(page.locator("#dataset-source-generated")).to_be_enabled()
-    page.locator("#warmup").fill("5")
-    expect(page.locator("#artifact-simulated")).to_be_visible()
-    expect(page.locator("#dataset-source-generated")).to_be_enabled()
-    page.locator("#dataset-source-generated").check()
-    expect(page.locator("#fit-button")).to_have_text("Fit generated dataset")
+    page.locator("#param-source-prior").check()
+    expect(page.locator("#generate-button")).to_have_text("Generate from model prior")
+    page.locator("#generate-button").click()
+    expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
+
+    page.locator("#observed-data").fill(
+        '{"x":[-1,-0.5,0,0.5,1],"y":[-0.7,-0.1,0.5,1.1,1.7]}'
+    )
     page.locator("#fit-button").click()
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
-    assert (
-        page.evaluate("__engineRequests.find((request) => request.command === 'sample').seed")
-        == 456
-    )
-
     expect(page.locator("#param-source-posterior")).to_be_enabled()
     page.locator("#param-source-posterior").check()
     expect(page.locator("#generate-button")).to_have_text("Generate from posterior")
+    page.locator("#generate-button").click()
+    expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
-    page.locator("#predictive-draws").fill("201")
-    expect(page.locator("#artifact-posterior")).to_be_visible()
-    expect(page.locator("#artifact-simulated")).to_be_visible()
-    expect(page.locator("#param-source-posterior")).to_be_enabled()
-    expect(page.locator("#param-source-posterior")).to_be_checked()
-    expect(page.locator("#dataset-source-generated")).to_be_enabled()
-    expect(page.locator("#dataset-source-generated")).to_be_checked()
-
-    page.locator("#generation-seed").fill("124")
-    expect(page.locator("#artifact-posterior")).to_be_hidden()
-    expect(page.locator("#artifact-simulated")).to_be_hidden()
-    expect(page.locator("#param-source-posterior")).to_be_disabled()
-    expect(page.locator("#param-source-fixed")).to_be_checked()
-    expect(page.locator("#generate-button")).to_have_text("Generate at fixed values")
-    expect(page.locator("#dataset-source-generated")).to_be_disabled()
-    expect(page.locator("#dataset-source-observed")).to_be_checked()
-    expect(page.locator("#fit-button")).to_have_text("Fit observed data")
+    requests = page.evaluate(
+        "__engineRequests.filter((request) => request.command === 'generate')"
+    )
+    assert [request["parameter_source"]["kind"] for request in requests] == [
+        "fixed",
+        "model-prior",
+        "posterior",
+    ]
+    assert all(request["count"] == 2 and request["seed"] == 123 for request in requests)
+    assert not page.evaluate(
+        "__engineRequests.some((request) => ['simulate', 'prior-predictive', 'posterior-predictive'].includes(request.command))"
+    )

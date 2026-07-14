@@ -44,7 +44,14 @@ def test_playground_is_not_a_workspace_member() -> None:
 
 def test_native_document_surfaces_are_present() -> None:
     html = (SITE_ROOT / "index.html").read_text()
-    for element_id in ("model-source", "observed-data", "design-data", "truth-data"):
+    for element_id in (
+        "model-source",
+        "observed-data",
+        "design-data",
+        "truth-data",
+        "generation-count",
+        "artifact-generated-datasets",
+    ):
         assert f'id="{element_id}"' in html
     assert "codemirror" not in html.lower()
 
@@ -55,6 +62,12 @@ def test_application_reaches_workers_only_through_runtime() -> None:
     assert 'from "../engine/' not in application_source
     assert "runtime.compile(" in application_source
     assert "runtime.run(" in application_source
+
+
+def test_application_uses_no_private_generation_commands() -> None:
+    application_source = (SITE_ROOT / "src" / "app" / "main.mjs").read_text()
+    for command in ('"simulate"', '"prior-predictive"', '"posterior-predictive"'):
+        assert command not in application_source
 
 
 def test_application_does_not_infer_raw_ir_semantics() -> None:
