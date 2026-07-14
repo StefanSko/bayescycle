@@ -18,9 +18,10 @@ from bayeswire import (
     with_prior,
 )
 from bayeswire.constraints import Positive
-from bayeswire.distributions import HalfNormal, Normal
+from bayeswire.distributions import HalfNormal, MultivariateNormal, Normal
 from bayeswire.ir import bindable_from_meta, register_distribution
 from bayeswire.model import model_meta
+from bayeswire.model.expr import ConstNode, DataRef
 
 from bayesjax.compiler import compile_log_density
 from bayesjax.inference import sample
@@ -92,6 +93,14 @@ class MappedNormal:
 register_distribution(MappedNormal, tag="MappedNormalPriorCompositionTest")
 
 
+@dataclass(frozen=True)
+class MappedMvn:
+    parameters: dict[str, object]
+
+
+register_distribution(MappedMvn, tag="MappedMvnPriorCompositionTest")
+
+
 @model
 class MappedTarget:
     offset = Data.scalar()
@@ -102,6 +111,13 @@ class MappedTarget:
 @model
 class MappedPrior:
     theta = Param(Normal(0.5, 0.75))
+
+
+@model
+class NestedMvnTarget:
+    chol = Data.matrix()
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta, 1.0))
 
 
 @model
@@ -221,6 +237,59 @@ def test_composed_registered_map_fields_execute_after_binding() -> None:
 
     assert jnp.isfinite(value)
     assert draws.observed["y"].shape == (2,)
+
+
+def test_composed_observed_owner_uses_declaration_name_not_factor_label() -> None:
+    meta = model_meta(MappedTarget)
+    relabeled = bindable_from_meta(
+        replace(
+            meta,
+            stochastic_sites=tuple(
+                replace(site, name="likelihood") if site.name == "y" else site
+                for site in meta.stochastic_sites
+            ),
+        ),
+        dimensions=model_dimensions(MappedTarget),
+    )
+    composed = with_prior(relabeled, prior=MappedPrior)
+
+    draws = simulate_prior_predictive(
+        composed,
+        seed=37,
+        num_samples=2,
+        data={"offset": jnp.asarray(0.25)},
+        observed_shapes={"y": ()},
+    )
+
+    assert tuple(draws.observed) == ("y",)
+    assert draws.observed["y"].shape == (2,)
+
+
+def test_composed_nested_map_mvn_is_validated_at_binding() -> None:
+    meta = model_meta(NestedMvnTarget)
+    observed = meta.observed_nodes[0]
+    distribution = MappedMvn({"base": MultivariateNormal(ConstNode(0.0), DataRef("chol"))})
+    target = bindable_from_meta(
+        replace(
+            meta,
+            observed_nodes=(replace(observed, distribution=distribution),),
+            stochastic_sites=tuple(
+                replace(site, distribution=distribution) if site.name == "y" else site
+                for site in meta.stochastic_sites
+            ),
+        ),
+        dimensions=model_dimensions(NestedMvnTarget),
+    )
+    composed = with_prior(target, prior=MappedPrior)
+
+    with pytest.raises(ValueError, match="jnp.linalg.cholesky"):
+        bind_model(
+            composed,
+            {
+                "chol": jnp.asarray([[1.0, 0.5], [0.0, 1.0]]),
+                "y": jnp.zeros((2,)),
+            },
+        )
 
 
 def test_composed_nested_map_indexes_are_validated_at_binding() -> None:
