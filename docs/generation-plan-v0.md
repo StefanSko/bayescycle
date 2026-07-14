@@ -105,17 +105,27 @@ Posterior-source validation requires all of the following:
 2. a complete `v0-provisional` posterior stream with the posterior-draw
    kind/scope, one header, its declared number of contiguous draw records, and
    one final trailer with no trailing records;
-3. header and trailer parameter order/shapes, chain order/count, draw count,
-   posterior identity, and optional model/data fingerprint agree;
+3. the header parameter order and shapes agree with every draw; trailer
+   parameter order/count agree with the header; header and trailer chain
+   order/count, draw count, optional posterior identity, and optional model/data
+   fingerprint agree. Shapes are header-owned in posterior v0 and are not
+   required in the trailer;
 4. every draw has the declared finite constrained values and a unique global
    index whose chain/per-chain draw coordinates agree with stream order;
-5. the structural posterior identity in both header and trailer equals the
-   identity computed by the engine from the supplied model and fit data;
+5. `posterior_identity_hash`, when present, is present in both header and
+   trailer and equals the identity computed by the engine from the supplied
+   model and fit data. When absent from both, the engine validates the declared
+   parameter layout against the decoded model instead;
 6. `model_data_fingerprint` is either present in both header and trailer with
    equal values that match the normative exact-byte framing, or absent from
    both. An absent fingerprint is accepted only for a fit value produced by the
    current runtime's conditioning transition with its co-owned model/data
    bytes. It is not accepted from an imported standalone stream.
+
+Thus a portable fit has an exact fingerprint plus model-checked layout; the
+browser's fingerprint-less Wasm fit has its runtime association plus posterior
+identity. A conforming backend fit without posterior identity remains usable
+when its exact fingerprint and model-checked layout succeed.
 
 The generation design may differ from the fit data, but must bind the same
 closed model. If this exact association is unavailable or stale, the posterior
@@ -217,8 +227,10 @@ A runtime fails visibly before claiming success when:
 - the model has any non-Param free value, including a partially observed latent
   value, because browser generation v0 has no semantics for carrying it to a
   new design;
-- a generation document contains an `int64` value outside JavaScript's exactly
-  representable range `[-9007199254740991, 9007199254740991]`;
+- any generation-protocol integer is outside JavaScript's exactly representable
+  range `[-9007199254740991, 9007199254740991]`. This includes canonical
+  `int64` values, canonical/schema shape dimensions, count, seed, draw/chain
+  indices, and declared counts;
 - a document, count, seed, nesting depth, line, or output exceeds a bound;
 - the backend does not support the source variant.
 
@@ -415,6 +427,7 @@ run/
   design.json
   generation-plan.json
   generated_datasets.ndjson
+  run.json
 ```
 
 `generation-plan.json` is the exact compact plan document. Its payload hashes
@@ -427,9 +440,13 @@ resolve only to files in the same moved run directory:
 
 All JSON input files retain the exact bytes hashed by the plan. A generation run
 copies posterior source payloads; v0 does not use external or absolute artifact
-references. `run.json`, when present, names these paths and the operation so
-replay can resolve, validate, and execute the immutable plan after the directory
-is moved and original external inputs are removed.
+references. `run.json` is required for generation and names operation-local
+relative paths. Generation replay is a new `bayescycle.run.v1` operation profile:
+it resolves the closed IR and source payloads from the moved directory and does
+not re-execute or require the original Python model source. Existing operation
+profiles retain their current external-source verification behavior. Replay
+validates and executes the immutable generation plan after the directory is
+moved and original external inputs are removed.
 
 Conditioning runs retain their existing `model.ir.json`, `data.json`, and
 `posterior.ndjson` required set. A selected generated dataset is materialized as

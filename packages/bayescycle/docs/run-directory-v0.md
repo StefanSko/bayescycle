@@ -26,6 +26,7 @@ run/
   design.json                 # exact canonical generation design/context
   generation-plan.json        # exact hash-resolved functional plan
   generated_datasets.ndjson   # paired parameter/complete-dataset draws
+  run.json                    # operation-local plan paths and provenance
 ```
 
 Fixed generation additionally requires `fixed-parameters.json`. Posterior
@@ -33,15 +34,18 @@ generation additionally requires copied `source-posterior.ndjson` and
 `source-fit-data.json`; its source model is the byte-identical
 `model.ir.json`. Model-prior generation needs no additional source payload.
 These local payloads make a generation run replayable after it is moved and the
-original external inputs are removed. Generation-only runs do not require a
-posterior output.
+original external inputs are removed. For this operation profile `run.json`
+uses relative paths inside the run, replay consumes closed IR directly, and the
+original Python model source is not required. Existing run profiles retain their
+current external-source verification behavior. Generation-only runs do not
+require a posterior output.
 
 ## Optional files
 
 ```text
 run/
   manifest.json               # narrow artifact-format manifest
-  run.json                    # append-only run provenance metadata
+  run.json                    # provenance for non-generation operation profiles
   dims.json                   # explicit bayeswire dimension metadata sidecar
   diagnostics.json            # diagnostics report for posterior.ndjson
   prior_predictive.ndjson     # prior-predictive draws when produced

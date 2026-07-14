@@ -42,7 +42,8 @@ no per-model wasm artifact is built or downloaded.
 The UI uses only the protocol in [`playground-runtime-v0.md`](playground-runtime-v0.md):
 
 - `compile(source)` returns canonical IR bytes and their received-byte hash;
-- `run(operation, artifacts, settings)` emits progress and named artifacts;
+- `run(request, onProgress)` accepts one exact workflow request and emits
+  progress plus named artifacts;
 - results use run-directory filenames such as `model.ir.json`, `data.json`,
   `posterior.ndjson`, and `diagnostics.json`.
 
@@ -111,8 +112,8 @@ just another closed IR document and requires no frontend composition logic.
 ## State discipline
 
 Project state is represented by explicit immutable transitions. Model,
-observed-data, design, fixed-value, generation-setting, inference-setting,
-selected-draw, and fit revisions identify asynchronous dependencies. An edit
+observed-data, design, fixed-value, parameter-source, generation-setting,
+inference-setting, selected-draw, and fit revisions identify asynchronous dependencies. An edit
 invalidates only descendant artifacts, stale worker messages are ignored, and a
 failed follow-up cannot erase an earlier successful artifact.
 

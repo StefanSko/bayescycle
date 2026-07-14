@@ -59,9 +59,10 @@ The next work orders migrate the source-specific controls onto the contract in
 19. **B1 paired artifact.** RED shared Python/JavaScript golden fixture,
     malformed/oversized streams, exact order/count, finite values, selection,
     and byte-preserving downloads. GREEN pure bounded codecs.
-20. **B2 generation plans.** RED exact immutable variants, bounds, unknown-key
-    rejection, Python/JavaScript parity, convenience equivalence, identities,
-    and invalidation keys. GREEN typed Python values and pure browser values.
+20. **B2 generation plans.** RED exact immutable variants, bounds (including
+    safe integers in values, shapes, and indices), unknown-key rejection,
+    Python/JavaScript parity, convenience equivalence, identities, and
+    invalidation keys. GREEN typed Python values and pure browser values.
 21. **B3 runtime lowering.** RED one recording-executor `generate` operation,
     byte preservation, visible capability failures, stale/failed preservation,
     and no private generation verbs in application code. GREEN lowers only
