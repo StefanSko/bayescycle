@@ -302,7 +302,12 @@ function oneArtifact(name, mediaType, output) {
 }
 
 function artifact(name, mediaType, bytes) {
-  return Object.freeze({ name, mediaType, bytes: Uint8Array.from(bytes) });
+  const owned = Uint8Array.from(bytes);
+  return Object.freeze({
+    name,
+    mediaType,
+    get bytes() { return Uint8Array.from(owned); },
+  });
 }
 
 function requireOutput(result) {
