@@ -294,6 +294,20 @@ export default [
         modelBytes: model, dataBytes: data, posteriorBytes: posterior,
       });
       const originals = documents(posterior);
+      const renamed = structuredClone(originals);
+      renamed[0].params[0].name = "seed";
+      renamed[0].parameter_order[0] = "seed";
+      for (const draw of renamed.slice(1, -1)) {
+        draw.parameter_order[0] = "seed";
+        const { mu, ...remaining } = draw.values;
+        draw.values = { seed: mu, ...remaining };
+      }
+      renamed.at(-1).trailer.parameter_order[0] = "seed";
+      await validatePortablePosterior({
+        modelBytes: model,
+        dataBytes: data,
+        posteriorBytes: encodeDocuments(renamed),
+      });
       const mutations = [
         (value) => { value[0].artifact_kind = "wrong"; },
         (value) => { delete value[0].settings; },
