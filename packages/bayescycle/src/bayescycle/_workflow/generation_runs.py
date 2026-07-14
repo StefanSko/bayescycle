@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -405,18 +406,28 @@ def is_generation_run(run_dir: Path) -> bool:
     """Return whether bounded regular run.json advertises the generation profile."""
     root = run_dir.expanduser().resolve()
     metadata = root / "run.json"
-    if metadata.is_symlink():
+    try:
+        metadata_stat = metadata.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise WorkflowError(f"cannot inspect run metadata: {exc}") from exc
+    if not stat.S_ISREG(metadata_stat.st_mode):
         raise WorkflowError(f"run metadata must be a contained regular file: {metadata}")
+    if metadata_stat.st_size < 1 or metadata_stat.st_size > _MAX_METADATA_BYTES:
+        raise WorkflowError(
+            f"run metadata must contain 1..{_MAX_METADATA_BYTES} bytes before replay routing"
+        )
     try:
         data = metadata.read_bytes()
-        if not data or len(data) > _MAX_METADATA_BYTES:
-            return False
         _validate_json_depth(data, "run metadata")
         value = cast(
             object,
             json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object),
         )
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey, WorkflowError):
+    except _DuplicateKey as exc:
+        raise WorkflowError(f"invalid run metadata: {exc}") from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
     return isinstance(value, dict) and value.get("format") == GENERATION_RUN_FORMAT
 
