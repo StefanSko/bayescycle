@@ -49,7 +49,11 @@ for (const radio of document.querySelectorAll("input[name='param-source']")) {
   });
 }
 for (const radio of document.querySelectorAll("input[name='dataset-source']")) {
-  radio.addEventListener("change", render);
+  radio.addEventListener("change", () => {
+    dispatch({
+      type: "dataset-source-edited", source: selectedDatasetSource(), revision: ++revision,
+    });
+  });
 }
 element("#compile-button").addEventListener("click", () => void compileModel());
 element("#generate-button").addEventListener("click", () => void generateCollection());
@@ -351,6 +355,9 @@ async function sampleGenerated() {
 
 async function sampleData(dataBytes, datasetSource, recoveryTruth) {
   if (state.compile.status !== "compiled" || state.run.status === "running") return;
+  if (state.conditioning.datasetSource !== datasetSource) {
+    dispatch({ type: "dataset-source-edited", source: datasetSource, revision: ++revision });
+  }
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
   const settings = sampleSettings();
@@ -366,6 +373,7 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     dataBytes,
     settings,
   );
+  if (selectedDatasetSource() !== datasetSource) return;
   element("#progress").replaceChildren();
   dispatch({
     type: "conditioning-started", requestId, dependencyKey, datasetSource, guard,

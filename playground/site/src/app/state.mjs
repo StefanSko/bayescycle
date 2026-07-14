@@ -26,6 +26,7 @@ export function initialState() {
     }),
     conditioning: freezeConditioning({
       attempt: { status: "idle" }, fit: null, settingsRevision: 0,
+      datasetSource: "observed", datasetSourceRevision: 0,
     }),
     artifacts: Object.freeze([]),
     fitDatasetSource: null,
@@ -51,6 +52,7 @@ export function reduce(state, event) {
         },
         conditioning: {
           attempt: { status: "idle" }, fit: null, settingsRevision: 0,
+          datasetSource: "observed", datasetSourceRevision: event.revision,
         },
         artifacts: [],
         fitDatasetSource: null,
@@ -287,6 +289,15 @@ function reduceScopedWorkflow(state, event) {
         conditioning: clearGeneratedFit(state.conditioning),
       };
     }
+    case "dataset-source-edited":
+      return {
+        ...state,
+        conditioning: {
+          ...state.conditioning,
+          datasetSource: event.source,
+          datasetSourceRevision: event.revision,
+        },
+      };
     case "conditioning-started":
       if (event.guard !== undefined && !matchesConditioningGuard(state, event.guard)) {
         return state;
@@ -367,7 +378,8 @@ function matchesGenerationGuard(state, guard) {
 
 function matchesConditioningGuard(state, guard) {
   if (guard.compileRevision !== (state.compile.revision ?? null) ||
-      guard.settingsRevision !== state.conditioning.settingsRevision) return false;
+      guard.settingsRevision !== state.conditioning.settingsRevision ||
+      guard.datasetSource !== state.conditioning.datasetSource) return false;
   if (guard.datasetSource === "generated") {
     return guard.selectionRevision === state.generation.selectionRevision;
   }
