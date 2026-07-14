@@ -5,7 +5,9 @@ from __future__ import annotations
 import math
 from dataclasses import fields, is_dataclass
 
+from bayeswire._ir_registry import BUILTIN_DISTRIBUTION_CLASSES, NODE_SPECS_BY_CLASS
 from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval, VectorBounds
+from bayeswire.distributions import Truncated
 from bayeswire.model._components import _DimensionSnapshot, _ModelSnapshot
 from bayeswire.model._data_schema import (
     DataDimRef,
@@ -39,16 +41,48 @@ _UNARY_FUNCTIONS = frozenset({"exp", "neg", "sigmoid"})
 _CONSTRAINT_TYPES = (Positive, Interval, UnitInterval, Ordered, VectorBounds)
 
 
+def _validate_distribution_parameter(value: object, *, label: str) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        and not is_final_expr_node(value)
+    ):
+        raise TypeError(f"{label} must be a finite numeric value or resolved expression")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"{label} must be finite")
+    if is_final_expr_node(value):
+        _validate_expression_structure(value, label=label)
+
+
 def _validate_distribution(value: object, *, label: str) -> None:
     from bayeswire.ir import _is_registered_distribution
 
     if not _is_registered_distribution(value):
         raise TypeError(f"{label} must be a registered distribution")
+    if isinstance(value, Truncated):
+        _validate_distribution(value.base, label=f"{label} Truncated base")
+        for name, bound in (("lower", value.lower), ("upper", value.upper)):
+            if bound is not None:
+                _validate_distribution_parameter(
+                    bound,
+                    label=f"{label} Truncated {name}",
+                )
+        return
+    if type(value) in BUILTIN_DISTRIBUTION_CLASSES:
+        for field_name, _kind in NODE_SPECS_BY_CLASS[type(value)].field_kinds:
+            _validate_distribution_parameter(
+                getattr(value, field_name),
+                label=f"{label} field {field_name!r}",
+            )
 
 
 def _validate_constraint(value: object, *, label: str) -> None:
     if value is not None and not isinstance(value, _CONSTRAINT_TYPES):
         raise TypeError(f"{label} must be a supported constraint or None")
+    if isinstance(value, VectorBounds):
+        for name, bound in (("lower", value.lower), ("upper", value.upper)):
+            if bound is not None and not isinstance(bound, DataRef):
+                raise TypeError(f"{label} VectorBounds {name} must be DataRef or None")
 
 
 def _validate_model_role_types(model: _ModelSnapshot, *, role: str) -> None:

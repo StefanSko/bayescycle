@@ -142,6 +142,15 @@ def _snapshot_model(meta: ModelMeta) -> _ModelSnapshot:
     """Copy mutable ordered maps into an immutable phase value."""
     from bayeswire.model.decorator import resolved_free_values, resolved_stochastic_sites
 
+    for field_name in ("params", "data", "expressions", "free_values"):
+        if not isinstance(getattr(meta, field_name), dict):
+            raise TypeError(f"ModelMeta {field_name} must be a dict")
+    if not isinstance(meta.observed_nodes, tuple) or not isinstance(
+        meta.stochastic_sites,
+        tuple,
+    ):
+        raise TypeError("ModelMeta observed nodes and stochastic sites must be tuples")
+
     return _ModelSnapshot(
         params=tuple(meta.params.items()),
         data=tuple(meta.data.items()),
