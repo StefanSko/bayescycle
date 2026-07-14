@@ -110,8 +110,15 @@ Posterior-source validation requires all of the following:
    order/count, draw count, optional posterior identity, and optional model/data
    fingerprint agree. Shapes are header-owned in posterior v0 and are not
    required in the trailer;
-4. every draw has the declared finite constrained values and a unique global
-   index whose chain/per-chain draw coordinates agree with stream order;
+4. chain order is a non-empty array of unique safe integers;
+   `chain_count == len(chain_order)`, header `settings.num_draws >= 1`, and
+   `draw_count == chain_count * settings.num_draws`. Draw records are grouped in
+   `chain_order`; each chain has per-chain `draw` indices
+   `0..settings.num_draws-1`, while global `draw_index` is contiguous across
+   those groups. The trailer repeats `draw_count`, `chain_count`, `chain_order`,
+   and `draws_per_chain == settings.num_draws`; its chain-stat entries occur
+   once in chain order and each reports that per-chain draw count. Every draw
+   has the declared finite constrained values;
 5. the engine always validates the declared parameter names, order, shapes, and
    constrained values against the decoded model bound to the fit data.
    `posterior_identity_hash`, when present, is additionally present in both
@@ -233,6 +240,11 @@ contains hashes over the exact bytes held by the in-memory plan:
   }
 }
 ```
+
+Here and in paired artifacts, `fit_hash` is exactly SHA-256 of
+`fitArtifact.posteriorBytes`; `fit_model_hash` hashes `modelIrBytes`, and
+`fit_data_hash` hashes `dataBytes`. The 8 MiB fit-input bound applies separately
+to `posteriorBytes`.
 
 The other parameter-source records are exactly:
 
@@ -548,11 +560,13 @@ Generation `run.json` is a distinct exact-key profile:
 
 `backend` is a bounded backend identity; it does not embed an executable path.
 Role-to-path mappings are exact: plan → `generation-plan.json`, model →
-`model.ir.json`, design → `design.json`, fixed parameters →
-`fixed-parameters.json`, source posterior → `source-posterior.ndjson`, source fit
-data → `source-fit-data.json`, and output → `generated_datasets.ndjson`. Input
-order is design first, then no source entry for model-prior, one fixed entry for
-fixed, or source posterior followed by source fit data for posterior. The
+`model.ir.json`, input role `design` → `design.json`, input role
+`fixed-parameters` → `fixed-parameters.json`, input role `source-posterior` →
+`source-posterior.ndjson`, input role `source-fit-data` →
+`source-fit-data.json`, and output role `generated-datasets` →
+`generated_datasets.ndjson`. Input order is `design` first, then no source entry
+for model-prior, one `fixed-parameters` entry for fixed, or `source-posterior`
+followed by `source-fit-data` for posterior. The
 posterior formats are respectively `v0-provisional` and
 `bayescycle.data.json.v1`. Paths may not be duplicated. All nested objects
 reject unknown or missing keys.
