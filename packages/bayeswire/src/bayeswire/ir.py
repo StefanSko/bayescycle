@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import is_dataclass
+from dataclasses import fields, is_dataclass
 from typing import cast
 
 from bayeswire._ir_registry import (
@@ -101,6 +101,11 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
         raise UnserializableDistribution(
             f"Distribution {cls.__name__!r} must use @dataclass(frozen=True) so registered "
             "metadata cannot change after validation."
+        )
+    if any(not value_field.compare for value_field in fields(cls)):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must leave compare=True on every constructor "
+            "field so declaration and owner metadata cannot diverge."
         )
     if not getattr(getattr(cls, "__dataclass_params__", None), "eq", False):
         raise UnserializableDistribution(

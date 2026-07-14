@@ -17,6 +17,7 @@ from bayeswire.model._components import (
     _Wire,
     _Wiring,
 )
+from bayeswire.model._structural import _structurally_equal
 from bayeswire.model.decorator import ModelMeta
 from bayeswire.model.dimensions import CoordValue, ResolvedModelDimensions, ResolvedVariableDims
 from bayeswire.model.expr import DataRef
@@ -78,9 +79,9 @@ def _validate_interface(
 ) -> None:
     """Require exact v0 static compatibility except for distributions."""
     name = source.interface.name
-    if source.interface.constraint != target.interface.constraint:
+    if not _structurally_equal(source.interface.constraint, target.interface.constraint):
         raise ValueError(f"prior parameter {name!r} must match the target constraint exactly")
-    if source.interface.size != target.interface.size:
+    if not _structurally_equal(source.interface.size, target.interface.size):
         if isinstance(source.interface.size, DataRef) or isinstance(target.interface.size, DataRef):
             raise ValueError(
                 f"prior parameter {name!r} must use the same data-dependent size name as the target"
@@ -185,7 +186,7 @@ def _close_composition(composed: _ComposedKernel) -> _ClosedComposition:
         if existing is None:
             data[name] = value
             continue
-        if existing != value:
+        if not _structurally_equal(existing, value):
             raise ValueError(f"shared data {name!r} must have identical resolved schemas")
         if not _variable_dimensions_equal(
             _variable_dimensions(source.dimensions, name),

@@ -18,6 +18,7 @@ from bayeswire.model._components import (
     _snapshot_model,
     _variable_dimensions,
 )
+from bayeswire.model._structural import _structurally_equal
 from bayeswire.model.decorator import (
     ResolvedFreeValue,
     ResolvedObserved,
@@ -53,7 +54,8 @@ def _declaration_site(
     matches = tuple(
         (index, site)
         for index, site in enumerate(sites)
-        if site.value == ParamRef(name) and site.distribution == param.distribution
+        if site.value == ParamRef(name)
+        and _structurally_equal(site.distribution, param.distribution)
     )
     if len(matches) != 1:
         raise ValueError(
@@ -90,7 +92,10 @@ def _validate_param_free_value(
     *,
     role: str,
 ) -> None:
-    if free_value.constraint != param.constraint or free_value.size != param.size:
+    if not _structurally_equal(
+        free_value.constraint,
+        param.constraint,
+    ) or not _structurally_equal(free_value.size, param.size):
         raise ValueError(
             f"{role} free slot for parameter {name!r} must match its Param constraint and size"
         )
@@ -351,7 +356,8 @@ def _validate_target_observed_owners(
         matches = tuple(
             site
             for site in sites
-            if site.value == DataRef(candidate.name) and site.distribution == candidate.distribution
+            if site.value == DataRef(candidate.name)
+            and _structurally_equal(site.distribution, candidate.distribution)
         )
         if len(matches) != 1:
             raise ValueError(

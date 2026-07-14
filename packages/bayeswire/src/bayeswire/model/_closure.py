@@ -15,6 +15,7 @@ from bayeswire.model._data_schema import (
     ResolvedDataSchema,
     ResolvedDataShapeSchema,
 )
+from bayeswire.model._structural import _structurally_equal
 from bayeswire.model.decorator import (
     ResolvedData,
     ResolvedFreeValue,
@@ -344,7 +345,10 @@ def _validate_free_value_scatter_static_roles(
     data_schemas: dict[str, ResolvedDataSchema],
     label: str,
 ) -> None:
-    owner = next((site for site in model.stochastic_sites if site.name == name), None)
+    owner = next(
+        (site for site in model.stochastic_sites if _is_canonical_free_value_owner(site, name)),
+        None,
+    )
     if owner is None or not isinstance(owner.value, VectorScatterOp):
         return
     expected_dimension = _size_dimension(size)
@@ -481,7 +485,8 @@ def _validate_param_owners(model: _ModelSnapshot, *, role: str) -> None:
         owners = tuple(
             site
             for site in model.stochastic_sites
-            if site.value == ParamRef(name) and site.distribution == param.distribution
+            if site.value == ParamRef(name)
+            and _structurally_equal(site.distribution, param.distribution)
         )
         if len(owners) != 1:
             raise ValueError(
@@ -661,7 +666,8 @@ def _validate_model_closure(
         owned_observed = {
             node.name
             for node in model.observed_nodes
-            if site.value == DataRef(node.name) and site.distribution == node.distribution
+            if site.value == DataRef(node.name)
+            and _structurally_equal(site.distribution, node.distribution)
         }
         _validate_value_references(
             site.value,
