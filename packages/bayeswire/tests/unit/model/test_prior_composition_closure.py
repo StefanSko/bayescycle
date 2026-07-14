@@ -23,7 +23,7 @@ from bayeswire import (
     with_prior,
 )
 from bayeswire.constraints import Positive, VectorBounds
-from bayeswire.distributions import Normal, Truncated
+from bayeswire.distributions import Bernoulli, Normal, Truncated
 from bayeswire.distributions.core import Distribution
 from bayeswire.ir import bindable_from_meta, meta_to_dict, register_distribution
 from bayeswire.model import ModelMeta, model_meta
@@ -43,6 +43,7 @@ from bayeswire.model.expr import (
     IndexSpec,
     ParamRef,
     UnaryOp,
+    VectorScatterOp,
 )
 
 
@@ -757,6 +758,212 @@ def test_composition_rejects_empty_lists_before_legacy_fallback(role: str, field
     source = malformed if role == "source" else PriorDeclaration
     with pytest.raises(TypeError, match=match):
         with_prior(target, prior=source)
+
+
+@pytest.mark.parametrize("role", ["source", "target"])
+def test_composition_rejects_discrete_param_metadata(role: str) -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    declaration = PriorDeclaration if role == "source" else TargetDeclaration
+    meta = model_meta(declaration)
+    discrete = Bernoulli(ConstNode(0.5))
+    malformed = bindable_from_meta(
+        replace(
+            meta,
+            params={"theta": replace(meta.params["theta"], distribution=discrete)},
+            stochastic_sites=(replace(meta.stochastic_sites[0], distribution=discrete),),
+        ),
+        dimensions=model_dimensions(declaration),
+    )
+
+    target = malformed if role == "target" else TargetDeclaration
+    source = malformed if role == "source" else PriorDeclaration
+    with pytest.raises(TypeError, match="Discrete distributions cannot be used as Param"):
+        with_prior(target, prior=source)
+
+
+def test_composition_rejects_discrete_partially_observed_metadata() -> None:
+    @model
+    class TargetDeclaration:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed = Data.vector(n_obs)
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        theta = Param(Normal(0.0, 1.0))
+        latent = PartiallyObserved.vector(
+            Normal(theta, 1.0),
+            length=n,
+            observed=observed,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+        )
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    sites = tuple(
+        replace(site, distribution=Bernoulli(ConstNode(0.5))) if site.name == "latent" else site
+        for site in meta.stochastic_sites
+    )
+    malformed = bindable_from_meta(
+        replace(meta, stochastic_sites=sites),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="Discrete distributions cannot be partially observed NUTS values",
+    ):
+        with_prior(malformed, prior=Prior)
+
+
+def test_composition_rejects_malformed_vector_scatter_static_roles() -> None:
+    @model
+    class TargetDeclaration:
+        n = Data.scalar()
+        n_obs = Data.scalar()
+        n_mis = Data.scalar()
+        observed = Data.vector(n_obs)
+        observed_idx = Data.vector(n_obs)
+        missing_idx = Data.vector(n_mis)
+        missing_upper = Data.vector(n_mis)
+        theta = Param(Normal(0.0, 1.0))
+        latent = PartiallyObserved.vector(
+            Normal(theta, 1.0),
+            length=n,
+            observed=observed,
+            observed_idx=observed_idx,
+            missing_idx=missing_idx,
+            missing_upper=missing_upper,
+        )
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(TargetDeclaration)
+    latent_index = next(
+        index for index, site in enumerate(meta.stochastic_sites) if site.name == "latent"
+    )
+    latent_site = meta.stochastic_sites[latent_index]
+    assert isinstance(latent_site.value, VectorScatterOp)
+
+    malformed_scatters = (
+        replace(latent_site.value, length=ParamRef("theta")),
+        replace(latent_site.value, observed_idx=ParamRef("theta")),
+        replace(latent_site.value, missing_idx=ParamRef("theta")),
+    )
+    for scatter in malformed_scatters:
+        sites = list(meta.stochastic_sites)
+        sites[latent_index] = replace(latent_site, value=scatter)
+        malformed = bindable_from_meta(
+            replace(meta, stochastic_sites=tuple(sites)),
+            dimensions=model_dimensions(TargetDeclaration),
+        )
+        with pytest.raises(TypeError, match=r"VectorScatter.*(length|idx).*(data|DataRef)"):
+            with_prior(malformed, prior=Prior)
+
+    scalar_bounds = VectorBounds(lower=DataRef("n"))
+    malformed = bindable_from_meta(
+        replace(
+            meta,
+            free_values={
+                **meta.free_values,
+                "latent": replace(meta.free_values["latent"], constraint=scalar_bounds),
+            },
+        ),
+        dimensions=model_dimensions(TargetDeclaration),
+    )
+    with pytest.raises(TypeError, match=r"VectorBounds.*'n'.*exact vector"):
+        with_prior(malformed, prior=Prior)
+
+
+def test_composition_rejects_invalid_builtin_constructor_states() -> None:
+    @model
+    class TargetDeclaration:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        lower = Data.vector(2)
+        theta = Param(Normal(1.0, 0.5))
+
+    malformed_bounds = VectorBounds(lower=DataRef("lower"))
+    object.__setattr__(malformed_bounds, "lower", None)
+    target_meta = model_meta(TargetDeclaration)
+    source_meta = model_meta(PriorDeclaration)
+
+    def with_constraint(meta: ModelMeta) -> ModelMeta:
+        return replace(
+            meta,
+            params={"theta": replace(meta.params["theta"], constraint=malformed_bounds)},
+            free_values={
+                "theta": replace(meta.free_values["theta"], constraint=malformed_bounds),
+            },
+        )
+
+    target = bindable_from_meta(with_constraint(target_meta))
+    source = bindable_from_meta(with_constraint(source_meta))
+    with pytest.raises(TypeError, match="VectorBounds requires at least one"):
+        with_prior(target, prior=source)
+
+    malformed_truncated = Truncated(Normal(0.0, 1.0), lower=0.0)
+    object.__setattr__(malformed_truncated, "lower", None)
+    malformed_source = bindable_from_meta(
+        replace(
+            source_meta,
+            params={
+                "theta": replace(
+                    source_meta.params["theta"],
+                    distribution=malformed_truncated,
+                ),
+            },
+            stochastic_sites=(
+                replace(
+                    source_meta.stochastic_sites[0],
+                    distribution=malformed_truncated,
+                ),
+            ),
+        )
+    )
+    with pytest.raises(ValueError, match="Truncated distributions require at least one bound"):
+        with_prior(TargetDeclaration, prior=malformed_source)
+
+
+def test_composition_round_trip_detaches_nested_extension_maps() -> None:
+    distribution = MappedTestDistribution({"location": 1.0})
+
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(distribution)
+
+    composed = with_prior(Target, prior=PriorDeclaration)
+    source_distribution = cast(
+        MappedTestDistribution,
+        model_meta(PriorDeclaration).params["theta"].distribution,
+    )
+    composed_distribution = cast(
+        MappedTestDistribution,
+        model_meta(composed).params["theta"].distribution,
+    )
+
+    assert composed_distribution is not source_distribution
+    source_distribution.parameters["location"] = 9.0
+    assert composed_distribution.parameters["location"] == 1.0
 
 
 @pytest.mark.parametrize("index", [1.5, "parameter"])
