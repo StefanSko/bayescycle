@@ -27,8 +27,9 @@ formats retain their own compatibility policies.
   sources, separate generation and inference seeds, and a dedicated predictive
   draw count instead of the sampler's retained-draw setting. Generation-setting
   edits preserve completed fits and clear only generated datasets and predictive
-  draws; inference-setting edits preserve generated datasets, and legacy share
-  links reuse their sampler seed and draw count for generation.
+  draws; inference-setting edits preserve generated datasets, and mid-run edits
+  no longer cancel operations they do not affect. Legacy share links reuse their
+  sampler seed and draw count for generation.
 - Trim the bundled Playground models to show only the Bayeswire imports each
   declaration actually uses.
 

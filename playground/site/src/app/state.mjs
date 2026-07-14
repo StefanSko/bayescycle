@@ -1,3 +1,16 @@
+const FIT_DESCENDANT_ARTIFACTS = [
+  "data.json",
+  "posterior.ndjson",
+  "diagnostics.json",
+  "recovery_check.json",
+  "posterior_predictive.ndjson",
+];
+const GENERATION_DESCENDANT_ARTIFACTS = [
+  "prior_predictive.ndjson",
+  "simulated_data.json",
+  "posterior_predictive.ndjson",
+];
+
 export function initialState() {
   return Object.freeze({
     source: "",
@@ -34,31 +47,20 @@ export function reduce(state, event) {
         notice: null,
       });
     case "settings-edited":
-      return freeze({
-        ...state,
-        projectRevision: event.revision,
-        run: { status: "idle" },
-        artifacts: state.artifacts.filter((artifact) => ![
-          "data.json",
-          "posterior.ndjson",
-          "diagnostics.json",
-          "recovery_check.json",
-          "posterior_predictive.ndjson",
-        ].includes(artifact.name)),
-        notice: null,
-      });
+      return invalidateSettings(
+        state,
+        event,
+        FIT_DESCENDANT_ARTIFACTS,
+        state.run.status === "running" &&
+          ["simulate", "prior-predictive"].includes(state.run.operation),
+      );
     case "generation-settings-edited":
-      return freeze({
-        ...state,
-        projectRevision: event.revision,
-        run: { status: "idle" },
-        artifacts: state.artifacts.filter((artifact) => ![
-          "prior_predictive.ndjson",
-          "simulated_data.json",
-          "posterior_predictive.ndjson",
-        ].includes(artifact.name)),
-        notice: null,
-      });
+      return invalidateSettings(
+        state,
+        event,
+        GENERATION_DESCENDANT_ARTIFACTS,
+        state.run.status === "running" && state.run.operation === "sample",
+      );
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
       return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [] });
@@ -80,6 +82,20 @@ export function reduce(state, event) {
     default:
       return state;
   }
+}
+
+function invalidateSettings(state, event, invalidatedArtifacts, preserveRun) {
+  return freeze({
+    ...state,
+    ...(preserveRun ? {} : {
+      projectRevision: event.revision,
+      run: { status: "idle" },
+      notice: null,
+    }),
+    artifacts: state.artifacts.filter(
+      (artifact) => !invalidatedArtifacts.includes(artifact.name),
+    ),
+  });
 }
 
 function mergeArtifacts(existing, added) {
