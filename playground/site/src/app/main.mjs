@@ -1,4 +1,12 @@
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
+import {
+  fitArtifact,
+  fixed,
+  generateDatasets,
+  generationInvalidationKey,
+  modelPrior,
+  posteriorOf,
+} from "../generation/plan.mjs";
 import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
 import { renderRecoverySummary } from "./recovery.mjs";
@@ -24,27 +32,27 @@ source.addEventListener("input", () => {
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
-for (const input of [observed, design, truth]) input.addEventListener("input", documentsEdited);
+observed.addEventListener("input", observedEdited);
+for (const input of [design, truth]) input.addEventListener("input", generationInputsEdited);
 for (const selector of [
   "#chains", "#warmup", "#draws", "#inference-seed", "#target-accept",
   "#max-treedepth",
 ]) {
   element(selector).addEventListener("input", settingsEdited);
 }
-element("#generation-seed").addEventListener("input", generationSettingsEdited);
-element("#predictive-draws").addEventListener("input", predictiveDrawsEdited);
-for (const selector of ["input[name='param-source']", "input[name='dataset-source']"]) {
-  for (const radio of document.querySelectorAll(selector)) radio.addEventListener("change", render);
+for (const selector of ["#generation-seed", "#generation-count"]) {
+  element(selector).addEventListener("input", generationSettingsEdited);
+}
+for (const radio of document.querySelectorAll("input[name='param-source']")) {
+  radio.addEventListener("change", () => {
+    dispatch({ type: "parameter-source-edited", revision: ++revision });
+  });
+}
+for (const radio of document.querySelectorAll("input[name='dataset-source']")) {
+  radio.addEventListener("change", render);
 }
 element("#compile-button").addEventListener("click", () => void compileModel());
-element("#generate-button").addEventListener("click", () => {
-  const operations = {
-    fixed: simulateData,
-    prior: runPriorPredictive,
-    posterior: runPosteriorPredictive,
-  };
-  launchRun(operations[selectedParamSource()]);
-});
+element("#generate-button").addEventListener("click", () => void generateCollection());
 element("#fit-button").addEventListener("click", () => {
   launchRun(selectedDatasetSource() === "generated" ? sampleSimulated : samplePosterior);
 });
@@ -113,7 +121,7 @@ async function shareProject() {
     sampler: samplerSettings(),
     generation: {
       seed: integerValue("#generation-seed"),
-      num_draws: integerValue("#predictive-draws"),
+      count: integerValue("#generation-count"),
     },
   };
   const payload = await encodeProject(project);
@@ -182,11 +190,13 @@ function applyGenerationSettings(settings, legacySampler) {
   const seed = typeof generation.seed === "number"
     ? generation.seed
     : typeof legacy.seed === "number" ? legacy.seed : undefined;
-  const numDraws = typeof generation.num_draws === "number"
-    ? generation.num_draws
-    : typeof legacy.num_draws === "number" ? legacy.num_draws : undefined;
+  const count = typeof generation.count === "number"
+    ? generation.count
+    : typeof generation.num_draws === "number"
+      ? generation.num_draws
+      : typeof legacy.num_draws === "number" ? legacy.num_draws : undefined;
   let applied = false;
-  for (const [value, selector] of [[seed, "#generation-seed"], [numDraws, "#predictive-draws"]]) {
+  for (const [value, selector] of [[seed, "#generation-seed"], [count, "#generation-count"]]) {
     if (value !== undefined) {
       element(selector).value = String(value);
       applied = true;
@@ -209,20 +219,25 @@ function settingsEdited() {
 
 function generationSettingsEdited() {
   element("#progress").replaceChildren();
-  dispatch({ type: "generation-settings-edited", revision: ++revision });
+  dispatch({ type: "generation-settings-scoped-edited", revision: ++revision });
 }
 
-function predictiveDrawsEdited() {
-  element("#progress").replaceChildren();
-  dispatch({ type: "predictive-draws-edited", revision: ++revision });
-}
-
-function documentsEdited() {
+function observedEdited() {
   exampleLoadRevision += 1;
   element("#progress").replaceChildren();
   dispatch({
-    type: "documents-edited",
-    documents: { observed: observed.value, design: design.value, truth: truth.value },
+    type: "observed-input-edited",
+    documents: { ...state.documents, observed: observed.value },
+    revision: ++revision,
+  });
+}
+
+function generationInputsEdited() {
+  exampleLoadRevision += 1;
+  element("#progress").replaceChildren();
+  dispatch({
+    type: "generation-input-edited",
+    documents: { ...state.documents, design: design.value, truth: truth.value },
     revision: ++revision,
   });
 }
@@ -248,36 +263,61 @@ async function samplePosterior() {
   await sampleData(dataBytes, "observed");
 }
 
-async function runPriorPredictive() {
-  await runSingle({
-    operation: "prior-predictive",
-    modelIr: compiledBytes(),
-    data: documentBytes(design.value),
-    settings: priorPredictiveSettings(),
+async function generateCollection() {
+  if (state.compile.status !== "compiled" || state.run.status === "running" ||
+      state.generation.attempt.status === "running") return;
+  const modelBytes = compiledBytes();
+  const designBytes = documentBytes(design.value);
+  const sourceKind = selectedParamSource();
+  let parameterSource;
+  let sourceFitLineageKey;
+  if (sourceKind === "fixed") {
+    parameterSource = fixed(documentBytes(truth.value));
+  } else if (sourceKind === "prior") {
+    parameterSource = modelPrior(modelBytes);
+  } else {
+    const posterior = state.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
+    const data = state.artifacts.find((artifact) => artifact.name === "data.json");
+    if (posterior === undefined || data === undefined) return;
+    parameterSource = posteriorOf(fitArtifact(
+      modelBytes,
+      data.bytes,
+      posterior.bytes,
+      "runtime",
+    ));
+    sourceFitLineageKey = await bytesHash(posterior.bytes);
+  }
+  const settings = generationSettings();
+  const plan = generateDatasets(modelBytes, {
+    design: designBytes,
+    parameterSource,
+    count: settings.count,
+    seed: settings.seed,
   });
-}
-
-async function runPosteriorPredictive() {
-  const posterior = state.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
-  const data = state.artifacts.find((artifact) => artifact.name === "data.json");
-  if (posterior === undefined || data === undefined) return;
-  await runSingle({
-    operation: "posterior-predictive",
-    modelIr: compiledBytes(),
-    data: data.bytes,
-    fit: posterior.bytes,
-    settings: generationSettings(),
-  });
-}
-
-async function simulateData() {
-  await runSingle({
-    operation: "simulate",
-    modelIr: compiledBytes(),
-    data: documentBytes(design.value),
-    truth: documentBytes(truth.value),
-    settings: generationSettings(),
-  });
+  const dependencyKey = await generationInvalidationKey(plan);
+  const requestId = crypto.randomUUID();
+  dispatch({ type: "generation-started", requestId, dependencyKey });
+  try {
+    const result = await runtime.run({
+      type: "run", id: requestId, operation: "generate", plan,
+    });
+    const artifact = result.artifacts.find(
+      (entry) => entry.name === "generated_datasets.ndjson",
+    );
+    if (artifact === undefined) throw new Error("Runtime returned no generated collection");
+    dispatch({
+      type: "generation-succeeded", requestId, dependencyKey,
+      collection: {
+        sourceKind: sourceKind === "prior" ? "model-prior" : sourceKind,
+        ...(sourceFitLineageKey === undefined ? {} : { sourceFitLineageKey }),
+        plan, artifact,
+      },
+    });
+  } catch (error) {
+    dispatch({
+      type: "generation-failed", requestId, dependencyKey, error: message(error),
+    });
+  }
 }
 
 async function sampleSimulated() {
@@ -363,6 +403,11 @@ function documentBytes(text) {
   return new TextEncoder().encode(serializeDocument(parseDocument(text)));
 }
 
+async function bytesHash(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function sampleSettings() {
   const settings = samplerSettings();
   if (!validSampleSettings(settings)) {
@@ -373,29 +418,22 @@ function sampleSettings() {
 
 function generationSettings() {
   const seed = integerValue("#generation-seed");
+  const count = integerValue("#generation-count");
   if (!validGenerationSeed(seed)) {
     throw new Error("Generation seed must be a nonnegative safe integer");
   }
-  return { seed };
-}
-
-function priorPredictiveSettings() {
-  const settings = {
-    ...generationSettings(),
-    num_draws: integerValue("#predictive-draws"),
-  };
-  if (!validPredictiveDraws(settings.num_draws)) {
-    throw new Error("Prior predictive generation requires at least 1 predictive draw");
+  if (!validGenerationCount(count)) {
+    throw new Error("Generation count must be an integer in 1..1000");
   }
-  return settings;
+  return { seed, count };
 }
 
 function validGenerationSeed(seed = integerValue("#generation-seed")) {
   return Number.isSafeInteger(seed) && seed >= 0;
 }
 
-function validPredictiveDraws(numDraws = integerValue("#predictive-draws")) {
-  return Number.isSafeInteger(numDraws) && numDraws >= 1;
+function validGenerationCount(count = integerValue("#generation-count")) {
+  return Number.isSafeInteger(count) && count >= 1 && count <= 1000;
 }
 
 function validSeedSettings(settings = samplerSettings()) {
@@ -458,7 +496,11 @@ function render() {
   element("#compile-button").disabled = state.compile.status === "compiling" ||
     state.run.status === "running" || state.source.trim() === "";
   element("#share-button").disabled = state.source.trim() === "";
-  const hasArtifact = (name) => state.artifacts.some((artifact) => artifact.name === name);
+  const visibleArtifacts = [
+    ...state.artifacts,
+    ...(state.generation.collection === null ? [] : [state.generation.collection.artifact]),
+  ];
+  const hasArtifact = (name) => visibleArtifacts.some((artifact) => artifact.name === name);
   const posteriorAvailable = hasArtifact("posterior.ndjson") && hasArtifact("data.json");
   const posteriorSource = element("#param-source-posterior");
   posteriorSource.disabled = !posteriorAvailable;
@@ -482,21 +524,25 @@ function render() {
     ? "Fit generated dataset"
     : "Fit observed data";
 
-  const unavailable = state.compile.status !== "compiled" || state.run.status === "running";
+  const unavailable = state.compile.status !== "compiled" || state.run.status === "running" ||
+    state.generation.attempt.status === "running";
   element("#generate-button").disabled = unavailable || !validGenerationSeed() ||
-    (paramSource === "prior" && !validPredictiveDraws()) ||
+    !validGenerationCount() ||
     (paramSource !== "posterior" && design.value.trim() === "") ||
     (paramSource === "fixed" && truth.value.trim() === "") ||
     (paramSource === "posterior" && !posteriorAvailable);
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
     (datasetSource === "observed" && observed.value.trim() === "") ||
     (datasetSource === "generated" && !generatedAvailable);
-  element("#run-status").textContent = state.run.status === "running"
-    ? `${operationLabel(state.run.operation)} is running…`
-    : "";
+  element("#run-status").textContent = state.generation.attempt.status === "running"
+    ? "Generating paired datasets is running…"
+    : state.run.status === "running" ? `${operationLabel(state.run.operation)} is running…` : "";
 
   const runError = element("#run-error");
-  if (state.run.status === "failed") {
+  if (state.generation.attempt.status === "failed") {
+    runError.hidden = false;
+    runError.textContent = state.generation.attempt.error;
+  } else if (state.run.status === "failed") {
     runError.hidden = false;
     runError.textContent = state.run.error;
   } else if (state.notice !== null) {
@@ -506,7 +552,7 @@ function render() {
     runError.hidden = true;
     runError.textContent = "";
   }
-  renderArtifacts(state.artifacts);
+  renderArtifacts(visibleArtifacts);
 }
 
 function renderArtifacts(artifacts) {
@@ -521,6 +567,7 @@ function renderArtifacts(artifacts) {
     "posterior_predictive.ndjson": "#artifact-posterior-predictive",
     "simulated_data.json": "#artifact-simulated",
     "recovery_check.json": "#artifact-recovery",
+    "generated_datasets.ndjson": "#artifact-generated-datasets",
   };
   for (const selector of Object.values(mapping)) element(selector).hidden = true;
   for (const artifact of artifacts) {
@@ -581,9 +628,6 @@ function renderPlots(artifacts) {
 function operationLabel(operation) {
   const labels = {
     sample: "Fitting",
-    "prior-predictive": "Generating from model prior",
-    "posterior-predictive": "Generating from posterior",
-    simulate: "Generating at fixed values",
   };
   return labels[operation] ?? "Operation";
 }

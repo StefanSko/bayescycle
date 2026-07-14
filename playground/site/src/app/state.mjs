@@ -172,10 +172,14 @@ function reduceScopedWorkflow(state, event) {
         },
       };
     case "generation-input-edited":
+    case "parameter-source-edited":
     case "generation-settings-scoped-edited": {
       const settings = event.type === "generation-settings-scoped-edited";
       return {
         ...state,
+        ...(event.documents === undefined ? {} : {
+          documents: event.documents,
+        }),
         generation: {
           ...state.generation,
           attempt: { status: "idle" }, collection: null, selected: null,
@@ -184,6 +188,27 @@ function reduceScopedWorkflow(state, event) {
             : { inputRevision: event.revision }),
         },
         conditioning: clearGeneratedFit(state.conditioning),
+      };
+    }
+    case "observed-input-edited": {
+      const posteriorCollection = state.generation.collection?.sourceKind === "posterior";
+      return {
+        ...state,
+        documents: event.documents,
+        projectRevision: event.revision,
+        run: { status: "idle" },
+        artifacts: state.artifacts.filter(
+          (artifact) => !FIT_DESCENDANT_ARTIFACTS.includes(artifact.name),
+        ),
+        fitDatasetSource: null,
+        generation: posteriorCollection
+          ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
+          : state.generation,
+        conditioning: {
+          ...state.conditioning,
+          attempt: { status: "idle" }, fit: null,
+        },
+        notice: null,
       };
     }
     case "selection-edited":
