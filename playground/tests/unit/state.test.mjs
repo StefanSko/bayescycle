@@ -4,6 +4,43 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
 
 export default [
   {
+    name: "scoped starts reject dependencies changed during preflight",
+    fn: () => {
+      let state = initialState();
+      const staleGeneration = {
+        compileRevision: null,
+        inputRevision: state.generation.inputRevision,
+        settingsRevision: state.generation.settingsRevision,
+        sourceKind: "fixed",
+        fitLineageKey: null,
+      };
+      state = reduce(state, { type: "generation-input-edited", revision: 1 });
+      state = reduce(state, {
+        type: "generation-started", requestId: "stale-g", dependencyKey: "gk",
+        guard: staleGeneration,
+      });
+      assert(state.generation.attempt.status === "idle", "stale generation start was accepted");
+
+      const staleConditioning = {
+        compileRevision: null,
+        settingsRevision: state.conditioning.settingsRevision,
+        datasetSource: "observed",
+        observed: state.documents.observed,
+        selectionRevision: state.generation.selectionRevision,
+      };
+      state = reduce(state, {
+        type: "observed-input-edited",
+        documents: { ...state.documents, observed: "changed" },
+        revision: 2,
+      });
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "stale-f", dependencyKey: "fk",
+        datasetSource: "observed", guard: staleConditioning,
+      });
+      assert(state.conditioning.attempt.status === "idle", "stale conditioning start was accepted");
+    },
+  },
+  {
     name: "scoped attempts preserve successful ancestors on failure",
     fn: () => {
       let state = initialState();

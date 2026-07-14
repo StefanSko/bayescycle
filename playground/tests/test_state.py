@@ -4,6 +4,7 @@ from typing import Any
 from playwright.sync_api import Page
 
 CASES = [
+    "scoped starts reject dependencies changed during preflight",
     "scoped attempts preserve successful ancestors on failure",
     "selection invalidates only generated conditioning descendants",
     "observed edits preserve generated-data fit and recovery",
