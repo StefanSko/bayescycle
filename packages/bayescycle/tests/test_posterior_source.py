@@ -66,6 +66,10 @@ def _wrong_chain_stats(documents: list[dict[str, Any]]) -> None:
     documents[-1]["trailer"]["chains"][0]["draw_count"] = 1
 
 
+def _unrepresentable_value(documents: list[dict[str, Any]]) -> None:
+    documents[1]["values"]["mu"] = 10**400
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -76,6 +80,7 @@ def _wrong_chain_stats(documents: list[dict[str, Any]]) -> None:
         _wrong_trailer_parameters,
         _wrong_identity,
         _wrong_chain_stats,
+        _unrepresentable_value,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

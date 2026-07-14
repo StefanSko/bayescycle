@@ -348,6 +348,10 @@ def test_rejects_malformed_truncated_nonfinite_and_oversized_streams() -> None:
         (fixture.replace(b'"count":2', b'"count":3', 1), "count"),
         (fixture.replace(b'"draw_index":1', b'"draw_index":3', 1), "draw_index"),
         (fixture.replace(b'"values":[0.5]', b'"values":[NaN]', 1), "finite"),
+        (
+            fixture.replace(b'"values":[0.5]', b'"values":[' + b"9" * 400 + b"]", 1),
+            "finite|range|representable",
+        ),
         (b" " * MAX_GENERATED_LINE_BYTES + fixture, "line"),
     ]
     documents = _documents()
