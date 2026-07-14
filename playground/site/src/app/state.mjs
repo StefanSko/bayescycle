@@ -175,11 +175,23 @@ function reduceScopedWorkflow(state, event) {
     case "parameter-source-edited":
     case "generation-settings-scoped-edited": {
       const settings = event.type === "generation-settings-scoped-edited";
+      const generatedFit = state.fitDatasetSource === "generated" ||
+        state.conditioning.fit?.datasetSource === "generated" ||
+        state.conditioning.attempt.datasetSource === "generated";
       return {
         ...state,
         ...(event.documents === undefined ? {} : {
           documents: event.documents,
         }),
+        ...(generatedFit ? {
+          projectRevision: event.revision,
+          run: { status: "idle" },
+          artifacts: state.artifacts.filter(
+            (artifact) => !FIT_DESCENDANT_ARTIFACTS.includes(artifact.name),
+          ),
+          fitDatasetSource: null,
+          notice: null,
+        } : {}),
         generation: {
           ...state.generation,
           attempt: { status: "idle" }, collection: null, selected: null,
@@ -211,10 +223,23 @@ function reduceScopedWorkflow(state, event) {
         notice: null,
       };
     }
-    case "selection-edited":
+    case "selection-edited": {
       if (state.generation.collection === null) return state;
+      const generatedFit = state.fitDatasetSource === "generated" ||
+        state.conditioning.fit?.datasetSource === "generated" ||
+        state.conditioning.attempt.datasetSource === "generated" ||
+        (state.run.status === "running" && state.run.datasetSource === "generated");
       return {
         ...state,
+        ...(generatedFit ? {
+          projectRevision: event.revision,
+          run: { status: "idle" },
+          artifacts: state.artifacts.filter(
+            (artifact) => !FIT_DESCENDANT_ARTIFACTS.includes(artifact.name),
+          ),
+          fitDatasetSource: null,
+          notice: null,
+        } : {}),
         generation: {
           ...state.generation,
           selected: selectedValue(event),
@@ -222,6 +247,7 @@ function reduceScopedWorkflow(state, event) {
         },
         conditioning: clearGeneratedFit(state.conditioning),
       };
+    }
     case "conditioning-started":
       return {
         ...state,
@@ -263,6 +289,10 @@ function reduceScopedWorkflow(state, event) {
     case "inference-settings-edited":
       return {
         ...state,
+        ...(state.conditioning.attempt.status === "running" ? {
+          projectRevision: event.revision,
+          run: { status: "idle" },
+        } : {}),
         conditioning: {
           ...state.conditioning,
           attempt: { status: "idle" }, settingsRevision: event.revision,
@@ -279,7 +309,8 @@ function matchesAttempt(attempt, event) {
 }
 
 function clearGeneratedFit(conditioning) {
-  return conditioning.fit?.datasetSource === "generated"
+  return conditioning.fit?.datasetSource === "generated" ||
+    conditioning.attempt.datasetSource === "generated"
     ? { ...conditioning, attempt: { status: "idle" }, fit: null }
     : conditioning;
 }

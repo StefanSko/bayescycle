@@ -1,4 +1,5 @@
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
+import { parseGeneratedDatasets, verifyGeneratedDatasets } from "../generation/artifact.mjs";
 import {
   fitArtifact,
   fixed,
@@ -53,8 +54,11 @@ for (const radio of document.querySelectorAll("input[name='dataset-source']")) {
 }
 element("#compile-button").addEventListener("click", () => void compileModel());
 element("#generate-button").addEventListener("click", () => void generateCollection());
+element("#generated-dataset-index").addEventListener("change", () => {
+  selectGeneratedPair(integerValue("#generated-dataset-index"));
+});
 element("#fit-button").addEventListener("click", () => {
-  launchRun(selectedDatasetSource() === "generated" ? sampleSimulated : samplePosterior);
+  launchRun(selectedDatasetSource() === "generated" ? sampleGenerated : samplePosterior);
 });
 element("#examples-menu").addEventListener("change", () => void loadExample());
 element("#share-button").addEventListener("click", () => void shareProject());
@@ -214,7 +218,7 @@ function launchRun(operation) {
 
 function settingsEdited() {
   element("#progress").replaceChildren();
-  dispatch({ type: "settings-edited", revision: ++revision });
+  dispatch({ type: "inference-settings-edited", revision: ++revision });
 }
 
 function generationSettingsEdited() {
@@ -270,9 +274,11 @@ async function generateCollection() {
   const designBytes = documentBytes(design.value);
   const sourceKind = selectedParamSource();
   let parameterSource;
+  let fixedParametersBytes;
   let sourceFitLineageKey;
   if (sourceKind === "fixed") {
-    parameterSource = fixed(documentBytes(truth.value));
+    fixedParametersBytes = documentBytes(truth.value);
+    parameterSource = fixed(fixedParametersBytes);
   } else if (sourceKind === "prior") {
     parameterSource = modelPrior(modelBytes);
   } else {
@@ -305,13 +311,24 @@ async function generateCollection() {
       (entry) => entry.name === "generated_datasets.ndjson",
     );
     if (artifact === undefined) throw new Error("Runtime returned no generated collection");
+    const parsed = parseGeneratedDatasets(artifact.bytes);
+    await verifyGeneratedDatasets(parsed, {
+      modelBytes,
+      designBytes,
+      ...(fixedParametersBytes === undefined ? {} : { fixedParametersBytes }),
+    });
     dispatch({
       type: "generation-succeeded", requestId, dependencyKey,
       collection: {
         sourceKind: sourceKind === "prior" ? "model-prior" : sourceKind,
         ...(sourceFitLineageKey === undefined ? {} : { sourceFitLineageKey }),
-        plan, artifact,
+        plan, artifact, parsed,
       },
+    });
+    const selected = parsed.select(0);
+    dispatch({
+      type: "selection-edited", revision: ++revision, index: selected.drawIndex,
+      parametersBytes: selected.parametersBytes, datasetBytes: selected.datasetBytes,
     });
   } catch (error) {
     dispatch({
@@ -320,17 +337,36 @@ async function generateCollection() {
   }
 }
 
-async function sampleSimulated() {
-  const simulated = state.artifacts.find((artifact) => artifact.name === "simulated_data.json");
-  if (simulated === undefined) return;
-  await sampleData(simulated.bytes, "generated", documentBytes(truth.value));
+function selectGeneratedPair(index) {
+  const collection = state.generation.collection;
+  if (collection === null) return;
+  const selected = collection.parsed.select(index);
+  dispatch({
+    type: "selection-edited", revision: ++revision, index: selected.drawIndex,
+    parametersBytes: selected.parametersBytes, datasetBytes: selected.datasetBytes,
+  });
+}
+
+async function sampleGenerated() {
+  const selected = state.generation.selected;
+  if (selected === null) return;
+  await sampleData(selected.datasetBytes, "generated", selected.parametersBytes);
 }
 
 async function sampleData(dataBytes, datasetSource, recoveryTruth) {
   if (state.compile.status !== "compiled" || state.run.status === "running") return;
   const requestId = crypto.randomUUID();
   const projectRevision = state.projectRevision;
+  const settings = sampleSettings();
+  const dependencyKey = await conditioningDependencyKey(
+    state.compile.irBytes,
+    dataBytes,
+    settings,
+  );
   element("#progress").replaceChildren();
+  dispatch({
+    type: "conditioning-started", requestId, dependencyKey, datasetSource,
+  });
   dispatch({
     type: "run-started",
     requestId,
@@ -345,7 +381,7 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
       operation: "sample",
       modelIr: state.compile.irBytes,
       data: dataBytes,
-      settings: sampleSettings(),
+      settings,
     }, (event) => renderActiveProgress(requestId, projectRevision, event));
     const posterior = sampled.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
     if (posterior === undefined) throw new Error("Runtime returned no posterior artifact");
@@ -372,8 +408,19 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
       artifacts,
       notice: warnings.length === 0 ? null : warnings.join("\n"),
     });
+    dispatch({
+      type: "conditioning-succeeded", requestId, dependencyKey,
+      fit: {
+        datasetSource,
+        lineageKey: await bytesHash(posterior.bytes),
+        artifacts,
+      },
+    });
   } catch (error) {
     dispatch({ type: "run-failed", requestId, revision: projectRevision, error: message(error) });
+    dispatch({
+      type: "conditioning-failed", requestId, dependencyKey, error: message(error),
+    });
   }
 }
 
@@ -406,6 +453,15 @@ function documentBytes(text) {
 async function bytesHash(bytes) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function conditioningDependencyKey(modelBytes, dataBytes, settings) {
+  const framed = new TextEncoder().encode(JSON.stringify({
+    model: await bytesHash(modelBytes),
+    data: await bytesHash(dataBytes),
+    settings,
+  }));
+  return bytesHash(framed);
 }
 
 function sampleSettings() {
@@ -507,7 +563,8 @@ function render() {
   element("#posterior-source-hint").hidden = posteriorAvailable;
   if (posteriorSource.checked && posteriorSource.disabled) element("#param-source-fixed").checked = true;
 
-  const generatedAvailable = hasArtifact("simulated_data.json") && truth.value.trim() !== "";
+  renderGenerationSelection();
+  const generatedAvailable = state.generation.selected !== null;
   const generatedSource = element("#dataset-source-generated");
   generatedSource.disabled = !generatedAvailable;
   if (generatedSource.checked && generatedSource.disabled) element("#dataset-source-observed").checked = true;
@@ -528,7 +585,7 @@ function render() {
     state.generation.attempt.status === "running";
   element("#generate-button").disabled = unavailable || !validGenerationSeed() ||
     !validGenerationCount() ||
-    (paramSource !== "posterior" && design.value.trim() === "") ||
+    design.value.trim() === "" ||
     (paramSource === "fixed" && truth.value.trim() === "") ||
     (paramSource === "posterior" && !posteriorAvailable);
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
@@ -553,6 +610,35 @@ function render() {
     runError.textContent = "";
   }
   renderArtifacts(visibleArtifacts);
+}
+
+function renderGenerationSelection() {
+  const container = element("#generation-selection");
+  const selector = element("#generated-dataset-index");
+  const summary = element("#selected-pair-summary");
+  const collection = state.generation.collection;
+  if (collection === null) {
+    container.hidden = true;
+    selector.disabled = true;
+    selector.replaceChildren();
+    summary.textContent = "";
+    return;
+  }
+  if (selector.options.length !== collection.parsed.count) {
+    selector.replaceChildren(...Array.from({ length: collection.parsed.count }, (_, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `Dataset ${index + 1}`;
+      return option;
+    }));
+  }
+  const selected = state.generation.selected;
+  selector.disabled = selected === null;
+  if (selected !== null) selector.value = String(selected.index);
+  summary.textContent = selected === null
+    ? "Select a generated parameter/dataset pair."
+    : `Selected dataset ${selected.index + 1} of ${collection.parsed.count} with its paired parameters.`;
+  container.hidden = false;
 }
 
 function renderArtifacts(artifacts) {

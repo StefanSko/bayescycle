@@ -70,6 +70,11 @@
         <label for="generation-count">Dataset count<input id="generation-count" type="number" min="1" max="1000" value="100"></label>
       </div>
       <button id="generate-button" class="primary" type="button" disabled>Generate at fixed values</button>
+      <div id="generation-selection" hidden>
+        <label for="generated-dataset-index">Selected generated pair</label>
+        <select id="generated-dataset-index" disabled></select>
+        <output id="selected-pair-summary" class="status" for="generated-dataset-index"></output>
+      </div>
       <p class="hint">Uses Design/context as x. Generated datasets keep their paired parameter values for recovery.</p>
     </section>
 
