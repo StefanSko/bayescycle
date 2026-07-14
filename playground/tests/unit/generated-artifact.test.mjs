@@ -11,6 +11,7 @@ const TEXT = new TextDecoder();
 const MODEL_BYTES = UTF8.encode('{"bayeswire_ir":1,"model":{}}\n');
 const DESIGN_BYTES = UTF8.encode('{"format":"bayescycle.data.json.v1","variables":{"x":{"dtype":"float64","shape":[3],"values":[-1.0,0.0,1.0]}}}\n');
 const FIXED_BYTES = UTF8.encode('{"format":"bayescycle.data.json.v1","variables":{"alpha":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
+const FIT_DATA_BYTES = UTF8.encode('{"format":"bayescycle.data.json.v1","variables":{}}\n');
 const PARAMETERS_0 = TEXT.decode(FIXED_BYTES);
 const DATASET_0 = '{"format":"bayescycle.data.json.v1","variables":{"x":{"dtype":"float64","shape":[3],"values":[-1.0,0.0,1.0]},"y":{"dtype":"float64","shape":[3],"values":[-0.2,0.5,1.2]}}}\n';
 
@@ -62,6 +63,73 @@ function sourceStream(bytes, kind) {
     values[index + 1].parameters.variables.alpha.values = [index + 1];
   }
   return encodeDocuments(values);
+}
+
+async function posteriorSource() {
+  const prefix = UTF8.encode("bayescycle-model-data-v1\n");
+  const framed = new Uint8Array(
+    prefix.length + MODEL_BYTES.length + 1 + FIT_DATA_BYTES.length,
+  );
+  framed.set(prefix);
+  framed.set(MODEL_BYTES, prefix.length);
+  framed[prefix.length + MODEL_BYTES.length] = 0x0a;
+  framed.set(FIT_DATA_BYTES, prefix.length + MODEL_BYTES.length + 1);
+  const fingerprint = await crypto.subtle.digest("SHA-256", framed);
+  const digest = `sha256:${[...new Uint8Array(fingerprint)]
+    .map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+  return encodeDocuments([
+    {
+      draws_format: "v0-provisional",
+      artifact_kind: "posterior_draws",
+      artifact_scope: "observed_data_conditioned_parameter_draws",
+      model_data_fingerprint: digest,
+      params: [{ name: "alpha", shape: [], coordinate_order: [[]] }],
+      parameter_count: 1,
+      parameter_order: ["alpha"],
+      draw_count: 2,
+    },
+    {
+      draws_format: "v0-provisional", draw_index: 0, chain: 0, draw: 0,
+      parameter_order: ["alpha"], values: { alpha: 1.0 },
+    },
+    {
+      draws_format: "v0-provisional", draw_index: 1, chain: 0, draw: 1,
+      parameter_order: ["alpha"], values: { alpha: 2.0 },
+    },
+    {
+      trailer: {
+        draws_format: "v0-provisional",
+        model_data_fingerprint: digest,
+        draw_count: 2,
+      },
+    },
+  ]);
+}
+
+async function posteriorGenerated(fixture, fit, useSourceValues) {
+  const values = documents(fixture);
+  const descriptor = {
+    kind: "posterior",
+    fit_hash: await sha256(fit),
+    fit_model_hash: await sha256(MODEL_BYTES),
+    fit_data_hash: await sha256(FIT_DATA_BYTES),
+  };
+  values[0].parameter_source = descriptor;
+  values.at(-1).trailer.parameter_source = descriptor;
+  for (let index = 0; index < 2; index += 1) {
+    values[index + 1].source_lineage = {
+      kind: "posterior", source_draw_index: index, chain: 0, draw: index,
+    };
+    if (useSourceValues) {
+      values[index + 1].parameters.variables.alpha.values = [index + 1];
+    }
+  }
+  return encodeDocuments(values);
+}
+
+async function sha256(value) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 async function rejects(operation, expected) {
@@ -161,6 +229,29 @@ export default [
         modelPriorBytes: UTF8.encode("other model"),
         authoredProvenance: null,
       }), "model-prior");
+      const fit = await posteriorSource();
+      const posterior = parseGeneratedDatasets(await posteriorGenerated(fixture, fit, true));
+      await verifyGeneratedDatasets(posterior, {
+        modelBytes: MODEL_BYTES,
+        designBytes: DESIGN_BYTES,
+        expectedSourceKind: "posterior",
+        expectedCount: 2,
+        expectedSeed: 7,
+        posteriorBytes: fit,
+        fitDataBytes: FIT_DATA_BYTES,
+      });
+      const wrongPosterior = parseGeneratedDatasets(
+        await posteriorGenerated(fixture, fit, false),
+      );
+      await rejects(() => verifyGeneratedDatasets(wrongPosterior, {
+        modelBytes: MODEL_BYTES,
+        designBytes: DESIGN_BYTES,
+        expectedSourceKind: "posterior",
+        expectedCount: 2,
+        expectedSeed: 7,
+        posteriorBytes: fit,
+        fitDataBytes: FIT_DATA_BYTES,
+      }), "posterior");
       const fixed = parseGeneratedDatasets(fixture);
       await rejects(() => verifyGeneratedDatasets(fixed, {
         modelBytes: MODEL_BYTES,
