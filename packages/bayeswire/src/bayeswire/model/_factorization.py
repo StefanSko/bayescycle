@@ -20,6 +20,7 @@ from bayeswire.model._components import (
 )
 from bayeswire.model._structural import _structurally_equal
 from bayeswire.model.decorator import (
+    ModelMeta,
     ResolvedFreeValue,
     ResolvedObserved,
     ResolvedParam,
@@ -221,6 +222,13 @@ def _validate_internal_value_roles(model: _ModelSnapshot, *, model_role: str) ->
         )
 
 
+def _validate_input_codec(meta: ModelMeta) -> None:
+    """Require one input to survive the ordinary IR codec before factor removal."""
+    from bayeswire.ir import meta_from_dict, meta_to_dict
+
+    meta_from_dict(meta_to_dict(meta))
+
+
 def _factor_prior_model(source: object) -> _ParameterKernel:
     """Return a validated prior-only view of ``source``."""
     if not isinstance(source, type) or not is_model_class(source):
@@ -232,6 +240,7 @@ def _factor_prior_model(source: object) -> _ParameterKernel:
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(source))
     _validate_model_role_types(model, role="source")
+    _validate_input_codec(meta)
     _validate_internal_value_roles(model, model_role="source")
 
     params = dict(model.params)
@@ -377,6 +386,7 @@ def _factor_outcome_model(target: object) -> _OutcomeKernel:
     model = _snapshot_model(meta)
     dimensions = _snapshot_dimensions(attached_model_dimensions(target))
     _validate_model_role_types(model, role="target")
+    _validate_input_codec(meta)
     _validate_internal_value_roles(model, model_role="target")
 
     params = dict(model.params)
