@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -312,6 +314,24 @@ def _make_fixed_run(tmp_path: Path) -> Path:
         == 0
     )
     return output
+
+
+def test_generation_run_routing_rejects_fifo_without_blocking(tmp_path: Path) -> None:
+    run_dir = tmp_path / "fifo-run"
+    run_dir.mkdir()
+    os.mkfifo(run_dir / "run.json")
+    code = (
+        "from pathlib import Path\n"
+        "from bayescycle._errors import WorkflowError\n"
+        "from bayescycle._workflow.generation_runs import is_generation_run\n"
+        "try:\n"
+        f"    is_generation_run(Path({str(run_dir)!r}))\n"
+        "except WorkflowError:\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n"
+    )
+    completed = subprocess.run([sys.executable, "-c", code], check=False, timeout=2)
+    assert completed.returncode == 0
 
 
 def test_generation_run_rejects_external_unbounded_or_invalid_metadata(tmp_path: Path) -> None:
