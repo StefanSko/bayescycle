@@ -72,6 +72,7 @@ def _posterior_source() -> bytes:
             "settings": {"num_warmup": 0, "num_draws": 2, "max_treedepth": 4},
             "seed": 0,
             "chain_count": 1,
+            "chains": 1,
             "chain_order": [0],
             "draw_count": 2,
         },
