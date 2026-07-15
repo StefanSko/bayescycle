@@ -367,7 +367,16 @@ def test_composed_custom_param_owner_ignores_distribution_equality() -> None:
 
 
 def test_composed_partially_observed_ancestor_precedes_observed_draw() -> None:
-    composed = with_prior(PartiallyObservedTarget, prior=PartiallyObservedPrior)
+    meta = model_meta(PartiallyObservedTarget)
+    sites = {site.name: site for site in meta.stochastic_sites}
+    reordered = bindable_from_meta(
+        replace(
+            meta,
+            stochastic_sites=(sites["theta"], sites["y"], sites["latent"]),
+        ),
+        dimensions=model_dimensions(PartiallyObservedTarget),
+    )
+    composed = with_prior(reordered, prior=PartiallyObservedPrior)
 
     draws = simulate_prior_predictive(
         composed,
