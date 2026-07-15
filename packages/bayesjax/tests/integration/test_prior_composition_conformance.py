@@ -138,13 +138,13 @@ class PartiallyObservedTarget:
     missing_idx = Data.vector(n_mis)
     theta = Param(Normal(0.0, 1.0))
     latent = PartiallyObserved.vector(
-        Normal(theta, 1.0),
+        Normal(theta, 0.01),
         length=n,
         observed=observed,
         observed_idx=observed_idx,
         missing_idx=missing_idx,
     )
-    y = Observed(Normal(latent, 1.0))
+    y = Observed(Normal(latent, 0.000001))
 
 
 @model
@@ -395,6 +395,11 @@ def test_composed_partially_observed_ancestor_precedes_observed_draw() -> None:
 
     assert draws.observed["latent"].shape == (2, 3)
     assert draws.observed["y"].shape == (2, 3)
+    assert jnp.allclose(
+        draws.observed["y"],
+        draws.observed["latent"],
+        atol=0.00001,
+    )
 
 
 def test_composed_model_completes_posterior_sampling_smoke() -> None:
