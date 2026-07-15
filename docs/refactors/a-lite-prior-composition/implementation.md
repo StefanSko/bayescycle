@@ -168,7 +168,114 @@ Before review round 6, the following were green on the feature worktree:
 - root workspace guards;
 - playground format, lint, and browser tests.
 
-That validation does not override the four confirmed review findings above.
-After fixing them, exact-HEAD staging, all package/root/playground suites, a
-fresh independent review, final Bayesite vendoring, and the PR review loop are
-still required.
+That validation did not override the four confirmed review findings above.
+They were subsequently fixed, but fresh adversarial reviews continued to expose
+more decoded-metadata and execution boundaries.
+
+## Later review rounds and deeper difficulties
+
+### Codec-valid was weaker than closed and executable
+
+Rounds 7–13 repeatedly separated properties that initially looked equivalent:
+
+- a node can encode but fail to decode because a nested bare map/tuple has no
+  field-kind context;
+- a decoded node can occupy the wrong semantic role (for example, a constraint
+  as a distribution or a discrete latent distribution);
+- a constructor can decode successfully but normalize encoded values and thus
+  silently change the selected prior;
+- individually registered nodes can still violate nested built-in invariants;
+- a target prior that will be discarded still has to be independently
+  codec-valid before factorization.
+
+The final boundary therefore validates exact ModelMeta containers and roles,
+performs an input encode/decode round trip before removing any factor, compares
+the decoded tree recursively against the original without calling overloaded
+`__eq__`, validates the final tree again, and returns a detached decoded copy.
+Registration also requires frozen, comparing, constructor-backed fields and a
+constructor signature capable of accepting every encoded field by keyword.
+
+### Dataclass equality is not structural equality
+
+Custom distributions can set `eq=False`, define an always-true or always-false
+`__eq__`, or mark fields `compare=False`. All of these defeated declaration
+owner matching at different stages. Exact owner and interface matching now
+walks every dataclass, map, and tuple field recursively, preserves map order,
+and compares scalar runtime types as well as values. Registered extensions with
+non-comparing fields are rejected before they enter the registry.
+
+### Recursive extension support had to cross every consumer phase
+
+Supporting registered map/tuple fields only in the codec was insufficient.
+Symbolic references and indexes inside them also had to participate in:
+
+- Bayeswire closure, ancestry, semantic-role, and Submodel prefixing walks;
+- Bayesjax bind-time shape substitution, concrete-index checks, and nested MVN
+  Cholesky validation;
+- Bayesjax runtime distribution-field evaluation and prior simulation.
+
+Partial fixes created asymmetric behavior, such as a valid nested field failing
+shape inference or an out-of-bounds nested index being silently clamped by JAX.
+The durable lesson is to audit every phase that recursively consumes a
+registered distribution whenever a new container kind is admitted.
+
+### Factor order is not ancestral generation order
+
+Retained stochastic-site order is normative for density evaluation and cannot
+be rewritten. Prior-predictive generation, however, must schedule declaration
+outcomes by their recursive free-value dependencies. A stable topological plan
+now leaves metadata order untouched while drawing a `PartiallyObserved`
+ancestor before an outcome that consumes it, and reports unresolved cycles
+before JAX tracing.
+
+A second subtlety was the two representations of a partially observed value:
+the density environment stores the missing free coordinates, while descendants
+semantically consume the generated full vector. Storing only one representation
+either caused shape failures or rebuilt generated observed coordinates from
+fixed conditioning data. Mutating that conditioning data then corrupted models
+where two partial declarations shared it. The final evaluator carries a
+separate full-vector override keyed by free-value name, so each descendant
+`VectorScatterOp` receives its own coherent generated ancestor.
+
+### Factor labels are not declaration names
+
+Observed owners may have a stochastic factor label different from the observed
+declaration's bind/output name. Prior simulation initially classified owners
+structurally and then accidentally used the label for output shapes and result
+keys. The execution plan now carries the declaration name separately from the
+factor site and uses the declaration name for values and artifacts.
+
+### Optional coordinates are semantic metadata
+
+Coordinate tuples are global by dimension name. If unrelated retained source
+and target variables both use `axis`, attaching coordinates on only one side
+would silently label both after merge. Composition now treats absent versus
+attached coordinates as different and requires matching presence and exact
+JSON scalar values in both directions.
+
+### Final independent review and validation
+
+Review round 16 at commit `611dbf1` was the first explicit clean verdict. Its
+fresh validation reported:
+
+- Bayeswire: Ruff/ty green (the two known warnings), 380 tests;
+- Bayesjax: Ruff/ty green (the known warning), 473 tests;
+- Bayescycle: Ruff/ty green, 235 passed and 6 skipped;
+- root guards: 14 passed;
+- playground: Ruff green and 39 tests;
+- all pre-existing corpus hashes unchanged and `ir-v1-tags.md` byte-identical.
+
+The remaining pre-PR work after that verdict is operational rather than an open
+correctness finding: restage the in-worktree browser assets from exact HEAD,
+refresh and validate the separate Bayesite vendor copy, then push/open the PR
+and run the requested Codex review loop.
+
+### Tooling notes
+
+- The Playground has no `package.json`; its JavaScript harness is invoked by
+  pytest. An attempted `npm --prefix playground/site test` therefore failed
+  with `ENOENT` but changed no repository state.
+- Other agent sessions repeatedly ran the global review harness against the
+  separate Foundation-B worktree. This session checked process state and waited
+  each time rather than overlapping expensive `xhigh` reviews. Those processes
+  were unrelated to this feature worktree.
