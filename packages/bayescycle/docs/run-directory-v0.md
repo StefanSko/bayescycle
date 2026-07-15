@@ -103,7 +103,12 @@ execute into a fresh run directory and compare recorded input/output artifacts
 byte-for-byte. `--check-only` verifies the applicable hashes and prints the
 reconstructed plan without creating the replay directory.
 A replay returns exit code 0 for byte-identical artifacts and exit code 1 when a
-completed replay differs.
+completed replay differs. Portability means the moved run is independently
+executable without authoring source or external payload paths; it does not claim
+cross-target floating-point byte identity. In particular, native and Wasm builds
+may differ in last-bit model-prior draws. Such a replay still completes, records
+the exact comparison, and returns 1 rather than silently treating the artifacts
+as identical.
 
 ## Ownership
 
