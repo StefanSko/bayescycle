@@ -152,6 +152,33 @@ class PartiallyObservedPrior:
     theta = Param(Normal(0.5, 0.75))
 
 
+@model
+class SharedPartialTarget:
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    shared_observed = Data.vector(n_obs)
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    theta = Param(Normal(0.0, 1.0))
+    first = PartiallyObserved.vector(
+        Normal(theta - 20.0, 0.01),
+        length=n,
+        observed=shared_observed,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+    )
+    second = PartiallyObserved.vector(
+        Normal(theta + 20.0, 0.01),
+        length=n,
+        observed=shared_observed,
+        observed_idx=observed_idx,
+        missing_idx=missing_idx,
+    )
+    first_child = Observed(Normal(first, 0.000001))
+    second_child = Observed(Normal(second, 0.000001))
+
+
 AlternativeRegression = with_prior(RegressionTarget, prior=SimulationPrior)
 X = jnp.asarray([-1.0, -0.5, 0.0, 0.5, 1.0])
 Y = jnp.asarray([-1.6, -0.3, 0.4, 1.1, 2.2])
@@ -398,6 +425,43 @@ def test_composed_partially_observed_ancestor_precedes_observed_draw() -> None:
     assert jnp.allclose(
         draws.observed["y"],
         draws.observed["latent"],
+        atol=0.00001,
+    )
+
+
+def test_composed_shared_partial_ancestors_remain_independent() -> None:
+    composed = with_prior(SharedPartialTarget, prior=PartiallyObservedPrior)
+    assert tuple(site.name for site in model_meta(composed).stochastic_sites) == (
+        "theta",
+        "first",
+        "second",
+        "first_child",
+        "second_child",
+    )
+
+    draws = simulate_prior_predictive(
+        composed,
+        seed=41,
+        num_samples=2,
+        data={
+            "n": jnp.asarray(2),
+            "n_obs": jnp.asarray(1),
+            "n_mis": jnp.asarray(1),
+            "shared_observed": jnp.asarray([100.0]),
+            "observed_idx": jnp.asarray([0]),
+            "missing_idx": jnp.asarray([1]),
+        },
+        observed_shapes={"first_child": (2,), "second_child": (2,)},
+    )
+
+    assert jnp.allclose(
+        draws.observed["first_child"],
+        draws.observed["first"],
+        atol=0.00001,
+    )
+    assert jnp.allclose(
+        draws.observed["second_child"],
+        draws.observed["second"],
         atol=0.00001,
     )
 
