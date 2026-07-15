@@ -321,6 +321,17 @@ export default [
         (value) => { value.at(-1).trailer.posterior_identity_hash = "fnv1a64:wrong"; },
         (value) => { value.at(-1).trailer.chains[0].draw_count = 1; },
         (value) => { value[1].values.z = [value[1].values.z]; },
+        (value) => { delete value[0].chains; },
+        (value) => { value[0].chains = 99; },
+        (value) => { value[0].seed = -1; },
+        (value) => { value[0].settings.num_warmup = -1; },
+        (value) => { value[0].settings.max_treedepth = 0; },
+        (value) => { value[1].tree_depth = 21; },
+        (value) => { value[1].seed += 1; },
+        (value) => { value[1].draw_count -= 1; },
+        (value) => { value[1].chain_count += 1; },
+        (value) => { value[1].chain_order = [1, 0]; },
+        (value) => { value.at(-1).trailer.seed += 1; },
       ];
       for (const mutate of mutations) {
         const changed = structuredClone(originals);

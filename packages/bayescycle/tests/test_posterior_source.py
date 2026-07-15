@@ -127,6 +127,14 @@ def _float_draw_chain_order(documents: list[dict[str, Any]]) -> None:
     documents[1]["chain_order"][0] = float(documents[1]["chain_order"][0])
 
 
+def _trailer_seed_mismatch(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["seed"] += 1
+
+
+def _tree_depth_above_native_limit(documents: list[dict[str, Any]]) -> None:
+    documents[1]["tree_depth"] = 21
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -152,6 +160,8 @@ def _float_draw_chain_order(documents: list[dict[str, Any]]) -> None:
         _float_draw_count,
         _float_draw_chain_count,
         _float_draw_chain_order,
+        _trailer_seed_mismatch,
+        _tree_depth_above_native_limit,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(
