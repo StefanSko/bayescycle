@@ -159,6 +159,7 @@ def validate_portable_posterior(
     raw_chain_stats = trailer.get("chains")
     if not isinstance(raw_chain_stats, list) or len(raw_chain_stats) != chain_count:
         raise PortablePosteriorError("posterior trailer chain statistics are incomplete")
+    declared_chain_stats: list[tuple[int, tuple[int, ...]]] = []
     for index, raw_stat in enumerate(raw_chain_stats):
         statistic = _object(raw_stat, f"posterior trailer chains[{index}]")
         if (
@@ -167,12 +168,19 @@ def validate_portable_posterior(
             != draws_per_chain
         ):
             raise PortablePosteriorError("posterior trailer chain statistics are out of order")
-        _integer(statistic.get("divergences"), "posterior trailer divergences")
-        _integer_array(
+        declared_divergences = _integer(
+            statistic.get("divergences"), "posterior trailer divergences"
+        )
+        declared_histogram = _integer_array(
             statistic.get("treedepth_histogram"), "posterior trailer treedepth_histogram"
         )
+        if len(declared_histogram) != max_treedepth + 1:
+            raise PortablePosteriorError("posterior treedepth histogram length is invalid")
+        declared_chain_stats.append((declared_divergences, declared_histogram))
     draws: list[PosteriorSourceDraw] = []
     seen_coordinates: set[tuple[int, int]] = set()
+    actual_divergences = [0] * chain_count
+    actual_histograms = [[0] * (max_treedepth + 1) for _ in range(chain_count)]
     for source_index, raw in enumerate(draw_documents):
         document = _object(raw, f"posterior draw {source_index}")
         _marker(document, f"posterior draw {source_index}")
@@ -182,35 +190,30 @@ def validate_portable_posterior(
             raise PortablePosteriorError("posterior draw indices are not contiguous")
         chain = _integer(document.get("chain"), "posterior chain")
         draw = _integer(document.get("draw"), "posterior draw")
-        if "seed" in document and _integer(document["seed"], "posterior draw seed") != header_seed:
+        if _integer(document.get("seed"), "posterior draw seed") != header_seed:
             raise PortablePosteriorError("posterior draw seed disagrees with header")
-        if (
-            "draw_count" in document
-            and _integer(document["draw_count"], "posterior draw_count") != draw_count
-        ):
+        if _integer(document.get("draw_count"), "posterior draw_count") != draw_count:
             raise PortablePosteriorError("posterior draw_count disagrees with header")
-        if (
-            "chain_count" in document
-            and _integer(document["chain_count"], "posterior draw chain_count") != chain_count
-        ):
+        if _integer(document.get("chain_count"), "posterior draw chain_count") != chain_count:
             raise PortablePosteriorError("posterior draw chain_count disagrees with header")
-        if (
-            "chain_order" in document
-            and _integer_array(document["chain_order"], "posterior draw chain_order") != chain_order
-        ):
+        if _integer_array(document.get("chain_order"), "posterior draw chain_order") != chain_order:
             raise PortablePosteriorError("posterior draw chain_order disagrees with header")
         expected_chain = chain_order[source_index // draws_per_chain]
         expected_draw = source_index % draws_per_chain
         if chain != expected_chain or draw != expected_draw:
             raise PortablePosteriorError("posterior draws are not grouped in chain order")
-        if (
-            "tree_depth" in document
-            and _integer(document["tree_depth"], "posterior tree_depth") > 20
-        ):
-            raise PortablePosteriorError("posterior tree_depth must be at most 20")
+        tree_depth = _integer(document.get("tree_depth"), "posterior tree_depth")
+        if tree_depth > max_treedepth:
+            raise PortablePosteriorError("posterior tree_depth exceeds declared max_treedepth")
+        diverging = document.get("diverging")
+        if not isinstance(diverging, bool):
+            raise PortablePosteriorError("posterior diverging must be a boolean")
         if (chain, draw) in seen_coordinates:
             raise PortablePosteriorError("posterior chain/draw coordinates are duplicated")
         seen_coordinates.add((chain, draw))
+        chain_position = source_index // draws_per_chain
+        actual_divergences[chain_position] += int(diverging)
+        actual_histograms[chain_position][tree_depth] += 1
         if document.get("parameter_order") != list(names) or _integer(
             document.get("parameter_count"), "posterior draw parameter_count"
         ) != len(names):
@@ -225,6 +228,14 @@ def validate_portable_posterior(
             )
             flattened.append((parameter.name, numbers))
         draws.append(PosteriorSourceDraw(source_index, chain, draw, tuple(flattened)))
+    for index, (declared_divergences, declared_histogram) in enumerate(declared_chain_stats):
+        if (
+            actual_divergences[index] != declared_divergences
+            or tuple(actual_histograms[index]) != declared_histogram
+        ):
+            raise PortablePosteriorError(
+                "posterior trailer sampler statistics disagree with retained draws"
+            )
     return PortablePosterior(tuple(parameters), tuple(draws))
 
 

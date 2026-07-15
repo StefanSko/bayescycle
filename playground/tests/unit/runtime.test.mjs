@@ -38,7 +38,8 @@ function runtimePosteriorBytes() {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
-      draw_index: 0, chain: 0, draw: 0, parameter_count: 1,
+      draw_index: 0, seed: 0, draw_count: 1, chain_count: 1, chain_order: [0],
+      chain: 0, draw: 0, tree_depth: 1, diverging: false, parameter_count: 1,
       parameter_order: ["theta"], values: { theta: 0.5 },
     },
     {
@@ -55,7 +56,8 @@ function runtimePosteriorBytes() {
         parameter_order: ["theta"],
         params: 1,
         chains: [{
-          chain: 0, draw_count: 1, divergences: 0, treedepth_histogram: [0, 1],
+          chain: 0, draw_count: 1, divergences: 0,
+          treedepth_histogram: [0, 1, 0, 0, 0],
         }],
       },
     },

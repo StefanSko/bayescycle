@@ -98,14 +98,16 @@ async function posteriorSource() {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
-      draw_index: 0, chain: 0, draw: 0, parameter_count: 1,
+      draw_index: 0, seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
+      chain: 0, draw: 0, tree_depth: 1, diverging: false, parameter_count: 1,
       parameter_order: ["alpha"], values: { alpha: 1.0 },
     },
     {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
-      draw_index: 1, chain: 0, draw: 1, parameter_count: 1,
+      draw_index: 1, seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
+      chain: 0, draw: 1, tree_depth: 1, diverging: false, parameter_count: 1,
       parameter_order: ["alpha"], values: { alpha: 2.0 },
     },
     {
@@ -123,7 +125,8 @@ async function posteriorSource() {
         parameter_order: ["alpha"],
         params: 1,
         chains: [{
-          chain: 0, draw_count: 2, divergences: 0, treedepth_histogram: [0, 2],
+          chain: 0, draw_count: 2, divergences: 0,
+          treedepth_histogram: [0, 2, 0, 0, 0],
         }],
       },
     },

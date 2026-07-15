@@ -133,16 +133,26 @@ export async function validatePortablePosterior({
   if (!Array.isArray(trailer.chains) || trailer.chains.length !== chainCount) {
     throw new PortablePosteriorError("posterior trailer chain statistics are incomplete");
   }
-  trailer.chains.forEach((raw, index) => {
+  const declaredChainStats = trailer.chains.map((raw, index) => {
     const statistic = object(raw, `posterior trailer chains[${index}]`);
     if (integer(statistic.chain, "posterior trailer chain") !== chainOrder[index] ||
         integer(statistic.draw_count, "posterior trailer chain draw_count") !== drawsPerChain) {
       throw new PortablePosteriorError("posterior trailer chain statistics are out of order");
     }
-    integer(statistic.divergences, "posterior trailer divergences");
-    integerArray(statistic.treedepth_histogram, "posterior trailer treedepth_histogram");
+    const divergences = integer(statistic.divergences, "posterior trailer divergences");
+    const histogram = integerArray(
+      statistic.treedepth_histogram, "posterior trailer treedepth_histogram",
+    );
+    if (histogram.length !== maxTreedepth + 1) {
+      throw new PortablePosteriorError("posterior treedepth histogram length is invalid");
+    }
+    return { divergences, histogram };
   });
   const seen = new Set();
+  const actualDivergences = Array(chainCount).fill(0);
+  const actualHistograms = Array.from(
+    { length: chainCount }, () => Array(maxTreedepth + 1).fill(0),
+  );
   const draws = documents.slice(1, -1).map((raw, sourceDrawIndex) => {
     const draw = object(raw, `posterior draw ${sourceDrawIndex}`);
     if (draw.draws_format !== "v0-provisional") {
@@ -154,24 +164,25 @@ export async function validatePortablePosterior({
     }
     const chain = integer(draw.chain, "posterior chain");
     const drawIndex = integer(draw.draw, "posterior draw");
-    if (draw.seed !== undefined && integer(draw.seed, "posterior draw seed") !== headerSeed) {
+    if (integer(draw.seed, "posterior draw seed") !== headerSeed) {
       throw new PortablePosteriorError("posterior draw seed disagrees with header");
     }
-    if (draw.draw_count !== undefined &&
-        integer(draw.draw_count, "posterior draw_count") !== count) {
+    if (integer(draw.draw_count, "posterior draw_count") !== count) {
       throw new PortablePosteriorError("posterior draw_count disagrees with header");
     }
-    if (draw.chain_count !== undefined &&
-        integer(draw.chain_count, "posterior draw chain_count") !== chainCount) {
+    if (integer(draw.chain_count, "posterior draw chain_count") !== chainCount) {
       throw new PortablePosteriorError("posterior draw chain_count disagrees with header");
     }
-    if (draw.chain_order !== undefined &&
-        JSON.stringify(integerArray(draw.chain_order, "posterior draw chain_order")) !==
-          JSON.stringify(chainOrder)) {
+    if (JSON.stringify(integerArray(draw.chain_order, "posterior draw chain_order")) !==
+        JSON.stringify(chainOrder)) {
       throw new PortablePosteriorError("posterior draw chain_order disagrees with header");
     }
-    if (draw.tree_depth !== undefined && integer(draw.tree_depth, "posterior tree_depth") > 20) {
-      throw new PortablePosteriorError("posterior tree_depth must be at most 20");
+    const treeDepth = integer(draw.tree_depth, "posterior tree_depth");
+    if (treeDepth > maxTreedepth) {
+      throw new PortablePosteriorError("posterior tree_depth exceeds declared max_treedepth");
+    }
+    if (typeof draw.diverging !== "boolean") {
+      throw new PortablePosteriorError("posterior diverging must be a boolean");
     }
     const expectedChain = chainOrder[Math.floor(sourceDrawIndex / drawsPerChain)];
     const expectedDraw = sourceDrawIndex % drawsPerChain;
@@ -183,6 +194,9 @@ export async function validatePortablePosterior({
       throw new PortablePosteriorError("posterior chain/draw coordinates are duplicated");
     }
     seen.add(coordinate);
+    const chainPosition = Math.floor(sourceDrawIndex / drawsPerChain);
+    actualDivergences[chainPosition] += Number(draw.diverging);
+    actualHistograms[chainPosition][treeDepth] += 1;
     if (JSON.stringify(draw.parameter_order) !== JSON.stringify(names) ||
         integer(draw.parameter_count, "posterior draw parameter_count") !== names.length) {
       throw new PortablePosteriorError("posterior draw parameter order is invalid");
@@ -201,6 +215,15 @@ export async function validatePortablePosterior({
       sourceDrawIndex, chain, draw: drawIndex, values: Object.freeze(flattened),
     });
   });
+  for (let index = 0; index < chainCount; index += 1) {
+    if (actualDivergences[index] !== declaredChainStats[index].divergences ||
+        JSON.stringify(actualHistograms[index]) !==
+          JSON.stringify(declaredChainStats[index].histogram)) {
+      throw new PortablePosteriorError(
+        "posterior trailer sampler statistics disagree with retained draws",
+      );
+    }
+  }
   return Object.freeze({
     parameters: Object.freeze(parameters),
     draws: Object.freeze(draws),
