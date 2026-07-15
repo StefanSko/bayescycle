@@ -11,6 +11,7 @@ from bayeswire.constraints.core import Constraint
 from bayeswire.distributions.continuous import Exponential
 from bayeswire.distributions.core import Distribution
 from bayeswire.distributions.multivariate import MultivariateNormal
+from bayeswire.model._factorization import _param_references
 from bayeswire.model._structural import _structurally_equal
 from bayeswire.model.decorator import (
     ModelMeta,
@@ -336,6 +337,35 @@ def _site_owns_non_param_free_value(site: ResolvedStochasticSite, name: str) -> 
     )
 
 
+def _order_ancestral_outcomes(
+    outcomes: tuple[_PriorPredictiveOutcomeSite, ...],
+    *,
+    param_names: set[str],
+) -> tuple[_PriorPredictiveOutcomeSite, ...]:
+    """Stable-toposort declaration outcomes by free-value distribution dependencies."""
+    available = set(param_names)
+    pending = list(outcomes)
+    ordered: list[_PriorPredictiveOutcomeSite] = []
+    while pending:
+        for index, outcome in enumerate(pending):
+            dependencies = set(_param_references(outcome.site.distribution))
+            if dependencies <= available:
+                ordered.append(outcome)
+                available.add(outcome.name)
+                pending.pop(index)
+                break
+        else:
+            unresolved = {
+                outcome.name: sorted(set(_param_references(outcome.site.distribution)) - available)
+                for outcome in pending
+            }
+            raise TypeError(
+                "prior-predictive outcome dependencies are cyclic or unavailable; "
+                f"unresolved references: {unresolved}"
+            )
+    return tuple(ordered)
+
+
 def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
     """Classify declaration sites and reject Factors before ancestral drawing."""
     sites = resolved_stochastic_sites(meta)
@@ -395,15 +425,19 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
             "model containing only declaration-backed generative sites"
         )
 
+    outcomes = tuple(
+        _PriorPredictiveOutcomeSite(
+            name=outcome_names[index],
+            site=site,
+            partially_observed=index in partially_observed_indices,
+        )
+        for index, site in enumerate(sites)
+        if index in outcome_names
+    )
     return _PriorPredictiveSitePlan(
-        outcomes=tuple(
-            _PriorPredictiveOutcomeSite(
-                name=outcome_names[index],
-                site=site,
-                partially_observed=index in partially_observed_indices,
-            )
-            for index, site in enumerate(sites)
-            if index in outcome_names
+        outcomes=_order_ancestral_outcomes(
+            outcomes,
+            param_names=set(meta.params),
         )
     )
 
