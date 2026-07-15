@@ -479,6 +479,7 @@ def _simulate_one(
     key_index = 0
     parameters: dict[str, jax.Array] = {}
     values = dict(data)
+    full_values: dict[str, jax.Array] = {}
 
     for name, param in meta.params.items():
         distribution = _evaluate_distribution(param.distribution, values)
@@ -495,7 +496,11 @@ def _simulate_one(
     observed_values: dict[str, jax.Array] = {}
     for outcome in outcomes:
         site = outcome.site
-        distribution = _evaluate_distribution(site.distribution, values)
+        distribution = _evaluate_distribution(
+            site.distribution,
+            values,
+            full_values=full_values,
+        )
         if outcome.partially_observed:
             observed_value, free_value = _sample_partially_observed_site(
                 keys[key_index],
@@ -505,15 +510,7 @@ def _simulate_one(
                 vector_bounds,
             )
             values[outcome.name] = free_value
-            if not isinstance(site.value, VectorScatterOp) or not isinstance(
-                site.value.observed_values,
-                DataRef,
-            ):
-                raise TypeError(
-                    f"PartiallyObserved site {outcome.name!r} must use declared observed data"
-                )
-            observed_idx = _evaluate_expr(site.value.observed_idx, values)
-            values[site.value.observed_values.name] = observed_value[observed_idx]
+            full_values[outcome.name] = observed_value
         else:
             observed_target_shape = observed_shapes[outcome.name]
             if observed_target_shape is None:
