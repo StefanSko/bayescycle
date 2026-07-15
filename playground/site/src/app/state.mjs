@@ -158,18 +158,36 @@ function reduceScopedWorkflow(state, event) {
           },
         },
       };
-    case "generation-succeeded":
+    case "generation-succeeded": {
       if (!matchesAttempt(state.generation.attempt, event)) return state;
+      const generatedFit = event.selection !== undefined && (
+        state.fitDatasetSource === "generated" ||
+        state.conditioning.fit?.datasetSource === "generated" ||
+        state.conditioning.attempt.datasetSource === "generated"
+      );
       return {
         ...state,
+        ...(generatedFit ? {
+          projectRevision: event.selection.revision,
+          run: { status: "idle" },
+          artifacts: state.artifacts.filter(
+            (artifact) => !FIT_DESCENDANT_ARTIFACTS.includes(artifact.name),
+          ),
+          fitDatasetSource: null,
+          notice: null,
+        } : {}),
         generation: {
           ...state.generation,
           attempt: { status: "completed", dependencyKey: event.dependencyKey },
           collection: freezeCollection(event.collection),
           selected: event.selection === undefined ? null : selectedValue(event.selection),
+          ...(event.selection === undefined
+            ? {}
+            : { selectionRevision: event.selection.revision }),
         },
         conditioning: clearGeneratedFit(state.conditioning),
       };
+    }
     case "generation-failed":
       if (!matchesAttempt(state.generation.attempt, event)) return state;
       return {

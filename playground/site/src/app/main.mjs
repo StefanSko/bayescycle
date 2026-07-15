@@ -326,6 +326,7 @@ async function generateCollection() {
         plan, artifact, artifacts: result.artifacts, parsed,
       },
       selection: {
+        revision: ++revision,
         index: selected.drawIndex,
         parametersBytes: selected.parametersBytes,
         datasetBytes: selected.datasetBytes,
