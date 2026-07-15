@@ -72,6 +72,10 @@ layout keeps matching the architecture.
 - `bayescycle._workflow.plans` contains immutable run plans that pair workflow
   paths with backend actions. It must not know concrete backend implementation
   details.
+- `bayescycle._workflow.generation_plan` owns the closed immutable functional
+  generation values and exact serialized provenance shape. It may own defensive
+  byte copies and hashes, but must not execute a backend, inspect raw IR, or
+  expose a generic distribution/closure API.
 - `bayescycle._workflow.protocols` defines narrow backend capability protocols.
   It may depend on typed requests, contexts, and plan descriptions, but not on
   first-party backend modules.
@@ -94,8 +98,10 @@ layout keeps matching the architecture.
   artifact helpers. It may re-export the canonical data API, but it must not
   grow workflow orchestration or backend-specific behavior.
 - `bayescycle._run_artifacts` owns durable artifact references, format markers,
-  serializers, and compatibility rules for the run-directory contract. It must
-  not import workflow orchestration or concrete backend adapters.
+  serializers, and compatibility rules for the run-directory contract. Its
+  paired generated-dataset codec validates and selects canonical parameter/data
+  documents without inspecting model IR. It must not import workflow
+  orchestration or concrete backend adapters.
 - `bayescycle._integrations.descriptions` owns the closed plan-description ADT
   for integration modes. It distinguishes `external-command` from
   `in-process-python` without selecting concrete backends.

@@ -44,6 +44,13 @@ from bayescycle._workflow.documents import (
     sbc_plan_document,
     simulate_plan_document,
 )
+from bayescycle._workflow.generation_runs import (
+    build_generation_plan,
+    execute_generation_run,
+    is_generation_run,
+    load_generation_run,
+    replay_generation_run,
+)
 from bayescycle._workflow.operations import (
     materialize_prior_predictive_run,
     materialize_recover_run,
@@ -94,7 +101,10 @@ from bayescycle._workflow.requests import (
     SbcRequest,
     SimulateRequest,
 )
-from bayescycle.backends.bayesite.preflight import preflight_bayesite_engine
+from bayescycle.backends.bayesite.preflight import (
+    BayesiteCommandRequirement,
+    preflight_bayesite_engine,
+)
 from bayescycle.backends.bayesite.provisioning import (
     PINNED_ENGINE_RELEASE,
     EngineRelease,
@@ -137,6 +147,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     command = cast(str, namespace.command)
     if command == "sample":
         return _sample(namespace)
+    if command == "generate":
+        return _generate(namespace)
     if command == "prior-predictive":
         return _prior_predictive(namespace)
     if command == "simulate":
@@ -205,6 +217,24 @@ def _build_parser() -> argparse.ArgumentParser:
         sample,
         help_text="show the planned sample command without executing it",
     )
+
+    generate = subparsers.add_parser(
+        "generate",
+        description="Generate paired parameter/dataset draws into a portable run directory.",
+    )
+    _add_model_selection_args(generate)
+    generate.add_argument(
+        "--design", required=True, type=Path, help="canonical generation design JSON"
+    )
+    generate.add_argument("--source", required=True, choices=("fixed", "model-prior", "posterior"))
+    generate.add_argument("--parameters", type=Path, help="fixed parameter document")
+    generate.add_argument("--fit", type=Path, help="portable posterior fit NDJSON")
+    generate.add_argument("--fit-data", type=Path, help="exact conditioning data for --fit")
+    generate.add_argument("--count", required=True, type=int, help="dataset count in 1..1000")
+    generate.add_argument("--seed", required=True, type=int, help="generation seed")
+    generate.add_argument("-o", "--output", required=True, type=Path, help="run directory")
+    generate.add_argument("--engine", help="Bayesite executable to invoke")
+    _add_no_auto_provision_argument(generate)
 
     prior_predictive = subparsers.add_parser(
         "prior-predictive",
@@ -570,6 +600,38 @@ def _add_show_plan_argument(parser: argparse.ArgumentParser, *, help_text: str) 
     )
 
 
+def _generate(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        engine = resolve_bayesite_engine_path(
+            cast(str | None, namespace.engine),
+            _auto_provision_enabled(namespace),
+        )
+        info = preflight_bayesite_engine(
+            engine,
+            (BayesiteCommandRequirement("generate", "functional generation"),),
+        )
+        plan = build_generation_plan(
+            model_path=cast(Path, namespace.model_path),
+            model_name=cast(str | None, namespace.model_name),
+            design_path=cast(Path, namespace.design),
+            source_kind=cast(str, namespace.source),
+            parameters_path=cast(Path | None, namespace.parameters),
+            fit_path=cast(Path | None, namespace.fit),
+            fit_data_path=cast(Path | None, namespace.fit_data),
+            count=cast(int, namespace.count),
+            seed=cast(int, namespace.seed),
+        )
+        return execute_generation_run(
+            output_dir=cast(Path, namespace.output),
+            plan=plan,
+            engine=str(info.executable),
+        )
+    except (ModelLoadError, WorkflowError, OSError) as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
 def _sample(namespace: argparse.Namespace) -> int:
     try:
         intent = _intent_from_namespace(namespace)
@@ -859,7 +921,33 @@ def _recover_check(namespace: argparse.Namespace) -> int:
 def _replay(namespace: argparse.Namespace) -> int:
     try:
         _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
-        source_run, record = load_replay_metadata(cast(Path, namespace.run_dir))
+        requested_run = cast(Path, namespace.run_dir)
+        if is_generation_run(requested_run):
+            record = load_generation_run(requested_run)
+            check_only = bool(cast(bool, namespace.check_only))
+            engine_option = cast(str | None, namespace.engine)
+            engine = engine_option or str(BAYESITE)
+            if not check_only:
+                engine = resolve_bayesite_engine_path(
+                    engine_option,
+                    _auto_provision_enabled(namespace),
+                )
+                engine = str(
+                    preflight_bayesite_engine(
+                        engine,
+                        (BayesiteCommandRequirement("generate", "generation replay"),),
+                    ).executable
+                )
+            code, document = replay_generation_run(
+                record=record,
+                output_dir=cast(Path, namespace.output),
+                engine=engine,
+                check_only=check_only,
+            )
+            if document:
+                print(json.dumps(document, indent=2))
+            return code
+        source_run, record = load_replay_metadata(requested_run)
         source_checks = verify_replay_sources(record)
         output_dir = cast(Path, namespace.output).expanduser().resolve()
         check_only = bool(cast(bool, namespace.check_only))

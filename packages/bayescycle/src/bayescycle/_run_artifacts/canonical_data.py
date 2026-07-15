@@ -257,7 +257,10 @@ def _parse_typed_scalar(value: JsonValue, dtype: str, label: str) -> DataValue:
     if dtype in {"float32", "float64"}:
         if not isinstance(value, int | float) or isinstance(value, bool):
             raise DataDocError(f"{label} for float dtype {dtype!r} must contain only JSON numbers")
-        as_float = float(value)
+        try:
+            as_float = float(value)
+        except OverflowError as exc:
+            raise DataDocError(f"{label} contains value outside the finite float range") from exc
         if not math.isfinite(as_float):
             raise DataDocError(f"{label} contains non-finite value {value!r}")
         return as_float

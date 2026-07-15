@@ -67,9 +67,14 @@
       </div>
       <div class="settings">
         <label for="generation-seed">Generation seed<input id="generation-seed" type="number" min="0" value="0"></label>
-        <label for="predictive-draws">Predictive draws<input id="predictive-draws" type="number" min="1" value="200"></label>
+        <label for="generation-count">Dataset count<input id="generation-count" type="number" min="1" max="1000" value="100"></label>
       </div>
       <button id="generate-button" class="primary" type="button" disabled>Generate at fixed values</button>
+      <div id="generation-selection" hidden>
+        <label for="generated-dataset-index">Selected generated pair</label>
+        <select id="generated-dataset-index" disabled></select>
+        <output id="selected-pair-summary" class="status" for="generated-dataset-index"></output>
+      </div>
       <p class="hint">Uses Design/context as x. Generated datasets keep their paired parameter values for recovery.</p>
     </section>
 
@@ -104,6 +109,13 @@
           <li id="artifact-data" hidden><a download="data.json">data.json</a></li>
           <li id="artifact-posterior" hidden><a download="posterior.ndjson">posterior.ndjson</a></li>
           <li id="artifact-diagnostics" hidden><a download="diagnostics.json">diagnostics.json</a></li>
+          <li id="artifact-generated-datasets" hidden><a download="generated_datasets.ndjson">generated_datasets.ndjson</a></li>
+          <li id="artifact-generation-plan" hidden><a download="generation-plan.json">generation-plan.json</a></li>
+          <li id="artifact-generation-run" hidden><a download="run.json">run.json</a></li>
+          <li id="artifact-generation-design" hidden><a download="design.json">design.json</a></li>
+          <li id="artifact-fixed-parameters" hidden><a download="fixed-parameters.json">fixed-parameters.json</a></li>
+          <li id="artifact-source-posterior" hidden><a download="source-posterior.ndjson">source-posterior.ndjson</a></li>
+          <li id="artifact-source-fit-data" hidden><a download="source-fit-data.json">source-fit-data.json</a></li>
           <li id="artifact-prior" hidden><a download="prior_predictive.ndjson">prior_predictive.ndjson</a></li>
           <li id="artifact-posterior-predictive" hidden><a download="posterior_predictive.ndjson">posterior_predictive.ndjson</a></li>
           <li id="artifact-simulated" hidden><a download="simulated_data.json">simulated_data.json</a></li>

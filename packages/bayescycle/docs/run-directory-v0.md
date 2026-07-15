@@ -7,21 +7,49 @@ backend, but completed runs should expose the same explicit files.
 The v0 contract is provisional. Consumers must validate format markers before
 parsing artifact contents.
 
-## Required files
+## Operation-specific required files
+
+A completed conditioning run requires:
 
 ```text
 run/
   model.ir.json       # serialized bayeswire ModelMeta IR
-  data.json           # canonical bayescycle.data.json.v1 snapshot used for the run
+  data.json           # exact canonical snapshot used for conditioning
   posterior.ndjson    # retained posterior draws; see posterior-draws-v0.md
 ```
+
+A completed functional generation run requires:
+
+```text
+run/
+  model.ir.json               # exact closed generation model
+  design.json                 # exact canonical generation design/context
+  generation-plan.json        # exact hash-resolved functional plan
+  generated_datasets.ndjson   # paired parameter/complete-dataset draws
+  run.json                    # operation-local plan paths and provenance
+```
+
+Fixed generation additionally requires `fixed-parameters.json`. Posterior
+generation additionally requires copied `source-posterior.ndjson` and
+`source-fit-data.json`; its source model is the byte-identical
+`model.ir.json`, and its posterior must carry matching header/trailer
+model-data fingerprints. A browser-runtime-only fingerprint-less fit can produce
+a paired download but cannot materialize this portable profile. Model-prior
+generation needs no additional source payload.
+These local payloads make a generation run replayable after it is moved and the
+original external inputs are removed. Generation `run.json` uses the distinct
+exact-key `bayescycle.generation-run.v0` profile in the functional-generation
+contract. It accepts only contained non-symlink relative paths, consumes closed
+IR directly, and never requires the original Python model source. Existing run
+profiles retain their current external-source verification behavior.
+Generation-only runs do not require a posterior output.
 
 ## Optional files
 
 ```text
 run/
   manifest.json               # narrow artifact-format manifest
-  run.json                    # append-only run provenance metadata
+  run.json                    # provenance for non-generation operation profiles
   dims.json                   # explicit bayeswire dimension metadata sidecar
   diagnostics.json            # diagnostics report for posterior.ndjson
   prior_predictive.ndjson     # prior-predictive draws when produced
@@ -34,6 +62,12 @@ run/
   fit.nc                      # derived ArviZ/NetCDF export, not source state
 ```
 
+`generated_datasets.ndjson` uses the provisional functional-generation
+contract in [`../../../docs/generation-plan-v0.md`](../../../docs/generation-plan-v0.md).
+It retains one natural-scale parameter document and one complete canonical
+dataset per draw, plus exact model/design/source lineage. A selected dataset is
+passed to conditioning without model-aware transformation.
+
 `data.json` and `simulated_data.json` use the canonical
 `bayescycle.data.json.v1` format documented in
 [`canonical-data-artifacts.md`](canonical-data-artifacts.md). The Bayesite
@@ -42,28 +76,39 @@ backend-private materializations for generated outputs, such as
 `run/.bayesite/simulated_data.json` before canonicalization, but those files
 are not workflow-stage artifacts.
 
-`run.json` uses `bayescycle.run.v1` and records the prepared run kind, selected
-backend, replay-relevant CLI settings, Bayesite passthrough arguments when
-present, model source hash, input source hashes, materialized input paths, and
-expected output artifact paths. It is intended as a narrow provenance index for
-future study ledgers and replay checks; the run directory remains the durable
-artifact contract. For Bayesite-backed runs it also records an optional
-`engine` block: `kind` (`explicit`, `system`, or `provisioned`, describing how
-the engine executable was resolved), `path`, and an optional `version` and
-`sha256` (the latter only ever set for an auto-provisioned engine).
+For non-generation profiles, `run.json` uses `bayescycle.run.v1` and records the
+prepared run kind, selected backend, replay-relevant CLI settings, Bayesite
+passthrough arguments when present, model source hash, input source hashes,
+materialized input paths, and expected output artifact paths. It is intended as
+a narrow provenance index for future study ledgers and replay checks; the run
+directory remains the durable artifact contract. For Bayesite-backed runs it
+also records an optional `engine` block: `kind` (`explicit`, `system`, or
+`provisioned`, describing how the engine executable was resolved), `path`, and
+an optional `version` and `sha256` (the latter only ever set for an
+auto-provisioned engine). Generation instead uses
+`bayescycle.generation-run.v0` exactly as specified in
+[`../../../docs/generation-plan-v0.md`](../../../docs/generation-plan-v0.md).
 
 `dims.json` may only contain dimension labels and coordinates explicitly exposed
 by `bayeswire`; bayescycle must not infer labels from names, shapes, or data.
 
 ## Replay
 
-`bayescycle replay <run-dir> -o <new-run-dir>` reads `run.json`, verifies that
-the recorded model and input source hashes still match, reconstructs the original
-model-level operation, executes it into a fresh run directory, and compares the
-recorded model/input/output artifacts byte-for-byte. `--check-only` verifies the
-hashes and prints the reconstructed plan without creating the replay directory.
+`bayescycle replay <run-dir> -o <new-run-dir>` reads `run.json`. Existing
+`bayescycle.run.v1` profiles verify recorded external model/input source hashes
+and reconstruct the original model-level operation. The
+`bayescycle.generation-run.v0` profile verifies contained local payload hashes
+and reconstructs the closed generation plan without source execution. Both
+execute into a fresh run directory and compare recorded input/output artifacts
+byte-for-byte. `--check-only` verifies the applicable hashes and prints the
+reconstructed plan without creating the replay directory.
 A replay returns exit code 0 for byte-identical artifacts and exit code 1 when a
-completed replay differs.
+completed replay differs. Portability means the moved run is independently
+executable without authoring source or external payload paths; it does not claim
+cross-target floating-point byte identity. In particular, native and Wasm builds
+may differ in last-bit model-prior draws. Such a replay still completes, records
+the exact comparison, and returns 1 rather than silently treating the artifacts
+as identical.
 
 ## Ownership
 
@@ -78,6 +123,15 @@ Bayesite is one producer/consumer of the bayescycle run-directory v0 contract.
 The in-process bayesjax backend currently writes compatible posterior and
 prior-predictive streams where it has public runtime support; unsupported
 workflow reports fail explicitly during preparation.
+
+## Generation compatibility
+
+The paired artifact is additive in v0. Unified functional generation returns
+`generated_datasets.ndjson` and does not project legacy artifacts.
+`simulated_data.json`, `prior_predictive.ndjson`, and
+`posterior_predictive.ndjson` remain outputs only of their legacy operations and
+retain byte semantics unchanged. New generated-dataset selection and paired
+recovery use the paired artifact.
 
 ## Compatibility rule
 

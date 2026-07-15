@@ -107,9 +107,12 @@ independently of the lockstep Python release above:
    vX.Y.Z` to rewrite `PINNED_ENGINE_RELEASE` (the version and per-target
    sha256s) in
    `packages/bayescycle/src/bayescycle/backends/bayesite/provisioning.py`.
-   Separately replace `playground/site/vendor/bayesite/bayesite_core.wasm`
-   with the release's wasm artifact and update `ENGINE.json` with its engine
-   version, source commit, and sha256. Run the Playground corpus, engine, and
+   Separately check out the exact release commit, build
+   `bayesite_core.wasm` with `cargo build --release --target
+   wasm32-unknown-unknown`, replace
+   `playground/site/vendor/bayesite/bayesite_core.wasm`, and update
+   `ENGINE.json` with its engine version, release commit, and sha256. Run the
+   Playground corpus, engine, and
    browser-runtime tests before merging the wasm edge. These two consumers
    may move independently, but neither pin is implicit.
 3. **A bayescycle release -> Bayesite G7 pin bump.** After the PyPI artifacts

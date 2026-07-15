@@ -7,6 +7,7 @@ import { EngineError } from "./types.mjs";
  * @typedef {{execute: (request: Record<string, unknown>, options?: Record<string, unknown>) => Promise<import("./types.mjs").EngineOutput>}} EngineExecutor
  * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, chains: number, executor: EngineExecutor, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void}} SampleInputs
  * @typedef {{fits: string[], executor: EngineExecutor}} DiagnoseInputs
+ * @typedef {{model: string, design: string, parameterSource: EngineDocument, identities: EngineDocument, count: number, seed: number, executor: EngineExecutor}} GenerateInputs
  * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor}} PriorPredictiveInputs
  * @typedef {{model: EngineDocument, data: EngineDocument, fit: string, seed: number, executor: EngineExecutor}} PosteriorPredictiveInputs
  * @typedef {PosteriorPredictiveInputs} PosteriorCheckInputs
@@ -60,6 +61,22 @@ export async function diagnose(inputs) {
     const output = await inputs.executor.execute({
       command: "diagnose",
       fit: inputs.fits.length === 1 ? firstFit : mergeChainFits(inputs.fits),
+    });
+    return { ok: true, outputs: [output] };
+  });
+}
+
+/** @param {GenerateInputs} inputs @returns {Promise<RunResult>} */
+export async function generate(inputs) {
+  return guard(async () => {
+    const output = await inputs.executor.execute({
+      command: "generate",
+      model: inputs.model,
+      design: inputs.design,
+      parameter_source: inputs.parameterSource,
+      count: inputs.count,
+      seed: inputs.seed,
+      identities: inputs.identities,
     });
     return { ok: true, outputs: [output] };
   });

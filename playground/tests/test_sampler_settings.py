@@ -1,7 +1,7 @@
 from playwright.sync_api import Page, expect
 
 
-def test_predictive_controls_require_a_safe_seed(page: Page, base_url: str) -> None:
+def test_generation_controls_require_safe_count_and_seed(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#compile-button").click()
@@ -11,11 +11,11 @@ def test_predictive_controls_require_a_safe_seed(page: Page, base_url: str) -> N
     page.locator("#param-source-prior").check()
     expect(page.locator("#generate-button")).to_be_disabled()
     page.locator("#generation-seed").fill("0")
-    page.locator("#predictive-draws").fill("0")
+    page.locator("#generation-count").fill("0")
     expect(page.locator("#generate-button")).to_be_disabled()
     page.locator("#param-source-fixed").check()
-    expect(page.locator("#generate-button")).to_be_enabled()
-    page.locator("#predictive-draws").fill("200")
+    expect(page.locator("#generate-button")).to_be_disabled()
+    page.locator("#generation-count").fill("200")
     page.locator("#param-source-prior").check()
     expect(page.locator("#generate-button")).to_be_enabled()
 

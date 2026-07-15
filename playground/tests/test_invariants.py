@@ -44,7 +44,20 @@ def test_playground_is_not_a_workspace_member() -> None:
 
 def test_native_document_surfaces_are_present() -> None:
     html = (SITE_ROOT / "index.html").read_text()
-    for element_id in ("model-source", "observed-data", "design-data", "truth-data"):
+    for element_id in (
+        "model-source",
+        "observed-data",
+        "design-data",
+        "truth-data",
+        "generation-count",
+        "artifact-generated-datasets",
+        "generated-dataset-index",
+        "selected-pair-summary",
+        "artifact-generation-plan",
+        "artifact-generation-run",
+        "artifact-generation-design",
+        "artifact-fixed-parameters",
+    ):
         assert f'id="{element_id}"' in html
     assert "codemirror" not in html.lower()
 
@@ -55,6 +68,21 @@ def test_application_reaches_workers_only_through_runtime() -> None:
     assert 'from "../engine/' not in application_source
     assert "runtime.compile(" in application_source
     assert "runtime.run(" in application_source
+
+
+def test_application_uses_only_workflow_generation_and_conditioning_operations() -> None:
+    application_source = (SITE_ROOT / "src" / "app" / "main.mjs").read_text()
+    assert 'operation: "generate"' in application_source
+    assert 'operation: "condition"' in application_source
+    for command in (
+        '"simulate"',
+        '"prior-predictive"',
+        '"posterior-predictive"',
+        'operation: "sample"',
+        'operation: "diagnose"',
+        'operation: "recover-check"',
+    ):
+        assert command not in application_source
 
 
 def test_application_does_not_infer_raw_ir_semantics() -> None:
@@ -92,11 +120,13 @@ def test_compiler_uses_ordinary_bayeswire_serializer() -> None:
         assert cloned_implementation not in worker_source
 
 
-def test_engine_manifest_matches_wasm() -> None:
+def test_engine_manifest_matches_wasm_and_runtime_version() -> None:
     manifest_path = VENDOR_ROOT / "bayesite" / "ENGINE.json"
     wasm_path = VENDOR_ROOT / "bayesite" / "bayesite_core.wasm"
     manifest = json.loads(manifest_path.read_text())
     assert hashlib.sha256(wasm_path.read_bytes()).hexdigest() == manifest["wasm_sha256"]
+    engine_types = (SITE_ROOT / "src" / "engine" / "types.mjs").read_text()
+    assert f'ENGINE_VERSION = "{manifest["engine_version"]}"' in engine_types
 
 
 def test_pyodide_pin_is_committed() -> None:

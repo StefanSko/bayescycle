@@ -2,6 +2,7 @@ import { CompilerClient } from "../compile/index.mjs";
 import {
   WorkerEngine,
   diagnose,
+  generate,
   mergeChainFits,
   posteriorPredictive,
   priorPredictive,
@@ -10,11 +11,24 @@ import {
   simulate,
 } from "../engine/index.mjs";
 import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
+import {
+  parseGeneratedDatasets,
+  verifyGeneratedDatasets,
+} from "../generation/artifact.mjs";
+import {
+  GenerationPlanError,
+  fitArtifact,
+  serializeGenerationPlan,
+  validateGenerationPlan,
+} from "../generation/plan.mjs";
+import { validatePortablePosterior } from "../generation/posterior-source.mjs";
 
 const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
 
 export class BrowserRuntime {
+  #runtimeFits = new WeakSet();
+
   constructor(executor = new WorkerEngine(), compiler = new CompilerClient()) {
     this.executor = executor;
     this.compiler = compiler;
@@ -29,8 +43,14 @@ export class BrowserRuntime {
   async run(request, onProgress = () => {}) {
     let result;
     switch (request.operation) {
+      case "condition":
+        result = await this.#condition(request, onProgress);
+        break;
       case "sample":
         result = await this.#sample(request, onProgress);
+        break;
+      case "generate":
+        result = await this.#generate(request);
         break;
       case "diagnose":
         result = oneArtifact(
@@ -96,16 +116,202 @@ export class BrowserRuntime {
       default:
         throw new RuntimeError("UnsupportedOperation", `Unsupported operation ${request.operation}`);
     }
-    return { type: "artifacts", id: request.id, artifacts: result.artifacts };
+    return { type: "artifacts", id: request.id, ...result };
+  }
+
+  async #generate(request) {
+    let plan;
+    try {
+      plan = validateGenerationPlan(request.plan);
+    } catch (error) {
+      if (error instanceof GenerationPlanError) {
+        throw new RuntimeError("InvalidGenerationPlan", error.message);
+      }
+      throw error;
+    }
+    const parameters = plan.distribution.parameters;
+    const outcomes = plan.distribution.outcomes;
+    const modelBytes = outcomes.modelIrBytes;
+    const designBytes = outcomes.designBytes;
+    const identities = {
+      generation_model_hash: await sha256Bytes(modelBytes),
+      design_hash: await sha256Bytes(designBytes),
+    };
+    let parameterSource;
+    if (parameters.kind === "fixed") {
+      const parametersBytes = parameters.parametersBytes;
+      identities.parameters_hash = await sha256Bytes(parametersBytes);
+      parameterSource = {
+        kind: "fixed",
+        parameters: exactText(parametersBytes, "fixed parameters"),
+      };
+    } else if (parameters.kind === "model-prior") {
+      parameterSource = {
+        kind: "model-prior",
+        authored_provenance: parameters.authoredProvenance === null ? null : {
+          claimed_source_model_hash: parameters.authoredProvenance.claimedSourceModelHash,
+          claimed_outcome_model_hash: parameters.authoredProvenance.claimedOutcomeModelHash,
+        },
+      };
+    } else {
+      const fit = parameters.fitArtifact;
+      const fitModelBytes = fit.modelIrBytes;
+      const fitDataBytes = fit.dataBytes;
+      const posteriorBytes = fit.posteriorBytes;
+      identities.fit_hash = await sha256Bytes(posteriorBytes);
+      identities.fit_model_hash = await sha256Bytes(fitModelBytes);
+      identities.fit_data_hash = await sha256Bytes(fitDataBytes);
+      parameterSource = {
+        kind: "posterior",
+        fit: exactText(posteriorBytes, "fit posterior"),
+        fit_data: exactText(fitDataBytes, "fit data"),
+      };
+    }
+    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime" &&
+        !this.#runtimeFits.has(parameters.fitArtifact)) {
+      throw new RuntimeError(
+        "InvalidFitAssociation",
+        "runtime posterior association was not issued by this conditioning runtime",
+      );
+    }
+    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "portable") {
+      await validatePortablePosterior({
+        modelBytes: parameters.fitArtifact.modelIrBytes,
+        dataBytes: parameters.fitArtifact.dataBytes,
+        posteriorBytes: parameters.fitArtifact.posteriorBytes,
+      });
+    }
+    const output = requireOutput(await generate({
+      model: exactText(modelBytes, "generation model IR"),
+      design: exactText(designBytes, "generation design"),
+      parameterSource,
+      identities,
+      count: plan.count,
+      seed: plan.seed,
+      executor: this.executor,
+    }));
+    const parsedOutput = parseGeneratedDatasets(output.rawBytes);
+    await verifyGeneratedDatasets(parsedOutput, {
+      modelBytes,
+      designBytes,
+      fixedParametersBytes: parameters.kind === "fixed"
+        ? parameters.parametersBytes
+        : undefined,
+      modelPriorBytes: parameters.kind === "model-prior"
+        ? parameters.modelIrBytes
+        : undefined,
+      authoredProvenance: parameters.kind === "model-prior" &&
+        parameters.authoredProvenance !== null
+        ? {
+            claimed_source_model_hash:
+              parameters.authoredProvenance.claimedSourceModelHash,
+            claimed_outcome_model_hash:
+              parameters.authoredProvenance.claimedOutcomeModelHash,
+          }
+        : null,
+      posteriorBytes: parameters.kind === "posterior"
+        ? parameters.fitArtifact.posteriorBytes
+        : undefined,
+      fitDataBytes: parameters.kind === "posterior"
+        ? parameters.fitArtifact.dataBytes
+        : undefined,
+      posteriorAssociation: parameters.kind === "posterior"
+        ? parameters.fitArtifact.association
+        : undefined,
+      expectedSourceKind: parameters.kind,
+      expectedCount: plan.count,
+      expectedSeed: plan.seed,
+    });
+    const generated = artifact(
+      "generated_datasets.ndjson",
+      "application/x-ndjson",
+      output.rawBytes,
+    );
+    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime") {
+      return { artifacts: [generated] };
+    }
+    const planBytes = await serializeGenerationPlan(plan);
+    const published = [
+      artifact("model.ir.json", "application/json", modelBytes),
+      artifact("design.json", "application/json", designBytes),
+      artifact("generation-plan.json", "application/json", planBytes),
+    ];
+    if (parameters.kind === "fixed") {
+      published.push(artifact(
+        "fixed-parameters.json",
+        "application/json",
+        parameters.parametersBytes,
+      ));
+    } else if (parameters.kind === "posterior") {
+      published.push(
+        artifact(
+          "source-posterior.ndjson",
+          "application/x-ndjson",
+          parameters.fitArtifact.posteriorBytes,
+        ),
+        artifact(
+          "source-fit-data.json",
+          "application/json",
+          parameters.fitArtifact.dataBytes,
+        ),
+      );
+    }
+    published.push(generated);
+    const runBytes = await generationRunBytes(published);
+    published.push(artifact("run.json", "application/json", runBytes));
+    return { artifacts: published };
+  }
+
+  async #condition(request, onProgress) {
+    const sampled = await this.#sample(request, onProgress);
+    const posterior = sampled.artifacts.find(
+      (entry) => entry.name === "posterior.ndjson",
+    );
+    if (posterior === undefined) {
+      throw new RuntimeError("MissingArtifact", "Conditioning produced no posterior artifact");
+    }
+    const artifacts = [...sampled.artifacts];
+    const warnings = [];
+    try {
+      const diagnosed = requireOutput(await diagnose({
+        fits: [exactText(posterior.bytes, "posterior")],
+        executor: this.executor,
+      }));
+      artifacts.push(artifact(
+        "diagnostics.json", "application/json", diagnosed.rawBytes,
+      ));
+    } catch (error) {
+      warnings.push(`Posterior completed; diagnostics unavailable: ${error.message}`);
+    }
+    if (request.pairedParameters !== undefined) {
+      try {
+        const recovery = requireOutput(await recoverCheck({
+          fit: exactText(posterior.bytes, "posterior"),
+          truth: asObject(request.pairedParameters, "paired parameters"),
+          executor: this.executor,
+        }));
+        artifacts.push(artifact(
+          "recovery_check.json", "application/json", recovery.rawBytes,
+        ));
+      } catch (error) {
+        warnings.push(`Posterior completed; recovery check unavailable: ${error.message}`);
+      }
+    }
+    return {
+      artifacts,
+      fitArtifact: sampled.fitArtifact,
+      notice: warnings.length === 0 ? null : warnings.join("\n"),
+    };
   }
 
   async #sample(request, onProgress) {
     const settings = request.settings ?? {};
+    const modelBytes = asIrBytes(request.modelIr);
     const dataBytes = asDocumentBytes(request.data);
     const chains = integerSetting(settings, "chains", 4);
     const counts = Array.from({ length: chains }, () => ({ retainedDraws: 0, divergences: 0 }));
     const result = await sample({
-      model: asIrBytes(request.modelIr),
+      model: modelBytes,
       data: asObject(dataBytes, "data"),
       settings: engineSettings(settings),
       seed: integerSetting(settings, "seed", 0),
@@ -122,12 +328,16 @@ export class BrowserRuntime {
     if (!result.ok) throw runtimeError(result.error);
     const streams = result.outputs.map((output) => UTF8.decode(output.rawBytes));
     const merged = streams.length === 1 ? streams[0] : mergeChainFits(streams);
+    const posteriorBytes = ENCODE.encode(merged);
+    const association = fitArtifact(modelBytes, dataBytes, posteriorBytes, "runtime");
+    this.#runtimeFits.add(association);
     return {
       artifacts: [
-        artifact("model.ir.json", "application/json", asIrBytes(request.modelIr)),
+        artifact("model.ir.json", "application/json", modelBytes),
         artifact("data.json", "application/json", dataBytes),
-        artifact("posterior.ndjson", "application/x-ndjson", ENCODE.encode(merged)),
+        artifact("posterior.ndjson", "application/x-ndjson", posteriorBytes),
       ],
+      fitArtifact: association,
     };
   }
 }
@@ -155,7 +365,12 @@ function oneArtifact(name, mediaType, output) {
 }
 
 function artifact(name, mediaType, bytes) {
-  return Object.freeze({ name, mediaType, bytes: Uint8Array.from(bytes) });
+  const owned = Uint8Array.from(bytes);
+  return Object.freeze({
+    name,
+    mediaType,
+    get bytes() { return Uint8Array.from(owned); },
+  });
 }
 
 function requireOutput(result) {
@@ -167,6 +382,70 @@ function requireOutput(result) {
 
 function runtimeError(error) {
   return new RuntimeError(error.error, error.message);
+}
+
+function exactText(value, label) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+  } catch {
+    throw new RuntimeError("InvalidRequest", `${label} must be valid UTF-8 bytes`);
+  }
+}
+
+async function sha256Bytes(value) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", Uint8Array.from(value)));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function generationRunBytes(artifacts) {
+  const byName = new Map(artifacts.map((entry) => [entry.name, entry]));
+  const entry = async (role, name, format) => {
+    const value = byName.get(name);
+    if (value === undefined) {
+      throw new RuntimeError("MissingArtifact", `Generation publication needs ${name}`);
+    }
+    return { role, path: name, sha256: await sha256Bytes(value.bytes), format };
+  };
+  const inputs = [await entry("design", "design.json", "bayescycle.data.json.v1")];
+  if (byName.has("fixed-parameters.json")) {
+    inputs.push(await entry(
+      "fixed-parameters",
+      "fixed-parameters.json",
+      "bayescycle.data.json.v1",
+    ));
+  } else if (byName.has("source-posterior.ndjson")) {
+    inputs.push(
+      await entry("source-posterior", "source-posterior.ndjson", "v0-provisional"),
+      await entry("source-fit-data", "source-fit-data.json", "bayescycle.data.json.v1"),
+    );
+  }
+  const plan = byName.get("generation-plan.json");
+  const model = byName.get("model.ir.json");
+  if (plan === undefined || model === undefined) {
+    throw new RuntimeError("MissingArtifact", "Generation publication needs model and plan");
+  }
+  const document = {
+    format: "bayescycle.generation-run.v0",
+    kind: "generate",
+    backend: "bayesite",
+    plan: {
+      path: "generation-plan.json",
+      sha256: await sha256Bytes(plan.bytes),
+      format: "v0-provisional",
+    },
+    model: {
+      path: "model.ir.json",
+      sha256: await sha256Bytes(model.bytes),
+      format: "bayeswire_ir.v1",
+    },
+    inputs,
+    outputs: [await entry(
+      "generated-datasets",
+      "generated_datasets.ndjson",
+      "v0-provisional",
+    )],
+  };
+  return ENCODE.encode(`${JSON.stringify(document)}\n`);
 }
 
 function asText(value, label) {
