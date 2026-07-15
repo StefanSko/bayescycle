@@ -215,6 +215,22 @@ def _wrong_mean_accept(documents: list[dict[str, Any]]) -> None:
     documents[-1]["trailer"]["chains"][0]["mean_accept"] += 0.01
 
 
+def _missing_draw_index_base(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["draw_index_base"]
+
+
+def _wrong_draw_index_base(documents: list[dict[str, Any]]) -> None:
+    documents[1]["draw_index_base"] = "one_based"
+
+
+def _wrong_header_workflow(documents: list[dict[str, Any]]) -> None:
+    documents[0]["workflow_phases"] = ["wrong"]
+
+
+def _wrong_trailer_workflow(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["workflow_phases"] = ["wrong"]
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -262,6 +278,10 @@ def _wrong_mean_accept(documents: list[dict[str, Any]]) -> None:
         _invalid_step_size,
         _invalid_mean_accept,
         _wrong_mean_accept,
+        _missing_draw_index_base,
+        _wrong_draw_index_base,
+        _wrong_header_workflow,
+        _wrong_trailer_workflow,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

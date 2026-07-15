@@ -361,6 +361,10 @@ export default [
         (value) => { value.at(-1).trailer.chains[0].step_size = 0.0; },
         (value) => { value.at(-1).trailer.chains[0].mean_accept = 1.1; },
         (value) => { value.at(-1).trailer.chains[0].mean_accept += 0.01; },
+        (value) => { delete value[1].draw_index_base; },
+        (value) => { value[1].draw_index_base = "one_based"; },
+        (value) => { value[0].workflow_phases = ["wrong"]; },
+        (value) => { value.at(-1).trailer.workflow_phases = ["wrong"]; },
       ];
       for (const mutate of mutations) {
         const changed = structuredClone(originals);
