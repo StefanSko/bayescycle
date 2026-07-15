@@ -59,6 +59,7 @@ def test_corpus_is_present_and_nonempty() -> None:
 
     assert len(names) >= 6
     assert "linear_regression" in names
+    assert "alternative_prior_regression" in names
 
 
 @pytest.mark.parametrize("name", _fixture_names())

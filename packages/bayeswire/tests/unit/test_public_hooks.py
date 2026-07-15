@@ -11,15 +11,18 @@ from bayeswire.model import (
     ModelMeta,
     Observed,
     Param,
+    Submodel,
     attached_model_dimensions,
     dimension_metadata_from_dict,
     dimension_metadata_to_dict,
     is_model_class,
     model,
+    model_dependencies,
     model_dimensions,
     model_meta,
     resolved_free_values,
     resolved_stochastic_sites,
+    with_prior,
 )
 
 obs = Dim("obs", coords=("a", "b"))
@@ -129,6 +132,94 @@ def test_reconstructed_model_round_trips_dimension_metadata() -> None:
 def test_attached_model_dimensions_rejects_non_model_objects() -> None:
     with pytest.raises(TypeError, match="@model"):
         attached_model_dimensions(object)
+
+
+def test_model_dependencies_reports_composition_inputs_in_target_prior_order() -> None:
+    @model
+    class AlternativePrior:
+        theta = Param(Normal(2.0, 0.5))
+
+    composed = with_prior(PublicHookModel, prior=AlternativePrior)
+
+    assert model_dependencies(composed) == (PublicHookModel, AlternativePrior)
+    assert isinstance(model_dependencies(composed), tuple)
+
+
+def test_model_dependencies_reports_direct_submodel_targets_in_declaration_order() -> None:
+    @model
+    class FirstComponent:
+        first = Param(Normal(0.0, 1.0))
+
+    @model
+    class SecondComponent:
+        second = Param(Normal(0.0, 1.0))
+
+    @model
+    class Root:
+        first = Submodel(FirstComponent)
+        second = Submodel(SecondComponent)
+
+    assert model_dependencies(Root) == (FirstComponent, SecondComponent)
+    assert model_dependencies(FirstComponent) == ()
+
+
+def test_model_dependencies_preserves_nested_composition_as_direct_graph() -> None:
+    @model
+    class FirstPrior:
+        theta = Param(Normal(2.0, 0.5))
+
+    @model
+    class SecondPrior:
+        theta = Param(Normal(-1.0, 0.25))
+
+    first = with_prior(PublicHookModel, prior=FirstPrior)
+    second = with_prior(first, prior=SecondPrior)
+
+    assert model_dependencies(first) == (PublicHookModel, FirstPrior)
+    assert model_dependencies(second) == (first, SecondPrior)
+
+
+def test_model_dependencies_preserves_duplicate_target_and_prior_roles() -> None:
+    @model
+    class PriorOnly:
+        theta = Param(Normal(0.0, 1.0))
+
+    composed = with_prior(PriorOnly, prior=PriorOnly)
+
+    assert model_dependencies(composed) == (PriorOnly, PriorOnly)
+
+
+def test_model_dependencies_reports_no_graph_for_decoded_ir() -> None:
+    rebuilt = bindable_from_meta(model_meta(PublicHookModel))
+
+    assert model_dependencies(rebuilt) == ()
+
+
+def test_model_dependencies_rejects_cycles() -> None:
+    @model
+    class First:
+        first = Param(Normal(0.0, 1.0))
+
+    @model
+    class Second:
+        second = Param(Normal(0.0, 1.0))
+
+    type.__setattr__(First, "_model_dependencies", (Second,))
+    type.__setattr__(Second, "_model_dependencies", (First,))
+
+    with pytest.raises(ValueError, match="model dependency cycle.*First.*Second.*First"):
+        model_dependencies(First)
+
+
+def test_model_dependencies_rejects_malformed_private_state() -> None:
+    @model
+    class Root:
+        theta = Param(Normal(0.0, 1.0))
+
+    type.__setattr__(Root, "_model_dependencies", (object,))
+
+    with pytest.raises(TypeError, match="dependency.*bayeswire model class"):
+        model_dependencies(Root)
 
 
 def test_bindable_from_meta_rejects_dimensions_for_undeclared_variables() -> None:
