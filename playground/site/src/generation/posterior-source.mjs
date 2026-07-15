@@ -90,17 +90,28 @@ export async function validatePortablePosterior({
   const names = parameters.map((parameter) => parameter.name);
   if (new Set(names).size !== names.length ||
       JSON.stringify(header.parameter_order) !== JSON.stringify(names) ||
+      JSON.stringify(header.packing) !== JSON.stringify(names) ||
       integer(header.parameter_count, "posterior parameter_count") !== names.length) {
-    throw new PortablePosteriorError("posterior parameter order is invalid");
+    throw new PortablePosteriorError("posterior parameter order or packing is invalid");
   }
   const headerSeed = integer(header.seed, "posterior seed");
   const settings = object(header.settings, "posterior settings");
   integer(settings.num_warmup, "posterior settings.num_warmup");
+  const targetAccept = finiteNumber(
+    settings.target_accept, "posterior settings.target_accept",
+  );
+  if (!(targetAccept > 0.0 && targetAccept < 1.0)) {
+    throw new PortablePosteriorError("posterior settings.target_accept must be in (0, 1)");
+  }
   const maxTreedepth = positiveInteger(
     settings.max_treedepth, "posterior settings.max_treedepth",
   );
   if (maxTreedepth > 20) {
     throw new PortablePosteriorError("posterior max_treedepth must be at most 20");
+  }
+  const sampleStatsMode = header.sample_stats_mode;
+  if (sampleStatsMode !== "per_draw_v1" && sampleStatsMode !== "per_draw_v2") {
+    throw new PortablePosteriorError("posterior sample_stats_mode is invalid");
   }
   const drawsPerChain = positiveInteger(settings.num_draws, "posterior settings.num_draws");
   const chainOrder = integerArray(header.chain_order, "posterior chain_order");
@@ -139,6 +150,16 @@ export async function validatePortablePosterior({
         integer(statistic.draw_count, "posterior trailer chain draw_count") !== drawsPerChain) {
       throw new PortablePosteriorError("posterior trailer chain statistics are out of order");
     }
+    const stepSize = finiteNumber(statistic.step_size, "posterior trailer step_size");
+    if (stepSize <= 0.0) {
+      throw new PortablePosteriorError("posterior trailer step_size must be positive");
+    }
+    const meanAccept = finiteNumber(
+      statistic.mean_accept, "posterior trailer mean_accept",
+    );
+    if (meanAccept < 0.0 || meanAccept > 1.0) {
+      throw new PortablePosteriorError("posterior trailer mean_accept must be in [0, 1]");
+    }
     const divergences = integer(statistic.divergences, "posterior trailer divergences");
     const histogram = integerArray(
       statistic.treedepth_histogram, "posterior trailer treedepth_histogram",
@@ -146,13 +167,14 @@ export async function validatePortablePosterior({
     if (histogram.length !== maxTreedepth + 1) {
       throw new PortablePosteriorError("posterior treedepth histogram length is invalid");
     }
-    return { divergences, histogram };
+    return { divergences, histogram, meanAccept };
   });
   const seen = new Set();
   const actualDivergences = Array(chainCount).fill(0);
   const actualHistograms = Array.from(
     { length: chainCount }, () => Array(maxTreedepth + 1).fill(0),
   );
+  const actualAcceptSums = Array(chainCount).fill(0.0);
   const draws = documents.slice(1, -1).map((raw, sourceDrawIndex) => {
     const draw = object(raw, `posterior draw ${sourceDrawIndex}`);
     if (draw.draws_format !== "v0-provisional") {
@@ -181,8 +203,22 @@ export async function validatePortablePosterior({
     if (treeDepth > maxTreedepth) {
       throw new PortablePosteriorError("posterior tree_depth exceeds declared max_treedepth");
     }
+    if (draw.sample_stats_mode !== sampleStatsMode) {
+      throw new PortablePosteriorError(
+        "posterior draw sample_stats_mode disagrees with header",
+      );
+    }
     if (typeof draw.diverging !== "boolean") {
       throw new PortablePosteriorError("posterior diverging must be a boolean");
+    }
+    const treeAccept = finiteNumber(draw.tree_accept, "posterior tree_accept");
+    if (treeAccept < 0.0 || treeAccept > 1.0) {
+      throw new PortablePosteriorError("posterior tree_accept must be in [0, 1]");
+    }
+    if (sampleStatsMode === "per_draw_v2") {
+      finiteNumber(draw.energy, "posterior energy");
+    } else if (Object.hasOwn(draw, "energy")) {
+      throw new PortablePosteriorError("posterior per_draw_v1 must not contain energy");
     }
     const expectedChain = chainOrder[Math.floor(sourceDrawIndex / drawsPerChain)];
     const expectedDraw = sourceDrawIndex % drawsPerChain;
@@ -197,6 +233,7 @@ export async function validatePortablePosterior({
     const chainPosition = Math.floor(sourceDrawIndex / drawsPerChain);
     actualDivergences[chainPosition] += Number(draw.diverging);
     actualHistograms[chainPosition][treeDepth] += 1;
+    actualAcceptSums[chainPosition] += treeAccept;
     if (JSON.stringify(draw.parameter_order) !== JSON.stringify(names) ||
         integer(draw.parameter_count, "posterior draw parameter_count") !== names.length) {
       throw new PortablePosteriorError("posterior draw parameter order is invalid");
@@ -216,9 +253,11 @@ export async function validatePortablePosterior({
     });
   });
   for (let index = 0; index < chainCount; index += 1) {
+    const actualMeanAccept = actualAcceptSums[index] / drawsPerChain;
     if (actualDivergences[index] !== declaredChainStats[index].divergences ||
         JSON.stringify(actualHistograms[index]) !==
-          JSON.stringify(declaredChainStats[index].histogram)) {
+          JSON.stringify(declaredChainStats[index].histogram) ||
+        Math.abs(actualMeanAccept - declaredChainStats[index].meanAccept) > 1e-9) {
       throw new PortablePosteriorError(
         "posterior trailer sampler statistics disagree with retained draws",
       );
@@ -246,6 +285,13 @@ function kindScope(document, label) {
       document.artifact_scope !== "observed_data_conditioned_parameter_draws") {
     throw new PortablePosteriorError(`${label} kind or scope is invalid`);
   }
+}
+
+function finiteNumber(value, label) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new PortablePosteriorError(`${label} must be a finite number`);
+  }
+  return value;
 }
 
 function positiveInteger(value, label) {

@@ -87,7 +87,8 @@ async function posteriorSource() {
       params: [{ name: "alpha", shape: [], coordinate_order: [[]] }],
       parameter_count: 1,
       parameter_order: ["alpha"],
-      settings: { num_warmup: 0, num_draws: 2, max_treedepth: 4 },
+      packing: ["alpha"],
+      settings: { num_warmup: 0, num_draws: 2, max_treedepth: 4, target_accept: 0.8 },
       seed: 0,
       chain_count: 1,
       chains: 1,
@@ -308,6 +309,7 @@ export default [
       const renamed = structuredClone(originals);
       renamed[0].params[0].name = "seed";
       renamed[0].parameter_order[0] = "seed";
+      renamed[0].packing[0] = "seed";
       for (const draw of renamed.slice(1, -1)) {
         draw.parameter_order[0] = "seed";
         const { mu, ...remaining } = draw.values;
