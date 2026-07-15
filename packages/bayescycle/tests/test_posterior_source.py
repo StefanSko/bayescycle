@@ -107,6 +107,26 @@ def _float_divergences(documents: list[dict[str, Any]]) -> None:
     documents[-1]["trailer"]["chains"][0]["divergences"] = 0.0
 
 
+def _float_header_chains(documents: list[dict[str, Any]]) -> None:
+    documents[0]["chains"] = float(documents[0]["chains"])
+
+
+def _float_draw_seed(documents: list[dict[str, Any]]) -> None:
+    documents[1]["seed"] = float(documents[1]["seed"])
+
+
+def _float_draw_count(documents: list[dict[str, Any]]) -> None:
+    documents[1]["draw_count"] = float(documents[1]["draw_count"])
+
+
+def _float_draw_chain_count(documents: list[dict[str, Any]]) -> None:
+    documents[1]["chain_count"] = float(documents[1]["chain_count"])
+
+
+def _float_draw_chain_order(documents: list[dict[str, Any]]) -> None:
+    documents[1]["chain_order"][0] = float(documents[1]["chain_order"][0])
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -127,6 +147,11 @@ def _float_divergences(documents: list[dict[str, Any]]) -> None:
         _float_max_treedepth,
         _float_tree_depth,
         _float_divergences,
+        _float_header_chains,
+        _float_draw_seed,
+        _float_draw_count,
+        _float_draw_chain_count,
+        _float_draw_chain_order,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

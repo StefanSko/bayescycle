@@ -340,6 +340,11 @@ export default [
         [posteriorText.replace('"max_treedepth":10', '"max_treedepth":10.0'), "integer"],
         [posteriorText.replace('"tree_depth":3', '"tree_depth":3.0'), "integer"],
         [posteriorText.replace('"divergences":0', '"divergences":0.0'), "integer"],
+        [posteriorText.replace('"chains":2', '"chains":2.0'), "integer"],
+        [posteriorText.replace('"seed":20260702', '"seed":20260702.0'), "integer"],
+        [posteriorText.replace('"draw_count":600', '"draw_count":600.0'), "integer"],
+        [posteriorText.replace('"chain_count":2', '"chain_count":2.0'), "integer"],
+        [posteriorText.replace('"chain_order":[0,1]', '"chain_order":[0.0,1]'), "integer"],
         [posteriorText.replace(
           '"model_data_fingerprint":',
           '"model_data_fingerprint":"sha256:' + "0".repeat(64) + '","model_data_fingerprint":',
