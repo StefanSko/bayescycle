@@ -636,6 +636,33 @@ def test_retained_coordinate_collisions_distinguish_json_scalar_types() -> None:
         with_prior(Target, prior=Prior)
 
 
+@pytest.mark.parametrize("coordinates_on_source", [False, True])
+def test_shared_dimension_names_require_matching_coordinate_presence(
+    coordinates_on_source: bool,
+) -> None:
+    source_axis = Dim(
+        "axis",
+        coords=("a", "b") if coordinates_on_source else None,
+    )
+    target_axis = Dim(
+        "axis",
+        coords=None if coordinates_on_source else ("a", "b"),
+    )
+
+    @model
+    class Target:
+        target_data = Data.vector(2, dims=(target_axis,))
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class Prior:
+        source_data = Data.vector(2, dims=(source_axis,))
+        theta = Param(Normal(1.0, 0.5))
+
+    with pytest.raises(ValueError, match="dimension 'axis'.*coordinate presence"):
+        with_prior(Target, prior=Prior)
+
+
 def test_composition_rejects_mutable_sidecar_containers() -> None:
     @model
     class TargetDeclaration:
