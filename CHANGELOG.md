@@ -10,14 +10,17 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-15
+
 ### Added
 
 - Add Bayeswire `with_prior(Target, prior=Source)` for immutable, complete
   same-name prior replacement. Prior-only sources may add hierarchical Params;
   target outcomes, partially observed values, dimensions, and non-prior factors
   are retained. Composition closes to ordinary flat `bayeswire_ir` v1, and
-  Bayescycle plus the Playground select the composed model automatically when
-  source, target, and result share a file.
+  Bayescycle plus the Playground select the composed model automatically —
+  through the new public `model_dependencies(...)` hook — when source, target,
+  and result share a file.
 - Add a fully client-side Bayescycle Playground: compile Bayeswire models in
   an isolated Pyodide worker, run the pinned Bayesite wasm engine per chain,
   normalize explicit JSON data/design/truth documents, inspect posterior
@@ -114,7 +117,8 @@ formats retain their own compatibility policies.
 Earlier package history lived in the predecessor repositories and is not
 reconstructed here.
 
-[Unreleased]: https://github.com/StefanSko/bayescycle/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/StefanSko/bayescycle/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/StefanSko/bayescycle/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/StefanSko/bayescycle/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/StefanSko/bayescycle/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/StefanSko/bayescycle/releases/tag/v0.3.0

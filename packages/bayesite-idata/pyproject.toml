@@ -1,6 +1,6 @@
 [project]
 name = "bayesite-idata"
-version = "0.5.0"
+version = "0.6.0"
 description = "Bayescycle run-directory to ArviZ DataTree/NetCDF exporter."
 readme = "README.md"
 authors = [{ name = "StefanSko" }]

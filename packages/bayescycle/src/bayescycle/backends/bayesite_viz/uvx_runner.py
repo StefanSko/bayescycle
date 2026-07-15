@@ -30,11 +30,11 @@ from bayescycle._integrations.external_command import ExternalCommand, run_exter
 # Consumer pin: exact bayesite-viz PyPI version. Bump deliberately via
 # scripts/bump_version.py alongside a coordinated compatibility review --
 # this is the single place the pin lives (see module docstring: "two pins").
-BAYESITE_VIZ_SOURCE = "bayesite-viz==0.5.0"
+BAYESITE_VIZ_SOURCE = "bayesite-viz==0.6.0"
 
 # Consumer pin: exact bayesite-idata PyPI version, moved in lockstep with
 # BAYESITE_VIZ_SOURCE by scripts/bump_version.py.
-BAYESITE_IDATA_SOURCE = "bayesite-idata==0.5.0"
+BAYESITE_IDATA_SOURCE = "bayesite-idata==0.6.0"
 
 # Determinism pin: the transitive-dependency half of the two source pins
 # above. `uvx` resolves bayesite-viz/bayesite-idata's own dependencies
@@ -45,7 +45,7 @@ BAYESITE_IDATA_SOURCE = "bayesite-idata==0.5.0"
 # package versions published on or before this timestamp, making the
 # plot/idata environments a pure function of the pins together. Stamped by
 # scripts/bump_version.py to the moment of the version bump.
-BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-10T16:22:10Z"
+BAYESITE_VIZ_EXCLUDE_NEWER = "2026-07-15T15:17:11Z"
 
 # The first-party packages above are exact version pins (`==X.Y.Z`), so a
 # resolver can only ever pick that one version of them -- the global
