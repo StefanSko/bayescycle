@@ -332,6 +332,10 @@ export default [
         [posteriorText.replace('"chain_count":2', '"chain_count":2.0000000000000001'), "integer"],
         [posteriorText.replace('"draw_index":0,', ""), "draw_index"],
         [posteriorText.replace('"target_accept":0.8', '"target_accept":1e400'), "finite"],
+        [posteriorText.replace('"num_warmup":300', '"num_warmup":300.0'), "integer"],
+        [posteriorText.replace('"max_treedepth":10', '"max_treedepth":10.0'), "integer"],
+        [posteriorText.replace('"tree_depth":3', '"tree_depth":3.0'), "integer"],
+        [posteriorText.replace('"divergences":0', '"divergences":0.0'), "integer"],
         [posteriorText.replace(
           '"model_data_fingerprint":',
           '"model_data_fingerprint":"sha256:' + "0".repeat(64) + '","model_data_fingerprint":',

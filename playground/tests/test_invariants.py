@@ -120,11 +120,13 @@ def test_compiler_uses_ordinary_bayeswire_serializer() -> None:
         assert cloned_implementation not in worker_source
 
 
-def test_engine_manifest_matches_wasm() -> None:
+def test_engine_manifest_matches_wasm_and_runtime_version() -> None:
     manifest_path = VENDOR_ROOT / "bayesite" / "ENGINE.json"
     wasm_path = VENDOR_ROOT / "bayesite" / "bayesite_core.wasm"
     manifest = json.loads(manifest_path.read_text())
     assert hashlib.sha256(wasm_path.read_bytes()).hexdigest() == manifest["wasm_sha256"]
+    engine_types = (SITE_ROOT / "src" / "engine" / "types.mjs").read_text()
+    assert f'ENGINE_VERSION = "{manifest["engine_version"]}"' in engine_types
 
 
 def test_pyodide_pin_is_committed() -> None:

@@ -87,6 +87,26 @@ def _wrong_value_rank(documents: list[dict[str, Any]]) -> None:
     documents[1]["values"]["z"] = [values]
 
 
+def _float_header_seed(documents: list[dict[str, Any]]) -> None:
+    documents[0]["seed"] = float(documents[0]["seed"])
+
+
+def _float_num_warmup(documents: list[dict[str, Any]]) -> None:
+    documents[0]["settings"]["num_warmup"] = 300.0
+
+
+def _float_max_treedepth(documents: list[dict[str, Any]]) -> None:
+    documents[0]["settings"]["max_treedepth"] = 10.0
+
+
+def _float_tree_depth(documents: list[dict[str, Any]]) -> None:
+    documents[1]["tree_depth"] = float(documents[1]["tree_depth"])
+
+
+def _float_divergences(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["chains"][0]["divergences"] = 0.0
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -102,6 +122,11 @@ def _wrong_value_rank(documents: list[dict[str, Any]]) -> None:
         _non_json_number,
         _overflowing_number,
         _wrong_value_rank,
+        _float_header_seed,
+        _float_num_warmup,
+        _float_max_treedepth,
+        _float_tree_depth,
+        _float_divergences,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

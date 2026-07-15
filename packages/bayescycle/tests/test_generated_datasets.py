@@ -365,6 +365,22 @@ def test_rejects_malformed_truncated_nonfinite_and_oversized_streams() -> None:
         (fixture.replace(b'"draw_index":1', b'"draw_index":3', 1), "draw_index"),
         (fixture.replace(b'"draw_index":0', b'"draw_index":0.0', 1), "draw_index"),
         (fixture.replace(b'"draw_count":2', b'"draw_count":2.0', 1), "draw_count"),
+        (
+            fixture.rsplit(b'"count":2', 1)[0]
+            + b'"count":2.0'
+            + fixture.rsplit(b'"count":2', 1)[1],
+            "count",
+        ),
+        (
+            fixture.rsplit(b'"seed":7', 1)[0] + b'"seed":7.0' + fixture.rsplit(b'"seed":7', 1)[1],
+            "seed",
+        ),
+        (
+            fixture.rsplit(b'"draw_count":2', 1)[0]
+            + b'"draw_count":2.0'
+            + fixture.rsplit(b'"draw_count":2', 1)[1],
+            "draw_count",
+        ),
         (fixture.replace(b'"values":[0.5]', b'"values":[NaN]', 1), "finite"),
         (
             fixture.replace(b'"values":[0.5]', b'"values":[' + b"9" * 400 + b"]", 1),
