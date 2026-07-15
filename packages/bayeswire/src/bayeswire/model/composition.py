@@ -11,6 +11,7 @@ from bayeswire.model._compose import (
     _compose_kernels,
 )
 from bayeswire.model._factorization import _factor_outcome_model, _factor_prior_model
+from bayeswire.model._structural import _structurally_equal
 
 
 def with_prior(target: object, *, prior: object) -> type[object]:
@@ -38,9 +39,19 @@ def _model_class_from_closed(
     module_name: str,
 ) -> type[object]:
     """Construct the ordinary metadata class at the public closure boundary."""
-    from bayeswire.ir import bindable_from_meta, meta_from_dict, meta_to_dict
+    from bayeswire.ir import (
+        UnserializableValue,
+        bindable_from_meta,
+        meta_from_dict,
+        meta_to_dict,
+    )
 
     validated_meta = meta_from_dict(meta_to_dict(closed.meta))
+    if not _structurally_equal(closed.meta, validated_meta):
+        raise UnserializableValue(
+            "Composed ModelMeta codec round-trip changed resolved metadata; registered "
+            "node constructors must preserve every encoded field exactly"
+        )
 
     from bayeswire.model._closure import _validate_model_closure
     from bayeswire.model._components import _snapshot_dimensions, _snapshot_model

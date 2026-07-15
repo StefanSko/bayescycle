@@ -223,10 +223,15 @@ def _validate_internal_value_roles(model: _ModelSnapshot, *, model_role: str) ->
 
 
 def _validate_input_codec(meta: ModelMeta) -> None:
-    """Require one input to survive the ordinary IR codec before factor removal."""
-    from bayeswire.ir import meta_from_dict, meta_to_dict
+    """Require one input to survive the ordinary IR codec without changing meaning."""
+    from bayeswire.ir import UnserializableValue, meta_from_dict, meta_to_dict
 
-    meta_from_dict(meta_to_dict(meta))
+    decoded = meta_from_dict(meta_to_dict(meta))
+    if not _structurally_equal(meta, decoded):
+        raise UnserializableValue(
+            "ModelMeta codec round-trip changed resolved metadata; registered node "
+            "constructors must preserve every encoded field exactly"
+        )
 
 
 def _factor_prior_model(source: object) -> _ParameterKernel:

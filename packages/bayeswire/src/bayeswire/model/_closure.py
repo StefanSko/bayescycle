@@ -417,6 +417,12 @@ def _validate_value_references(
     label: str,
 ) -> None:
     """Validate typed references recursively through registered dataclass-shaped values."""
+    from bayeswire.ir import _is_registered_distribution
+
+    if _is_registered_distribution(value):
+        _validate_distribution(value, label=label)
+    elif isinstance(value, _CONSTRAINT_TYPES):
+        _validate_constraint(value, label=label)
     if is_final_expr_node(value):
         _validate_expression_structure(value, label=label)
     if isinstance(value, VectorScatterOp):
