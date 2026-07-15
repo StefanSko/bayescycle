@@ -256,6 +256,29 @@ def _merge_dimensions(
             if existing is None:
                 variables[name] = candidate
 
+    source_used_dimensions: set[str] = set()
+    if source.dimensions is not None:
+        source_used_dimensions = {
+            dimension
+            for variable, names in source.dimensions.variables
+            if variable in source_params or variable in source_data
+            for dimension in names
+        }
+    target_used_dimensions: set[str] = set()
+    if outcomes.dimensions is not None:
+        target_used_dimensions = {
+            dimension
+            for variable, names in outcomes.dimensions.variables
+            if variable not in target_params
+            and (variable in target_data or variable in target_observed)
+            for dimension in names
+        }
+    source_coordinates = dict(source.dimensions.coords) if source.dimensions is not None else {}
+    target_coordinates = dict(outcomes.dimensions.coords) if outcomes.dimensions is not None else {}
+    for name in source_used_dimensions & target_used_dimensions:
+        if (name in source_coordinates) != (name in target_coordinates):
+            raise ValueError(f"shared dimension {name!r} must have matching coordinate presence")
+
     used_dimensions = {
         dimension
         for variable_dimensions in variables.values()
