@@ -166,7 +166,7 @@ function reduceScopedWorkflow(state, event) {
           ...state.generation,
           attempt: { status: "completed", dependencyKey: event.dependencyKey },
           collection: freezeCollection(event.collection),
-          selected: null,
+          selected: event.selection === undefined ? null : selectedValue(event.selection),
         },
         conditioning: clearGeneratedFit(state.conditioning),
       };
@@ -330,18 +330,13 @@ function reduceScopedWorkflow(state, event) {
           !matches(state.run, event, "running") ||
           event.revision !== state.projectRevision) return state;
       const fit = freezeFit(event.fit);
-      const collection = state.generation.collection;
-      const stalePosteriorCollection = collection?.sourceKind === "posterior" &&
-        collection.sourceFitLineageKey !== fit.lineageKey;
       return {
         ...state,
         run: { status: "completed", revision: event.revision },
         artifacts: mergeArtifacts(state.artifacts, event.artifacts),
         fitDatasetSource: fit.datasetSource,
         notice: event.notice ?? null,
-        generation: stalePosteriorCollection
-          ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
-          : state.generation,
+        generation: generationAfterFit(state.generation, fit.lineageKey),
         conditioning: {
           ...state.conditioning,
           attempt: { status: "completed", dependencyKey: event.dependencyKey },
@@ -352,14 +347,9 @@ function reduceScopedWorkflow(state, event) {
     case "conditioning-succeeded": {
       if (!matchesAttempt(state.conditioning.attempt, event)) return state;
       const fit = freezeFit(event.fit);
-      const collection = state.generation.collection;
-      const stalePosteriorCollection = collection?.sourceKind === "posterior" &&
-        collection.sourceFitLineageKey !== fit.lineageKey;
       return {
         ...state,
-        generation: stalePosteriorCollection
-          ? { ...state.generation, attempt: { status: "idle" }, collection: null, selected: null }
-          : state.generation,
+        generation: generationAfterFit(state.generation, fit.lineageKey),
         conditioning: {
           ...state.conditioning,
           attempt: { status: "completed", dependencyKey: event.dependencyKey },
@@ -391,6 +381,20 @@ function reduceScopedWorkflow(state, event) {
     default:
       return null;
   }
+}
+
+function generationAfterFit(generation, fitLineageKey) {
+  const staleCollection = generation.collection?.sourceKind === "posterior" &&
+    generation.collection.sourceFitLineageKey !== fitLineageKey;
+  const staleAttempt = generation.attempt.status === "running" &&
+    generation.attempt.sourceKind === "posterior" &&
+    generation.attempt.sourceFitLineageKey !== fitLineageKey;
+  if (!staleCollection && !staleAttempt) return generation;
+  return {
+    ...generation,
+    ...(staleAttempt ? { attempt: { status: "idle" } } : {}),
+    ...(staleCollection ? { collection: null, selected: null } : {}),
+  };
 }
 
 function matchesAttempt(attempt, event) {

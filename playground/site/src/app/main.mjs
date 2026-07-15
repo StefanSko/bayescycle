@@ -317,6 +317,7 @@ async function generateCollection() {
     );
     if (artifact === undefined) throw new Error("Runtime returned no generated collection");
     const parsed = parseGeneratedDatasets(artifact.bytes);
+    const selected = parsed.select(0);
     dispatch({
       type: "generation-succeeded", requestId, dependencyKey,
       collection: {
@@ -324,11 +325,11 @@ async function generateCollection() {
         ...(sourceFitLineageKey === undefined ? {} : { sourceFitLineageKey }),
         plan, artifact, artifacts: result.artifacts, parsed,
       },
-    });
-    const selected = parsed.select(0);
-    dispatch({
-      type: "selection-edited", revision: ++revision, index: selected.drawIndex,
-      parametersBytes: selected.parametersBytes, datasetBytes: selected.datasetBytes,
+      selection: {
+        index: selected.drawIndex,
+        parametersBytes: selected.parametersBytes,
+        datasetBytes: selected.datasetBytes,
+      },
     });
   } catch (error) {
     dispatch({
