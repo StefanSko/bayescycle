@@ -93,16 +93,26 @@ export async function validatePortablePosterior({
       integer(header.parameter_count, "posterior parameter_count") !== names.length) {
     throw new PortablePosteriorError("posterior parameter order is invalid");
   }
+  const headerSeed = integer(header.seed, "posterior seed");
   const settings = object(header.settings, "posterior settings");
+  integer(settings.num_warmup, "posterior settings.num_warmup");
+  const maxTreedepth = positiveInteger(
+    settings.max_treedepth, "posterior settings.max_treedepth",
+  );
+  if (maxTreedepth > 20) {
+    throw new PortablePosteriorError("posterior max_treedepth must be at most 20");
+  }
   const drawsPerChain = positiveInteger(settings.num_draws, "posterior settings.num_draws");
   const chainOrder = integerArray(header.chain_order, "posterior chain_order");
   const chainCount = positiveInteger(header.chain_count, "posterior chain_count");
-  if (chainOrder.length === 0 || new Set(chainOrder).size !== chainOrder.length ||
+  if (positiveInteger(header.chains, "posterior chains") !== chainCount ||
+      chainOrder.length === 0 || new Set(chainOrder).size !== chainOrder.length ||
       chainCount !== chainOrder.length || count !== chainCount * drawsPerChain ||
-      header.draw_count !== count) {
+      integer(header.draw_count, "posterior draw_count") !== count) {
     throw new PortablePosteriorError("posterior chain topology or draw count is invalid");
   }
   if (
+    integer(trailer.seed, "posterior trailer seed") !== headerSeed ||
     JSON.stringify(trailer.parameter_order) !== JSON.stringify(names) ||
     integer(trailer.parameter_count, "posterior trailer parameter_count") !== names.length ||
     integer(trailer.params, "posterior trailer params") !== names.length ||
@@ -129,6 +139,8 @@ export async function validatePortablePosterior({
         integer(statistic.draw_count, "posterior trailer chain draw_count") !== drawsPerChain) {
       throw new PortablePosteriorError("posterior trailer chain statistics are out of order");
     }
+    integer(statistic.divergences, "posterior trailer divergences");
+    integerArray(statistic.treedepth_histogram, "posterior trailer treedepth_histogram");
   });
   const seen = new Set();
   const draws = documents.slice(1, -1).map((raw, sourceDrawIndex) => {
@@ -142,6 +154,25 @@ export async function validatePortablePosterior({
     }
     const chain = integer(draw.chain, "posterior chain");
     const drawIndex = integer(draw.draw, "posterior draw");
+    if (draw.seed !== undefined && integer(draw.seed, "posterior draw seed") !== headerSeed) {
+      throw new PortablePosteriorError("posterior draw seed disagrees with header");
+    }
+    if (draw.draw_count !== undefined &&
+        integer(draw.draw_count, "posterior draw_count") !== count) {
+      throw new PortablePosteriorError("posterior draw_count disagrees with header");
+    }
+    if (draw.chain_count !== undefined &&
+        integer(draw.chain_count, "posterior draw chain_count") !== chainCount) {
+      throw new PortablePosteriorError("posterior draw chain_count disagrees with header");
+    }
+    if (draw.chain_order !== undefined &&
+        JSON.stringify(integerArray(draw.chain_order, "posterior draw chain_order")) !==
+          JSON.stringify(chainOrder)) {
+      throw new PortablePosteriorError("posterior draw chain_order disagrees with header");
+    }
+    if (draw.tree_depth !== undefined && integer(draw.tree_depth, "posterior tree_depth") > 20) {
+      throw new PortablePosteriorError("posterior tree_depth must be at most 20");
+    }
     const expectedChain = chainOrder[Math.floor(sourceDrawIndex / drawsPerChain)];
     const expectedDraw = sourceDrawIndex % drawsPerChain;
     if (chain !== expectedChain || drawIndex !== expectedDraw) {

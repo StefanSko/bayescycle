@@ -117,7 +117,11 @@ def validate_portable_posterior(
     header_seed = _integer(header.get("seed"), "posterior seed")
     settings = _object(header.get("settings"), "posterior settings")
     _integer(settings.get("num_warmup"), "posterior settings.num_warmup")
-    _positive_integer(settings.get("max_treedepth"), "posterior settings.max_treedepth")
+    max_treedepth = _positive_integer(
+        settings.get("max_treedepth"), "posterior settings.max_treedepth"
+    )
+    if max_treedepth > 20:
+        raise PortablePosteriorError("posterior max_treedepth must be at most 20")
     draws_per_chain = _positive_integer(settings.get("num_draws"), "posterior settings.num_draws")
     chain_order = _integer_array(header.get("chain_order"), "posterior chain_order")
     if not chain_order or len(set(chain_order)) != len(chain_order):
@@ -131,7 +135,8 @@ def validate_portable_posterior(
     draw_count = _positive_integer(header.get("draw_count"), "posterior draw_count")
     if draw_count != chain_count * draws_per_chain or draw_count != len(draw_documents):
         raise PortablePosteriorError("posterior draw count is incomplete")
-    _integer(trailer.get("seed"), "posterior trailer seed")
+    if _integer(trailer.get("seed"), "posterior trailer seed") != header_seed:
+        raise PortablePosteriorError("posterior trailer seed disagrees with header")
     if (
         trailer.get("parameter_order") != list(names)
         or _integer(trailer.get("parameter_count"), "posterior trailer parameter_count")
@@ -198,8 +203,11 @@ def validate_portable_posterior(
         expected_draw = source_index % draws_per_chain
         if chain != expected_chain or draw != expected_draw:
             raise PortablePosteriorError("posterior draws are not grouped in chain order")
-        if "tree_depth" in document:
-            _integer(document["tree_depth"], "posterior tree_depth")
+        if (
+            "tree_depth" in document
+            and _integer(document["tree_depth"], "posterior tree_depth") > 20
+        ):
+            raise PortablePosteriorError("posterior tree_depth must be at most 20")
         if (chain, draw) in seen_coordinates:
             raise PortablePosteriorError("posterior chain/draw coordinates are duplicated")
         seen_coordinates.add((chain, draw))
