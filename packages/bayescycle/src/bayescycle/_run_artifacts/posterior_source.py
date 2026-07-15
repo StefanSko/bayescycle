@@ -114,7 +114,7 @@ def validate_portable_posterior(
         raise PortablePosteriorError("posterior parameter order is invalid")
     if _integer(header.get("parameter_count"), "posterior parameter_count") != len(names):
         raise PortablePosteriorError("posterior parameter count is invalid")
-    _integer(header.get("seed"), "posterior seed")
+    header_seed = _integer(header.get("seed"), "posterior seed")
     settings = _object(header.get("settings"), "posterior settings")
     _integer(settings.get("num_warmup"), "posterior settings.num_warmup")
     _positive_integer(settings.get("max_treedepth"), "posterior settings.max_treedepth")
@@ -123,6 +123,8 @@ def validate_portable_posterior(
     if not chain_order or len(set(chain_order)) != len(chain_order):
         raise PortablePosteriorError("posterior chain_order must be non-empty and unique")
     chain_count = _positive_integer(header.get("chain_count"), "posterior chain_count")
+    if _positive_integer(header.get("chains"), "posterior chains") != chain_count:
+        raise PortablePosteriorError("posterior chains disagrees with chain_count")
     if chain_count != len(chain_order):
         raise PortablePosteriorError("posterior chain_count disagrees with chain_order")
     draw_documents = documents[1:-1]
@@ -175,6 +177,23 @@ def validate_portable_posterior(
             raise PortablePosteriorError("posterior draw indices are not contiguous")
         chain = _integer(document.get("chain"), "posterior chain")
         draw = _integer(document.get("draw"), "posterior draw")
+        if "seed" in document and _integer(document["seed"], "posterior draw seed") != header_seed:
+            raise PortablePosteriorError("posterior draw seed disagrees with header")
+        if (
+            "draw_count" in document
+            and _integer(document["draw_count"], "posterior draw_count") != draw_count
+        ):
+            raise PortablePosteriorError("posterior draw_count disagrees with header")
+        if (
+            "chain_count" in document
+            and _integer(document["chain_count"], "posterior draw chain_count") != chain_count
+        ):
+            raise PortablePosteriorError("posterior draw chain_count disagrees with header")
+        if (
+            "chain_order" in document
+            and _integer_array(document["chain_order"], "posterior draw chain_order") != chain_order
+        ):
+            raise PortablePosteriorError("posterior draw chain_order disagrees with header")
         expected_chain = chain_order[source_index // draws_per_chain]
         expected_draw = source_index % draws_per_chain
         if chain != expected_chain or draw != expected_draw:

@@ -37,7 +37,7 @@ export async function validatePortablePosterior({
         integerKeys: [
           "draw_index", "chain", "draw", "draw_count", "draws_per_chain",
           "chain_count", "parameter_count", "params", "num_draws", "num_warmup",
-          "max_treedepth", "tree_depth", "divergences", "seed",
+          "max_treedepth", "tree_depth", "divergences", "chains", "seed",
         ],
         integerArrayKeys: [
           "shape", "chain_order", "coordinate_order", "treedepth_histogram",
