@@ -146,6 +146,7 @@ export default [
         type: "generation-succeeded", requestId: "atomic-g", dependencyKey: "atomic-key",
         collection: { sourceKind: "fixed" },
         selection: {
+          revision: 1,
           index: 0,
           parametersBytes: new Uint8Array([1]),
           datasetBytes: new Uint8Array([2]),
@@ -153,6 +154,58 @@ export default [
       });
       assert(state.generation.collection?.sourceKind === "fixed", "collection was not installed");
       assert(state.generation.selected?.datasetBytes[0] === 2, "selection was not installed atomically");
+      state = reduce(state, {
+        type: "dataset-source-edited", source: "generated", revision: 1,
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "fit-a", revision: 0,
+        operation: "condition", datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "run-succeeded", requestId: "fit-a", revision: 0,
+        artifacts: [{ name: "posterior.ndjson" }, { name: "recovery_check.json" }],
+      });
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "fit-a", dependencyKey: "fit-a-key",
+        datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "fit-a", dependencyKey: "fit-a-key",
+        fit: { datasetSource: "generated", lineageKey: "fit-a", artifacts: state.artifacts },
+      });
+      state = reduce(state, {
+        type: "generation-started", requestId: "replacement-g", dependencyKey: "replacement-key",
+      });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "replacement-g", dependencyKey: "replacement-key",
+        collection: { sourceKind: "fixed", id: "B" },
+        selection: {
+          revision: 2,
+          index: 0,
+          parametersBytes: new Uint8Array([3]),
+          datasetBytes: new Uint8Array([4]),
+        },
+      });
+      assert(state.conditioning.fit === null, "replacement generation retained generated fit");
+      assert(state.fitDatasetSource === null, "replacement generation retained fit lineage");
+      assert(
+        !state.artifacts.some((artifact) => artifact.name === "recovery_check.json"),
+        "replacement generation retained recovery artifact",
+      );
+      assert(state.generation.selectionRevision === 2, "atomic selection revision did not advance");
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "stale-a", dependencyKey: "stale-key",
+        datasetSource: "generated",
+        guard: {
+          compileRevision: null,
+          settingsRevision: state.conditioning.settingsRevision,
+          datasetSource: state.conditioning.datasetSource,
+          datasetSourceRevision: state.conditioning.datasetSourceRevision,
+          observed: state.documents.observed,
+          selectionRevision: 1,
+        },
+      });
+      assert(state.conditioning.attempt.status === "idle", "old selection preflight was accepted");
     },
   },
   {
