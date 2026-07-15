@@ -333,6 +333,13 @@ export default [
         (value) => { value[1].chain_count += 1; },
         (value) => { value[1].chain_order = [1, 0]; },
         (value) => { value.at(-1).trailer.seed += 1; },
+        (value) => { delete value[1].seed; },
+        (value) => { delete value[1].draw_count; },
+        (value) => { delete value[1].chain_count; },
+        (value) => { delete value[1].tree_depth; },
+        (value) => { value[1].tree_depth = value[0].settings.max_treedepth + 1; },
+        (value) => { value.at(-1).trailer.chains[0].divergences += 1; },
+        (value) => { value.at(-1).trailer.chains[0].treedepth_histogram[0] += 1; },
       ];
       for (const mutate of mutations) {
         const changed = structuredClone(originals);

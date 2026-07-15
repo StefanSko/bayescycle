@@ -135,6 +135,34 @@ def _tree_depth_above_native_limit(documents: list[dict[str, Any]]) -> None:
     documents[1]["tree_depth"] = 21
 
 
+def _missing_draw_seed(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["seed"]
+
+
+def _missing_draw_count(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["draw_count"]
+
+
+def _missing_draw_chain_metadata(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["chain_count"]
+
+
+def _missing_draw_tree_depth(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["tree_depth"]
+
+
+def _tree_depth_above_declared_max(documents: list[dict[str, Any]]) -> None:
+    documents[1]["tree_depth"] = documents[0]["settings"]["max_treedepth"] + 1
+
+
+def _wrong_divergence_summary(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["chains"][0]["divergences"] += 1
+
+
+def _wrong_treedepth_histogram(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["chains"][0]["treedepth_histogram"][0] += 1
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -162,6 +190,13 @@ def _tree_depth_above_native_limit(documents: list[dict[str, Any]]) -> None:
         _float_draw_chain_order,
         _trailer_seed_mismatch,
         _tree_depth_above_native_limit,
+        _missing_draw_seed,
+        _missing_draw_count,
+        _missing_draw_chain_metadata,
+        _missing_draw_tree_depth,
+        _tree_depth_above_declared_max,
+        _wrong_divergence_summary,
+        _wrong_treedepth_histogram,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(
