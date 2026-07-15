@@ -187,6 +187,34 @@ def _missing_mean_accept(documents: list[dict[str, Any]]) -> None:
     del documents[-1]["trailer"]["chains"][0]["mean_accept"]
 
 
+def _missing_packing(documents: list[dict[str, Any]]) -> None:
+    del documents[0]["packing"]
+
+
+def _missing_target_accept(documents: list[dict[str, Any]]) -> None:
+    del documents[0]["settings"]["target_accept"]
+
+
+def _invalid_target_accept(documents: list[dict[str, Any]]) -> None:
+    documents[0]["settings"]["target_accept"] = 1.0
+
+
+def _invalid_tree_accept(documents: list[dict[str, Any]]) -> None:
+    documents[1]["tree_accept"] = 1.1
+
+
+def _invalid_step_size(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["chains"][0]["step_size"] = 0.0
+
+
+def _invalid_mean_accept(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["chains"][0]["mean_accept"] = 1.1
+
+
+def _wrong_mean_accept(documents: list[dict[str, Any]]) -> None:
+    documents[-1]["trailer"]["chains"][0]["mean_accept"] += 0.01
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -227,6 +255,13 @@ def _missing_mean_accept(documents: list[dict[str, Any]]) -> None:
         _missing_tree_accept,
         _missing_step_size,
         _missing_mean_accept,
+        _missing_packing,
+        _missing_target_accept,
+        _invalid_target_accept,
+        _invalid_tree_accept,
+        _invalid_step_size,
+        _invalid_mean_accept,
+        _wrong_mean_accept,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

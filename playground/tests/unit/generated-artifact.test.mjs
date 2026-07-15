@@ -93,13 +93,15 @@ async function posteriorSource() {
       chains: 1,
       chain_order: [0],
       draw_count: 2,
+      sample_stats_mode: "per_draw_v2",
     },
     {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
       draw_index: 0, seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
-      chain: 0, draw: 0, tree_depth: 1, diverging: false, parameter_count: 1,
+      chain: 0, draw: 0, sample_stats_mode: "per_draw_v2",
+      tree_depth: 1, tree_accept: 0.9, energy: 1.0, diverging: false, parameter_count: 1,
       parameter_order: ["alpha"], values: { alpha: 1.0 },
     },
     {
@@ -107,7 +109,8 @@ async function posteriorSource() {
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
       draw_index: 1, seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
-      chain: 0, draw: 1, tree_depth: 1, diverging: false, parameter_count: 1,
+      chain: 0, draw: 1, sample_stats_mode: "per_draw_v2",
+      tree_depth: 1, tree_accept: 0.8, energy: 2.0, diverging: false, parameter_count: 1,
       parameter_order: ["alpha"], values: { alpha: 2.0 },
     },
     {
@@ -126,7 +129,7 @@ async function posteriorSource() {
         params: 1,
         chains: [{
           chain: 0, draw_count: 2, divergences: 0,
-          treedepth_histogram: [0, 2, 0, 0, 0],
+          treedepth_histogram: [0, 2, 0, 0, 0], step_size: 0.1, mean_accept: 0.85,
         }],
       },
     },
@@ -349,6 +352,13 @@ export default [
         (value) => { delete value[1].tree_accept; },
         (value) => { delete value.at(-1).trailer.chains[0].step_size; },
         (value) => { delete value.at(-1).trailer.chains[0].mean_accept; },
+        (value) => { delete value[0].packing; },
+        (value) => { delete value[0].settings.target_accept; },
+        (value) => { value[0].settings.target_accept = 1.0; },
+        (value) => { value[1].tree_accept = 1.1; },
+        (value) => { value.at(-1).trailer.chains[0].step_size = 0.0; },
+        (value) => { value.at(-1).trailer.chains[0].mean_accept = 1.1; },
+        (value) => { value.at(-1).trailer.chains[0].mean_accept += 0.01; },
       ];
       for (const mutate of mutations) {
         const changed = structuredClone(originals);
