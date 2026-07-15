@@ -36,10 +36,13 @@ export async function validatePortablePosterior({
       const document = parseStrictJson(UTF8.decode(line), `portable posterior line ${index + 1}`, {
         integerKeys: [
           "draw_index", "chain", "draw", "draw_count", "draws_per_chain",
-          "chain_count", "parameter_count", "params", "num_draws", "seed",
+          "chain_count", "parameter_count", "params", "num_draws", "num_warmup",
+          "max_treedepth", "tree_depth", "divergences", "seed",
         ],
-        integerArrayKeys: ["shape", "chain_order", "coordinate_order"],
-        unrestrictedObjectKeys: ["values"],
+        integerArrayKeys: [
+          "shape", "chain_order", "coordinate_order", "treedepth_histogram",
+        ],
+        unrestrictedObjectKeys: ["values", "rhat", "ess"],
       });
       validateFinite(document);
       return document;

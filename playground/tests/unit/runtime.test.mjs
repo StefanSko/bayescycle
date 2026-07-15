@@ -27,7 +27,8 @@ function runtimePosteriorBytes() {
       params: [{ name: "theta", shape: [], coordinate_order: [[]] }],
       parameter_count: 1,
       parameter_order: ["theta"],
-      settings: { num_draws: 1 },
+      settings: { num_warmup: 0, num_draws: 1, max_treedepth: 4 },
+      seed: 0,
       chain_count: 1,
       chain_order: [0],
       draw_count: 1,
@@ -44,6 +45,7 @@ function runtimePosteriorBytes() {
         draws_format: "v0-provisional",
         artifact_kind: "posterior_draws",
         artifact_scope: "observed_data_conditioned_parameter_draws",
+        seed: 0,
         draws_per_chain: 1,
         chain_count: 1,
         chain_order: [0],
@@ -51,7 +53,9 @@ function runtimePosteriorBytes() {
         parameter_count: 1,
         parameter_order: ["theta"],
         params: 1,
-        chains: [{ chain: 0, draw_count: 1 }],
+        chains: [{
+          chain: 0, draw_count: 1, divergences: 0, treedepth_histogram: [0, 1],
+        }],
       },
     },
   ].map((document) => JSON.stringify(document)).join("\n") + "\n");

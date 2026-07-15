@@ -1,6 +1,6 @@
 // Source: src/engine/types.ts, bayesledger @ 7346d71.
 
-export const ENGINE_VERSION = "0.2.1";
+export const ENGINE_VERSION = "0.3.0";
 export const ENGINE_WASM_URL = new URL(
   "../../vendor/bayesite/bayesite_core.wasm",
   import.meta.url,

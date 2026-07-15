@@ -196,13 +196,18 @@ def parse_generated_datasets(data: bytes) -> GeneratedDatasetsArtifact:
     _exact_keys(trailer, _TRAILER_KEYS, "trailer")
     _marker(trailer, "trailer")
     _phases(trailer["workflow_phases"], "trailer")
+    trailer_count = _integer(trailer["count"], "trailer count", minimum=1, maximum=_MAX_COUNT)
+    trailer_seed = _integer(trailer["seed"], "trailer seed", minimum=0, maximum=_MAX_SAFE_INTEGER)
+    trailer_draw_count = _integer(
+        trailer["draw_count"], "trailer draw_count", minimum=1, maximum=_MAX_COUNT
+    )
     if (
         trailer["generation_model_hash"] != generation_model_hash
         or trailer["design_hash"] != design_hash
         or trailer["parameter_source"] != header["parameter_source"]
-        or trailer["count"] != count
-        or trailer["seed"] != seed
-        or trailer["draw_count"] != count
+        or trailer_count != count
+        or trailer_seed != seed
+        or trailer_draw_count != count
         or trailer["complete"] is not True
     ):
         raise GeneratedDatasetsArtifactError(

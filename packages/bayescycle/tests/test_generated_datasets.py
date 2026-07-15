@@ -69,7 +69,8 @@ def _posterior_source() -> bytes:
             "params": [{"name": "alpha", "shape": [], "coordinate_order": [[]]}],
             "parameter_count": 1,
             "parameter_order": ["alpha"],
-            "settings": {"num_draws": 2},
+            "settings": {"num_warmup": 0, "num_draws": 2, "max_treedepth": 4},
+            "seed": 0,
             "chain_count": 1,
             "chain_order": [0],
             "draw_count": 2,
@@ -102,6 +103,7 @@ def _posterior_source() -> bytes:
                 "artifact_kind": "posterior_draws",
                 "artifact_scope": "observed_data_conditioned_parameter_draws",
                 "model_data_fingerprint": fingerprint,
+                "seed": 0,
                 "draws_per_chain": 2,
                 "chain_count": 1,
                 "chain_order": [0],
@@ -109,7 +111,14 @@ def _posterior_source() -> bytes:
                 "parameter_count": 1,
                 "parameter_order": ["alpha"],
                 "params": 1,
-                "chains": [{"chain": 0, "draw_count": 2}],
+                "chains": [
+                    {
+                        "chain": 0,
+                        "draw_count": 2,
+                        "divergences": 0,
+                        "treedepth_histogram": [0, 2],
+                    }
+                ],
             }
         },
     ]

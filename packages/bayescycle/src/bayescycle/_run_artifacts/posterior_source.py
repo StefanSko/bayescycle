@@ -114,7 +114,10 @@ def validate_portable_posterior(
         raise PortablePosteriorError("posterior parameter order is invalid")
     if _integer(header.get("parameter_count"), "posterior parameter_count") != len(names):
         raise PortablePosteriorError("posterior parameter count is invalid")
+    _integer(header.get("seed"), "posterior seed")
     settings = _object(header.get("settings"), "posterior settings")
+    _integer(settings.get("num_warmup"), "posterior settings.num_warmup")
+    _positive_integer(settings.get("max_treedepth"), "posterior settings.max_treedepth")
     draws_per_chain = _positive_integer(settings.get("num_draws"), "posterior settings.num_draws")
     chain_order = _integer_array(header.get("chain_order"), "posterior chain_order")
     if not chain_order or len(set(chain_order)) != len(chain_order):
@@ -126,6 +129,7 @@ def validate_portable_posterior(
     draw_count = _positive_integer(header.get("draw_count"), "posterior draw_count")
     if draw_count != chain_count * draws_per_chain or draw_count != len(draw_documents):
         raise PortablePosteriorError("posterior draw count is incomplete")
+    _integer(trailer.get("seed"), "posterior trailer seed")
     if (
         trailer.get("parameter_order") != list(names)
         or _integer(trailer.get("parameter_count"), "posterior trailer parameter_count")
@@ -156,6 +160,10 @@ def validate_portable_posterior(
             != draws_per_chain
         ):
             raise PortablePosteriorError("posterior trailer chain statistics are out of order")
+        _integer(statistic.get("divergences"), "posterior trailer divergences")
+        _integer_array(
+            statistic.get("treedepth_histogram"), "posterior trailer treedepth_histogram"
+        )
     draws: list[PosteriorSourceDraw] = []
     seen_coordinates: set[tuple[int, int]] = set()
     for source_index, raw in enumerate(draw_documents):
@@ -171,6 +179,8 @@ def validate_portable_posterior(
         expected_draw = source_index % draws_per_chain
         if chain != expected_chain or draw != expected_draw:
             raise PortablePosteriorError("posterior draws are not grouped in chain order")
+        if "tree_depth" in document:
+            _integer(document["tree_depth"], "posterior tree_depth")
         if (chain, draw) in seen_coordinates:
             raise PortablePosteriorError("posterior chain/draw coordinates are duplicated")
         seen_coordinates.add((chain, draw))
