@@ -136,6 +136,24 @@ def _field_kind(hint: object) -> FieldKind:
     return FieldKind.VALUE
 
 
+BUILTIN_DISTRIBUTION_CLASSES: tuple[type, ...] = (
+    Normal,
+    HalfNormal,
+    StudentT,
+    Exponential,
+    Uniform,
+    Beta,
+    Truncated,
+    Bernoulli,
+    Poisson,
+    Binomial,
+    BetaBinomial,
+    NegativeBinomial,
+    MultivariateNormal,
+    OrderedLogistic,
+)
+
+
 _BUILTIN_NODE_CLASSES: tuple[type, ...] = (
     # Expression nodes
     ParamRef,
@@ -167,23 +185,11 @@ _BUILTIN_NODE_CLASSES: tuple[type, ...] = (
     Ordered,
     VectorBounds,
     # Built-in distributions
-    Normal,
-    HalfNormal,
-    StudentT,
-    Exponential,
-    Uniform,
-    Beta,
-    Truncated,
-    Bernoulli,
-    Poisson,
-    Binomial,
-    BetaBinomial,
-    NegativeBinomial,
-    MultivariateNormal,
-    OrderedLogistic,
+    *BUILTIN_DISTRIBUTION_CLASSES,
 )
 
 for _builtin in _BUILTIN_NODE_CLASSES:
     register_node(_builtin)
 
+DISTRIBUTION_NODE_CLASSES: set[type] = set(BUILTIN_DISTRIBUTION_CLASSES)
 CORE_PROFILE_TAGS: tuple[str, ...] = tuple(NODE_SPECS_BY_TAG)

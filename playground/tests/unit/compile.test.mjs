@@ -31,11 +31,11 @@ function canonicalString(value) {
 
 export default [
   {
-    name: "all 10 corpus models match native hashes and golden IR",
+    name: "all 11 corpus models match native hashes and golden IR",
     fn: async () => {
       const hashes = JSON.parse(await fetchText("hashes.json"));
       const names = Object.keys(hashes);
-      assert(names.length === 10, `expected 10 corpus models, found ${names.length}`);
+      assert(names.length === 11, `expected 11 corpus models, found ${names.length}`);
 
       for (const name of names) {
         const [source, goldenText] = await Promise.all([
@@ -99,6 +99,46 @@ export default [
       assert(result.ok, `composed root compilation failed: ${result.message}`);
       const document = JSON.parse(UTF8.decode(result.irBytes));
       assert(JSON.stringify(document).includes("component.x"), "compiled IR did not select the composed root");
+    },
+  },
+  {
+    name: "selects a with_prior result over its source and target",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Observed, Param, model, with_prior
+from bayeswire.distributions import Normal
+
+@model
+class Target:
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta, 1.0))
+
+@model
+class Prior:
+    theta = Param(Normal(2.0, 0.5))
+
+Composed = with_prior(Target, prior=Prior)
+`);
+      assert(result.ok, `with_prior root compilation failed: ${result.message}`);
+      const document = JSON.parse(UTF8.decode(result.irBytes));
+      const serialized = JSON.stringify(document);
+      assert(serialized.includes('"value":2'), "compiled IR did not use the source prior");
+      assert(serialized.includes('"name":"y"'), "compiled IR did not retain the target outcome");
+    },
+  },
+  {
+    name: "rejects a dependency cycle for one local model",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Param, model
+from bayeswire.distributions import Normal
+
+@model
+class Only:
+    theta = Param(Normal(0.0, 1.0))
+
+type.__setattr__(Only, "_model_dependencies", (Only,))
+`);
+      assert(!result.ok, "single-model dependency cycle was accepted");
+      assert(result.message.includes("model dependency cycle"), `unexpected cycle error: ${result.message}`);
     },
   },
   {

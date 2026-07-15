@@ -11,8 +11,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import cast
 
-from bayeswire import Submodel
-from bayeswire.model import ModelMeta, is_model_class, model_meta, submodel_target
+from bayeswire.model import ModelMeta, is_model_class, model_dependencies, model_meta
 
 
 class ModelLoadError(RuntimeError):
@@ -75,9 +74,14 @@ def _load_named_model(module: ModuleType, name: str) -> LoadedModel:
     value = namespace[name]
     if not is_model_class(value):
         raise ModelLoadError(f"object {name!r} is not a bayeswire @model declaration")
+    model_cls = cast(type[object], value)
+    try:
+        model_dependencies(model_cls)
+    except (TypeError, ValueError) as exc:
+        raise ModelLoadError(f"invalid bayeswire model dependency graph: {exc}") from exc
     return LoadedModel(
         name=name,
-        model_cls=cast(type[object], value),
+        model_cls=model_cls,
         meta=model_meta(value),
     )
 
@@ -97,8 +101,6 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
                 )
             )
 
-    if len(matches) == 1:
-        return matches[0]
     if not matches:
         raise ModelLoadError(
             f"no bayeswire @model declaration was found in {module.__file__}; "
@@ -116,13 +118,21 @@ def _load_only_model(module: ModuleType) -> LoadedModel:
 
 
 def _unreferenced_model_roots(models: list[LoadedModel]) -> list[LoadedModel]:
-    """Return local model classes that are not components of another local model."""
-    referenced = {
-        submodel_target(value)
-        for loaded in models
-        for value in loaded.model_cls.__dict__.values()
-        if isinstance(value, Submodel)
-    }
+    """Return local model classes not reachable from another local model."""
+    referenced: set[type[object]] = set()
+    pending = [loaded.model_cls for loaded in models]
+    traversed: set[type[object]] = set()
+    try:
+        while pending:
+            model_cls = pending.pop()
+            if model_cls in traversed:
+                continue
+            traversed.add(model_cls)
+            dependencies = model_dependencies(model_cls)
+            referenced.update(dependencies)
+            pending.extend(dependencies)
+    except (TypeError, ValueError) as exc:
+        raise ModelLoadError(f"invalid bayeswire model dependency graph: {exc}") from exc
     return [loaded for loaded in models if loaded.model_cls not in referenced]
 
 

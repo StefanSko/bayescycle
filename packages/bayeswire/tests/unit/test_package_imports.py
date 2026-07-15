@@ -22,5 +22,7 @@ def test_top_level_exports_the_declaration_language() -> None:
         "Submodel",
         "dimension_metadata_to_dict",
         "model",
+        "model_dependencies",
         "model_dimensions",
+        "with_prior",
     }

@@ -11,6 +11,8 @@ from bayeswire.constraints.core import Constraint
 from bayeswire.distributions.continuous import Exponential
 from bayeswire.distributions.core import Distribution
 from bayeswire.distributions.multivariate import MultivariateNormal
+from bayeswire.model._factorization import _param_references
+from bayeswire.model._structural import _structurally_equal
 from bayeswire.model.decorator import (
     ModelMeta,
     ResolvedStochasticSite,
@@ -234,13 +236,18 @@ def _sample_partially_observed_site(
     distribution: Distribution,
     values: dict[str, jax.Array],
     vector_bounds: Mapping[str, ResolvedVectorBounds],
-) -> jax.Array:
+) -> tuple[jax.Array, jax.Array]:
     length, missing_idx = _partially_observed_target(site, values)
     target_shape = (length,)
     bounds = vector_bounds.get(site.name)
 
     if bounds is None:
-        return _sample_unrestricted_distribution(key, distribution, target_shape=target_shape)
+        full_value = _sample_unrestricted_distribution(
+            key,
+            distribution,
+            target_shape=target_shape,
+        )
+        return full_value, full_value[missing_idx]
 
     if isinstance(distribution, MultivariateNormal):
         raise TypeError(
@@ -259,7 +266,7 @@ def _sample_partially_observed_site(
         bounds,
         target_shape=(missing_idx.shape[0],),
     )
-    return full_value.at[missing_idx].set(missing_value)
+    return full_value.at[missing_idx].set(missing_value), missing_value
 
 
 def _normalize_data(meta: ModelMeta, data: Mapping[str, object] | None) -> dict[str, jax.Array]:
@@ -282,10 +289,19 @@ def _resolve_free_value_shapes(
 
 
 @dataclass(frozen=True)
-class _PriorPredictiveSitePlan:
-    """Declaration-backed sites that have supported ancestral semantics."""
+class _PriorPredictiveOutcomeSite:
+    """One factor plus the declaration name that receives its generated value."""
 
-    partially_observed_sites: tuple[ResolvedStochasticSite, ...]
+    name: str
+    site: ResolvedStochasticSite
+    partially_observed: bool
+
+
+@dataclass(frozen=True)
+class _PriorPredictiveSitePlan:
+    """Declaration-backed outcome sites in their ancestral factor order."""
+
+    outcomes: tuple[_PriorPredictiveOutcomeSite, ...]
 
 
 def _claim_unique_generative_site(
@@ -321,6 +337,35 @@ def _site_owns_non_param_free_value(site: ResolvedStochasticSite, name: str) -> 
     )
 
 
+def _order_ancestral_outcomes(
+    outcomes: tuple[_PriorPredictiveOutcomeSite, ...],
+    *,
+    param_names: set[str],
+) -> tuple[_PriorPredictiveOutcomeSite, ...]:
+    """Stable-toposort declaration outcomes by free-value distribution dependencies."""
+    available = set(param_names)
+    pending = list(outcomes)
+    ordered: list[_PriorPredictiveOutcomeSite] = []
+    while pending:
+        for index, outcome in enumerate(pending):
+            dependencies = set(_param_references(outcome.site.distribution))
+            if dependencies <= available:
+                ordered.append(outcome)
+                available.add(outcome.name)
+                pending.pop(index)
+                break
+        else:
+            unresolved = {
+                outcome.name: sorted(set(_param_references(outcome.site.distribution)) - available)
+                for outcome in pending
+            }
+            raise TypeError(
+                "prior-predictive outcome dependencies are cyclic or unavailable; "
+                f"unresolved references: {unresolved}"
+            )
+    return tuple(ordered)
+
+
 def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
     """Classify declaration sites and reject Factors before ancestral drawing."""
     sites = resolved_stochastic_sites(meta)
@@ -332,19 +377,23 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
             claimed,
             declaration=f"Param {name!r}",
             matches=lambda site, name=name, param=param: (
-                site.value == ParamRef(name) and site.distribution == param.distribution
+                site.value == ParamRef(name)
+                and _structurally_equal(site.distribution, param.distribution)
             ),
         )
 
+    outcome_names: dict[int, str] = {}
     for observed in meta.observed_nodes:
-        _claim_unique_generative_site(
+        index, _site = _claim_unique_generative_site(
             sites,
             claimed,
             declaration=f"Observed {observed.name!r}",
             matches=lambda site, observed=observed: (
-                site.value == DataRef(observed.name) and site.distribution == observed.distribution
+                site.value == DataRef(observed.name)
+                and _structurally_equal(site.distribution, observed.distribution)
             ),
         )
+        outcome_names[index] = observed.name
 
     partially_observed_indices: set[int] = set()
     for name in resolved_free_values(meta):
@@ -362,6 +411,7 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
                 "PartiallyObserved VectorScatter site"
             )
         partially_observed_indices.add(index)
+        outcome_names[index] = name
 
     factor_sites = [
         f"{site.name!r} at stochastic_sites[{index}]"
@@ -375,9 +425,19 @@ def _prior_predictive_site_plan(meta: ModelMeta) -> _PriorPredictiveSitePlan:
             "model containing only declaration-backed generative sites"
         )
 
+    outcomes = tuple(
+        _PriorPredictiveOutcomeSite(
+            name=outcome_names[index],
+            site=site,
+            partially_observed=index in partially_observed_indices,
+        )
+        for index, site in enumerate(sites)
+        if index in outcome_names
+    )
     return _PriorPredictiveSitePlan(
-        partially_observed_sites=tuple(
-            site for index, site in enumerate(sites) if index in partially_observed_indices
+        outcomes=_order_ancestral_outcomes(
+            outcomes,
+            param_names=set(meta.params),
         )
     )
 
@@ -413,15 +473,13 @@ def _simulate_one(
     param_shapes: dict[str, tuple[int, ...]],
     observed_shapes: dict[str, tuple[int, ...] | None],
     vector_bounds: Mapping[str, ResolvedVectorBounds],
-    partially_observed_sites: tuple[ResolvedStochasticSite, ...],
+    outcomes: tuple[_PriorPredictiveOutcomeSite, ...],
 ) -> tuple[dict[str, jax.Array], dict[str, jax.Array]]:
-    keys = jax.random.split(
-        key,
-        len(meta.params) + len(meta.observed_nodes) + len(partially_observed_sites),
-    )
+    keys = jax.random.split(key, len(meta.params) + len(outcomes))
     key_index = 0
     parameters: dict[str, jax.Array] = {}
     values = dict(data)
+    full_values: dict[str, jax.Array] = {}
 
     for name, param in meta.params.items():
         distribution = _evaluate_distribution(param.distribution, values)
@@ -436,31 +494,39 @@ def _simulate_one(
         key_index += 1
 
     observed_values: dict[str, jax.Array] = {}
-    for observed in meta.observed_nodes:
-        distribution = _evaluate_distribution(observed.distribution, values)
-        observed_target_shape = observed_shapes[observed.name]
-        if observed_target_shape is None:
-            if not is_sampleable(distribution):
-                raise TypeError(f"Unsupported prior distribution: {type(distribution).__name__}")
-            observed_target_shape = batch_shape(distribution) + event_shape(distribution)
-        observed_value = _sample_prior_value(
-            keys[key_index],
-            distribution,
-            constraint=None,
-            target_shape=observed_target_shape,
-        )
-        observed_values[observed.name] = observed_value
-        key_index += 1
-
-    for site in partially_observed_sites:
-        distribution = _evaluate_distribution(site.distribution, values)
-        observed_values[site.name] = _sample_partially_observed_site(
-            keys[key_index],
-            site,
-            distribution,
+    for outcome in outcomes:
+        site = outcome.site
+        distribution = _evaluate_distribution(
+            site.distribution,
             values,
-            vector_bounds,
+            full_values=full_values,
         )
+        if outcome.partially_observed:
+            observed_value, free_value = _sample_partially_observed_site(
+                keys[key_index],
+                site,
+                distribution,
+                values,
+                vector_bounds,
+            )
+            values[outcome.name] = free_value
+            full_values[outcome.name] = observed_value
+        else:
+            observed_target_shape = observed_shapes[outcome.name]
+            if observed_target_shape is None:
+                if not is_sampleable(distribution):
+                    raise TypeError(
+                        f"Unsupported prior distribution: {type(distribution).__name__}"
+                    )
+                observed_target_shape = batch_shape(distribution) + event_shape(distribution)
+            observed_value = _sample_prior_value(
+                keys[key_index],
+                distribution,
+                constraint=None,
+                target_shape=observed_target_shape,
+            )
+            values[outcome.name] = observed_value
+        observed_values[outcome.name] = observed_value
         key_index += 1
 
     return parameters, observed_values
@@ -497,7 +563,7 @@ def simulate_prior_predictive(
             param_shapes=param_shapes,
             observed_shapes=normalized_observed_shapes,
             vector_bounds=vector_bounds,
-            partially_observed_sites=site_plan.partially_observed_sites,
+            outcomes=site_plan.outcomes,
         )
 
     parameters, observed = jax.jit(jax.vmap(draw_one))(keys)

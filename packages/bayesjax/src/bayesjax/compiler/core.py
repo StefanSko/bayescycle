@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import fields, is_dataclass
-from typing import cast
+from typing import TypeGuard, cast
 
 import jax
 import jax.numpy as jnp
@@ -69,7 +69,12 @@ def _evaluate_index_spec(spec: IndexSpec, values: dict[str, jax.Array]) -> Evalu
     raise TypeError(f"Cannot evaluate index spec: {type(spec).__name__}")
 
 
-def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
+def _evaluate_expr(
+    node: ExprNode,
+    values: dict[str, jax.Array],
+    *,
+    full_values: dict[str, jax.Array] | None = None,
+) -> jax.Array:
     """Evaluate a symbolic expression tree to a concrete JAX array."""
     if isinstance(node, ParamRef):
         return values[node.name]
@@ -78,27 +83,41 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
     if isinstance(node, ConstNode):
         return jnp.asarray(node.value)
     if isinstance(node, BinOp):
-        left = _evaluate_expr(node.left, values)
-        right = _evaluate_expr(node.right, values)
+        left = _evaluate_expr(node.left, values, full_values=full_values)
+        right = _evaluate_expr(node.right, values, full_values=full_values)
         op_fn = _BINOPS.get(node.op)
         if op_fn is None:
             raise ValueError(f"Unknown binary operator: {node.op!r}")
         return op_fn(left, right)
     if isinstance(node, UnaryOp):
-        operand = _evaluate_expr(node.operand, values)
+        operand = _evaluate_expr(node.operand, values, full_values=full_values)
         function = _UNARY_FUNCTIONS.get(node.function)
         if function is None:
             raise ValueError(f"Unknown unary function: {node.function!r}")
         return function(operand)
     if isinstance(node, IndexOp):
-        base = _evaluate_expr(node.base, values)
+        base = _evaluate_expr(node.base, values, full_values=full_values)
         index = _evaluate_index_spec(node.index, values)
         return base[index]
     if isinstance(node, VectorScatterOp):
-        observed_idx = _evaluate_expr(node.observed_idx, values)
-        observed_values = _evaluate_expr(node.observed_values, values)
-        missing_idx = _evaluate_expr(node.missing_idx, values)
-        missing_values = _evaluate_expr(node.missing_values, values)
+        if (
+            full_values is not None
+            and isinstance(node.missing_values, ParamRef)
+            and node.missing_values.name in full_values
+        ):
+            return full_values[node.missing_values.name]
+        observed_idx = _evaluate_expr(node.observed_idx, values, full_values=full_values)
+        observed_values = _evaluate_expr(
+            node.observed_values,
+            values,
+            full_values=full_values,
+        )
+        missing_idx = _evaluate_expr(node.missing_idx, values, full_values=full_values)
+        missing_values = _evaluate_expr(
+            node.missing_values,
+            values,
+            full_values=full_values,
+        )
         length = observed_idx.shape[0] + missing_idx.shape[0]
         dtype = jnp.result_type(observed_values, missing_values)
         result = jnp.zeros((length,), dtype=dtype)
@@ -106,16 +125,42 @@ def _evaluate_expr(node: ExprNode, values: dict[str, jax.Array]) -> jax.Array:
     raise TypeError(f"Cannot evaluate expression node: {type(node).__name__}")
 
 
-def _is_expr_node(value: object) -> bool:
+def _is_expr_node(value: object) -> TypeGuard[ExprNode]:
     """Return whether ``value`` is a final expression IR node."""
     return isinstance(
         value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
     )
 
 
+def _evaluate_distribution_field(
+    value: object,
+    values: dict[str, jax.Array],
+    *,
+    full_values: dict[str, jax.Array] | None = None,
+) -> object:
+    """Evaluate one registered field, preserving explicit map and tuple shapes."""
+    if _is_expr_node(value):
+        return _evaluate_expr(value, values, full_values=full_values)
+    if isinstance(value, dict):
+        return {
+            name: _evaluate_distribution_field(item, values, full_values=full_values)
+            for name, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(
+            _evaluate_distribution_field(item, values, full_values=full_values) for item in value
+        )
+    if is_dataclass(value) and not isinstance(value, type):
+        return _evaluate_distribution(value, values, full_values=full_values)
+    reject_opaque_symbolic_distribution(value)
+    return value
+
+
 def _evaluate_distribution[DistributionT: Distribution](
     distribution: DistributionT,
     values: dict[str, jax.Array],
+    *,
+    full_values: dict[str, jax.Array] | None = None,
 ) -> DistributionT:
     """Evaluate expression fields in a distribution to concrete JAX arrays."""
     if not is_dataclass(distribution) or isinstance(distribution, type):
@@ -124,14 +169,11 @@ def _evaluate_distribution[DistributionT: Distribution](
 
     resolved: dict[str, object] = {}
     for f in fields(distribution):
-        val = getattr(distribution, f.name)
-        if _is_expr_node(val):
-            resolved[f.name] = _evaluate_expr(val, values)
-        elif is_dataclass(val) and not isinstance(val, type):
-            resolved[f.name] = _evaluate_distribution(val, values)
-        else:
-            reject_opaque_symbolic_distribution(val)
-            resolved[f.name] = val
+        resolved[f.name] = _evaluate_distribution_field(
+            getattr(distribution, f.name),
+            values,
+            full_values=full_values,
+        )
 
     return cast(DistributionT, type(distribution)(**resolved))
 

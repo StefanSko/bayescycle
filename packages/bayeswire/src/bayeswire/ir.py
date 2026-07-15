@@ -13,11 +13,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import is_dataclass
+from dataclasses import fields, is_dataclass
+from inspect import signature
 from typing import cast
 
 from bayeswire._ir_registry import (
     CORE_PROFILE_TAGS,
+    DISTRIBUTION_NODE_CLASSES,
     NODE_KEY,
     NODE_SPECS_BY_CLASS,
     NODE_SPECS_BY_TAG,
@@ -96,7 +98,47 @@ def register_distribution(cls: type, *, tag: str | None = None) -> None:
             "Decorate it with @dataclass(frozen=True) before calling "
             "bayeswire.ir.register_distribution, or replace it with a built-in distribution."
         )
+    if not getattr(getattr(cls, "__dataclass_params__", None), "frozen", False):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must use @dataclass(frozen=True) so registered "
+            "metadata cannot change after validation."
+        )
+    constructor_fields = tuple(value_field for value_field in fields(cls) if value_field.init)
+    try:
+        signature(cls).bind(**{value_field.name: object() for value_field in constructor_fields})
+    except (TypeError, ValueError) as exc:
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} constructor must accept every encoded dataclass "
+            "field by keyword so IR decoding can reconstruct it."
+        ) from exc
+    if any(not value_field.init for value_field in fields(cls)):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must use init=True on every dataclass field "
+            "so each encoded node can be reconstructed through its constructor."
+        )
+    if any(not value_field.compare for value_field in fields(cls)):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must leave compare=True on every constructor "
+            "field so declaration and owner metadata cannot diverge."
+        )
+    if not getattr(getattr(cls, "__dataclass_params__", None), "eq", False):
+        raise UnserializableDistribution(
+            f"Distribution {cls.__name__!r} must use @dataclass(frozen=True, eq=True) so "
+            "separately decoded declaration and owner nodes remain structurally equal."
+        )
+    if cls in NODE_SPECS_BY_CLASS and cls not in DISTRIBUTION_NODE_CLASSES:
+        raise UnserializableDistribution(
+            f"IR node {cls.__name__!r} is already registered with a non-distribution role "
+            "and cannot be reclassified as a distribution. Define a distinct frozen "
+            "dataclass for the distribution extension."
+        )
     _register_node(cls, tag=tag)
+    DISTRIBUTION_NODE_CLASSES.add(cls)
+
+
+def _is_registered_distribution(value: object) -> bool:
+    """Return whether ``value`` has a registered distribution wire role."""
+    return type(value) in DISTRIBUTION_NODE_CLASSES
 
 
 def meta_to_dict(meta: ModelMeta) -> dict[str, JsonValue]:
@@ -114,10 +156,12 @@ def _encode_value(value: object) -> JsonValue:
                 "inf/nan tokens. Replace it with a finite constant in the model declaration."
             )
         return value
-    if isinstance(value, dict):
-        return _encode_map(cast("dict[object, object]", value))
-    if isinstance(value, tuple):
-        return [_encode_value(item) for item in value]
+    if isinstance(value, dict | tuple):
+        raise UnserializableValue(
+            f"A bare {type(value).__name__} has no IR value encoding. Declare it as a "
+            "registered dataclass field annotated with dict or tuple so its wire kind "
+            "is explicit."
+        )
     spec = NODE_SPECS_BY_CLASS.get(type(value))
     if spec is not None:
         return _encode_node(value, spec)
@@ -148,9 +192,44 @@ def _encode_map(value: dict[object, object]) -> list[JsonValue]:
 
 def _encode_node(value: object, spec: NodeSpec) -> dict[str, JsonValue]:
     encoded: dict[str, JsonValue] = {NODE_KEY: spec.tag}
-    for name, _kind in spec.field_kinds:
-        encoded[name] = _encode_value(getattr(value, name))
+    for name, kind in spec.field_kinds:
+        encoded[name] = _encode_field(
+            getattr(value, name),
+            kind,
+            tag=spec.tag,
+            field_name=name,
+        )
     return encoded
+
+
+def _encode_field(
+    value: object,
+    kind: FieldKind,
+    *,
+    tag: str,
+    field_name: str,
+) -> JsonValue:
+    if kind is FieldKind.MAP:
+        if not isinstance(value, dict):
+            raise UnserializableValue(
+                f"IR node {tag!r} field {field_name!r} must be a string-keyed map, "
+                f"got {type(value).__name__!r}."
+            )
+        return _encode_map(cast("dict[object, object]", value))
+    if kind is FieldKind.TUPLE:
+        if not isinstance(value, tuple):
+            raise UnserializableValue(
+                f"IR node {tag!r} field {field_name!r} must be a tuple, "
+                f"got {type(value).__name__!r}."
+            )
+        return [_encode_value(item) for item in value]
+    if isinstance(value, dict | tuple):
+        raise UnserializableValue(
+            f"IR node {tag!r} value field {field_name!r} cannot contain a bare "
+            f"{type(value).__name__}; declare the field as dict or tuple so its wire kind "
+            "is explicit."
+        )
+    return _encode_value(value)
 
 
 def canonical_bytes(meta: ModelMeta) -> bytes:

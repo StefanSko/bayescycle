@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import cast
 
-from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, Submodel, model
+from bayeswire import Data, Dim, Observed, Param, PartiallyObserved, Submodel, model, with_prior
 from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval
 from bayeswire.distributions import (
     Bernoulli,
@@ -57,6 +57,45 @@ def _linear_regression() -> ReferenceModelCase:
         name="linear_regression",
         model_cls=LinearRegression,
         meta=_meta(LinearRegression),
+        bind_values={
+            "x": [-1.0, -0.5, 0.0, 0.5, 1.0],
+            "y": [-1.6, -0.3, 0.4, 1.1, 2.2],
+        },
+    )
+
+
+def _alternative_prior_regression() -> ReferenceModelCase:
+    @model
+    class RegressionTarget:
+        alpha = Param(Normal(0.0, 1.0))
+        beta = Param(Normal(0.0, 1.0))
+        sigma = Param(HalfNormal(1.0), constraint=Positive())
+        x = Data.vector()
+        mu = alpha + beta * x
+        y = Observed(Normal(mu, sigma))
+
+    @model
+    class SimulationPrior:
+        alpha = Param(Normal(-0.1, 0.2))
+        beta = Param(Normal(1.25, 0.1))
+        sigma = Param(HalfNormal(2.0), constraint=Positive())
+
+    @model
+    class HandwrittenAlternativeRegression:
+        alpha = Param(Normal(-0.1, 0.2))
+        beta = Param(Normal(1.25, 0.1))
+        sigma = Param(HalfNormal(2.0), constraint=Positive())
+        x = Data.vector()
+        mu = alpha + beta * x
+        y = Observed(Normal(mu, sigma))
+
+    AlternativeRegression = with_prior(RegressionTarget, prior=SimulationPrior)
+    assert _meta(AlternativeRegression) == _meta(HandwrittenAlternativeRegression)
+
+    return ReferenceModelCase(
+        name="alternative_prior_regression",
+        model_cls=AlternativeRegression,
+        meta=_meta(AlternativeRegression),
         bind_values={
             "x": [-1.0, -0.5, 0.0, 0.5, 1.0],
             "y": [-1.6, -0.3, 0.4, 1.1, 2.2],
@@ -355,6 +394,7 @@ def reference_model_cases() -> tuple[ReferenceModelCase, ...]:
     """Return all corpus reference models in their pinned order."""
     return (
         _linear_regression(),
+        _alternative_prior_regression(),
         _eight_schools_non_centered(),
         _varying_intercepts_poisson(),
         _composed_measurements(),

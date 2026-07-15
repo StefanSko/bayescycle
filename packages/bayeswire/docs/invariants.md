@@ -32,6 +32,15 @@ Core invariants that should remain true as the codebase changes.
 - `Submodel(Model)` composes one already-resolved model as a closed namespace:
   it accepts no input wiring, includes every child stochastic factor (including
   `Observed` likelihoods), and prefixes child data bind keys.
+- `with_prior(Target, prior=Source)` performs immutable, complete prior
+  replacement between two closed model classes. The source is structurally
+  prior-only, supplies every target Param by exact name and compatible static
+  interface, and may retain additional hierarchical Params. The complete
+  contract is in [`prior-composition.md`](prior-composition.md).
+- Prior composition removes exactly declaration-backed target Param sites,
+  retains all target outcomes, partially observed values, and additional
+  factors, and closes to ordinary flat `ModelMeta`; open inputs, wiring, and
+  composition nodes are never model metadata.
 - Parents may reference composed parameters, data, derived expressions, and
   partially observed values. Child `Observed` declarations contribute factors
   but are not expression values, matching ordinary same-class behavior.
@@ -70,6 +79,10 @@ Core invariants that should remain true as the codebase changes.
   symbols to named references. Submodel composition occurs at this boundary by
   prefixing and flattening already-resolved child metadata; no `Submodel` or
   submodel-member token enters final expression IR.
+- Prior composition begins only from resolved, closed model metadata and uses
+  explicit private factorization, same-name wiring, composition, and closure
+  phases. Its result is validated at the ordinary metadata/dimension boundary;
+  private phase values never enter final expression IR or public hooks.
 - Binding is a backend phase. No module in this package binds data, holds
   arrays, or attaches runtime methods to model classes.
 - `_deferred.py` is private class-body syntax capture.
@@ -111,9 +124,11 @@ Core invariants that should remain true as the codebase changes.
   sampling semantics; silently dropping or independently drawing them changes
   the model.
 - A model reconstructed with `bindable_from_meta(...)` is indistinguishable
-  from one produced by `@model` through the public hooks. Dimension labels
-  travel in a separate sidecar document (`spec/dimension-sidecar-v1.md`);
-  without the sidecar the reconstructed model carries no dimension metadata.
+  from one produced by `@model` or `with_prior(...)` through execution-facing
+  public hooks. Dimension labels travel in a separate sidecar document
+  (`spec/dimension-sidecar-v1.md`); without the sidecar the reconstructed model
+  carries no dimension metadata. Authoring-only model dependencies are exposed
+  separately by `model_dependencies(...)` and are not serialized.
 - The corpus under `src/bayeswire/corpus/` (shipped as package data) is
   the single conformance baseline. Producers
   reproduce it byte-for-byte; consumers decode it and reproduce the recorded

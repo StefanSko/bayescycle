@@ -4,10 +4,12 @@ from typing import Any
 from playwright.sync_api import Page
 
 CASES = [
-    "all 10 corpus models match native hashes and golden IR",
+    "all 11 corpus models match native hashes and golden IR",
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "selects the sole unreferenced composed root",
+    "selects a with_prior result over its source and target",
+    "rejects a dependency cycle for one local model",
     "compiler executes in a dedicated worker",
     "module poisoning cannot affect the next compiler worker",
     "compiler timeout resets the isolated worker",
