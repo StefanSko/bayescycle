@@ -71,6 +71,17 @@ class AlwaysEqualTestDistribution:
 register_distribution(AlwaysEqualTestDistribution, tag="AlwaysEqualTestDistribution")
 
 
+@dataclass(frozen=True)
+class IncrementingTestDistribution:
+    loc: float
+
+    def __init__(self, loc: float) -> None:
+        object.__setattr__(self, "loc", loc + 1.0)
+
+
+register_distribution(IncrementingTestDistribution, tag="IncrementingTestDistribution")
+
+
 def test_composition_freezes_all_ordered_merges() -> None:
     @model
     class Target:
@@ -736,6 +747,30 @@ def test_composition_rejects_resolved_role_type_mismatches() -> None:
         with_prior(Target, prior=wrong_distribution)
 
 
+def test_composition_rejects_codec_round_trips_that_change_input_semantics() -> None:
+    @model
+    class Target:
+        theta = Param(Normal(0.0, 1.0))
+
+    @model
+    class PriorDeclaration:
+        theta = Param(Normal(1.0, 0.5))
+
+    meta = model_meta(PriorDeclaration)
+    distribution = IncrementingTestDistribution(0.0)
+    source = bindable_from_meta(
+        replace(
+            meta,
+            params={"theta": replace(meta.params["theta"], distribution=distribution)},
+            stochastic_sites=(replace(meta.stochastic_sites[0], distribution=distribution),),
+        ),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+
+    with pytest.raises(UnserializableValue, match="codec round-trip changed"):
+        with_prior(Target, prior=source)
+
+
 def test_composition_rejects_malformed_nested_constraint_and_distribution_roles() -> None:
     @model
     class Target:
@@ -763,6 +798,28 @@ def test_composition_rejects_malformed_nested_constraint_and_distribution_roles(
         with_prior(Target, prior=bounds_source)
 
     malformed_distribution = Truncated(cast(Distribution, Positive()), lower=0.0)
+    nested_distribution = MappedTestDistribution({"nested": malformed_distribution})
+    nested_source = bindable_from_meta(
+        replace(
+            source_meta,
+            params={
+                "theta": replace(
+                    source_meta.params["theta"],
+                    distribution=nested_distribution,
+                ),
+            },
+            stochastic_sites=(
+                replace(
+                    source_meta.stochastic_sites[0],
+                    distribution=nested_distribution,
+                ),
+            ),
+        ),
+        dimensions=model_dimensions(PriorDeclaration),
+    )
+    with pytest.raises(TypeError, match=r"Truncated base.*registered distribution"):
+        with_prior(Target, prior=nested_source)
+
     distribution_source = bindable_from_meta(
         replace(
             source_meta,
