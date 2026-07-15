@@ -136,6 +136,26 @@ export default [
     },
   },
   {
+    name: "generation success installs collection selection atomically",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, {
+        type: "generation-started", requestId: "atomic-g", dependencyKey: "atomic-key",
+      });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "atomic-g", dependencyKey: "atomic-key",
+        collection: { sourceKind: "fixed" },
+        selection: {
+          index: 0,
+          parametersBytes: new Uint8Array([1]),
+          datasetBytes: new Uint8Array([2]),
+        },
+      });
+      assert(state.generation.collection?.sourceKind === "fixed", "collection was not installed");
+      assert(state.generation.selected?.datasetBytes[0] === 2, "selection was not installed atomically");
+    },
+  },
+  {
     name: "scoped attempts preserve successful ancestors on failure",
     fn: () => {
       let state = initialState();
@@ -337,10 +357,28 @@ export default [
     name: "replacement fits invalidate posterior-sourced collections",
     fn: () => {
       let state = initialState();
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "old", dependencyKey: "old-fit",
+        datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "conditioning-succeeded", requestId: "old", dependencyKey: "old-fit",
+        fit: { datasetSource: "observed", lineageKey: "old-fit", artifacts: [] },
+      });
       state = reduce(state, { type: "generation-started", requestId: "g", dependencyKey: "gk" });
       state = reduce(state, {
         type: "generation-succeeded", requestId: "g", dependencyKey: "gk",
         collection: { sourceKind: "posterior", sourceFitLineageKey: "old-fit", artifact: { name: "generated_datasets.ndjson" } },
+      });
+      state = reduce(state, {
+        type: "generation-started", requestId: "pending-old", dependencyKey: "pending-key",
+        guard: {
+          compileRevision: null,
+          inputRevision: state.generation.inputRevision,
+          settingsRevision: state.generation.settingsRevision,
+          sourceKind: "posterior",
+          fitLineageKey: "old-fit",
+        },
       });
       state = reduce(state, { type: "conditioning-started", requestId: "f", dependencyKey: "new-fit", datasetSource: "observed" });
       state = reduce(state, {
@@ -348,7 +386,13 @@ export default [
         fit: { datasetSource: "observed", lineageKey: "new-fit", artifacts: [{ name: "posterior.ndjson" }] },
       });
       assert(state.generation.collection === null, "posterior collection survived replacement fit");
+      assert(state.generation.attempt.status === "idle", "old-fit generation attempt survived");
       assert(state.conditioning.fit.lineageKey === "new-fit", "replacement fit was not installed");
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "pending-old", dependencyKey: "pending-key",
+        collection: { sourceKind: "posterior", sourceFitLineageKey: "old-fit" },
+      });
+      assert(state.generation.collection === null, "old-fit generation completion was accepted");
     },
   },
   {
