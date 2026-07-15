@@ -163,6 +163,30 @@ def _wrong_treedepth_histogram(documents: list[dict[str, Any]]) -> None:
     documents[-1]["trailer"]["chains"][0]["treedepth_histogram"][0] += 1
 
 
+def _missing_header_stats_mode(documents: list[dict[str, Any]]) -> None:
+    del documents[0]["sample_stats_mode"]
+
+
+def _missing_draw_stats_mode(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["sample_stats_mode"]
+
+
+def _missing_v2_energy(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["energy"]
+
+
+def _missing_tree_accept(documents: list[dict[str, Any]]) -> None:
+    del documents[1]["tree_accept"]
+
+
+def _missing_step_size(documents: list[dict[str, Any]]) -> None:
+    del documents[-1]["trailer"]["chains"][0]["step_size"]
+
+
+def _missing_mean_accept(documents: list[dict[str, Any]]) -> None:
+    del documents[-1]["trailer"]["chains"][0]["mean_accept"]
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -197,6 +221,12 @@ def _wrong_treedepth_histogram(documents: list[dict[str, Any]]) -> None:
         _tree_depth_above_declared_max,
         _wrong_divergence_summary,
         _wrong_treedepth_histogram,
+        _missing_header_stats_mode,
+        _missing_draw_stats_mode,
+        _missing_v2_energy,
+        _missing_tree_accept,
+        _missing_step_size,
+        _missing_mean_accept,
     ],
 )
 def test_portable_posterior_rejects_incomplete_or_inconsistent_lineage(

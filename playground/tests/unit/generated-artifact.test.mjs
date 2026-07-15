@@ -343,6 +343,12 @@ export default [
         (value) => { value[1].tree_depth = value[0].settings.max_treedepth + 1; },
         (value) => { value.at(-1).trailer.chains[0].divergences += 1; },
         (value) => { value.at(-1).trailer.chains[0].treedepth_histogram[0] += 1; },
+        (value) => { delete value[0].sample_stats_mode; },
+        (value) => { delete value[1].sample_stats_mode; },
+        (value) => { delete value[1].energy; },
+        (value) => { delete value[1].tree_accept; },
+        (value) => { delete value.at(-1).trailer.chains[0].step_size; },
+        (value) => { delete value.at(-1).trailer.chains[0].mean_accept; },
       ];
       for (const mutate of mutations) {
         const changed = structuredClone(originals);
