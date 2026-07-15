@@ -60,12 +60,22 @@ def _sha256(data: bytes) -> str:
 
 def _posterior_source() -> bytes:
     fingerprint = _sha256(b"bayescycle-model-data-v1\n" + MODEL_BYTES + b"\n" + FIT_DATA_BYTES)
+    phases = [
+        "parse_json",
+        "decode_ir",
+        "bind_data",
+        "build_posterior_state",
+        "evaluate_logp_grad",
+        "run_nuts",
+        "emit_artifact",
+    ]
     documents: list[dict[str, object]] = [
         {
             "draws_format": "v0-provisional",
             "artifact_kind": "posterior_draws",
             "artifact_scope": "observed_data_conditioned_parameter_draws",
             "model_data_fingerprint": fingerprint,
+            "workflow_phases": phases,
             "params": [{"name": "alpha", "shape": [], "coordinate_order": [[]]}],
             "parameter_count": 1,
             "parameter_order": ["alpha"],
@@ -88,6 +98,7 @@ def _posterior_source() -> bytes:
             "artifact_kind": "posterior_draws",
             "artifact_scope": "observed_data_conditioned_parameter_draws",
             "draw_index": 0,
+            "draw_index_base": "zero_based_retained_draw_order",
             "seed": 0,
             "draw_count": 2,
             "chain_count": 1,
@@ -108,6 +119,7 @@ def _posterior_source() -> bytes:
             "artifact_kind": "posterior_draws",
             "artifact_scope": "observed_data_conditioned_parameter_draws",
             "draw_index": 1,
+            "draw_index_base": "zero_based_retained_draw_order",
             "seed": 0,
             "draw_count": 2,
             "chain_count": 1,
@@ -129,6 +141,7 @@ def _posterior_source() -> bytes:
                 "artifact_kind": "posterior_draws",
                 "artifact_scope": "observed_data_conditioned_parameter_draws",
                 "model_data_fingerprint": fingerprint,
+                "workflow_phases": phases,
                 "seed": 0,
                 "draws_per_chain": 2,
                 "chain_count": 1,

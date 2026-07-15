@@ -78,12 +78,17 @@ async function posteriorSource() {
   const fingerprint = await crypto.subtle.digest("SHA-256", framed);
   const digest = `sha256:${[...new Uint8Array(fingerprint)]
     .map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+  const workflowPhases = [
+    "parse_json", "decode_ir", "bind_data", "build_posterior_state",
+    "evaluate_logp_grad", "run_nuts", "emit_artifact",
+  ];
   return encodeDocuments([
     {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
       model_data_fingerprint: digest,
+      workflow_phases: workflowPhases,
       params: [{ name: "alpha", shape: [], coordinate_order: [[]] }],
       parameter_count: 1,
       parameter_order: ["alpha"],
@@ -100,7 +105,8 @@ async function posteriorSource() {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
-      draw_index: 0, seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
+      draw_index: 0, draw_index_base: "zero_based_retained_draw_order",
+      seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
       chain: 0, draw: 0, sample_stats_mode: "per_draw_v2",
       tree_depth: 1, tree_accept: 0.9, energy: 1.0, diverging: false, parameter_count: 1,
       parameter_order: ["alpha"], values: { alpha: 1.0 },
@@ -109,7 +115,8 @@ async function posteriorSource() {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
-      draw_index: 1, seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
+      draw_index: 1, draw_index_base: "zero_based_retained_draw_order",
+      seed: 0, draw_count: 2, chain_count: 1, chain_order: [0],
       chain: 0, draw: 1, sample_stats_mode: "per_draw_v2",
       tree_depth: 1, tree_accept: 0.8, energy: 2.0, diverging: false, parameter_count: 1,
       parameter_order: ["alpha"], values: { alpha: 2.0 },
@@ -120,6 +127,7 @@ async function posteriorSource() {
         artifact_kind: "posterior_draws",
         artifact_scope: "observed_data_conditioned_parameter_draws",
         model_data_fingerprint: digest,
+        workflow_phases: workflowPhases,
         seed: 0,
         draws_per_chain: 2,
         chain_count: 1,

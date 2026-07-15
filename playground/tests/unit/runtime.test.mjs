@@ -19,11 +19,16 @@ async function hash(value) {
 }
 
 function runtimePosteriorBytes() {
+  const workflowPhases = [
+    "parse_json", "decode_ir", "bind_data", "build_posterior_state",
+    "evaluate_logp_grad", "run_nuts", "emit_artifact",
+  ];
   return bytes([
     {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
+      workflow_phases: workflowPhases,
       params: [{ name: "theta", shape: [], coordinate_order: [[]] }],
       parameter_count: 1,
       parameter_order: ["theta"],
@@ -40,7 +45,8 @@ function runtimePosteriorBytes() {
       draws_format: "v0-provisional",
       artifact_kind: "posterior_draws",
       artifact_scope: "observed_data_conditioned_parameter_draws",
-      draw_index: 0, seed: 0, draw_count: 1, chain_count: 1, chain_order: [0],
+      draw_index: 0, draw_index_base: "zero_based_retained_draw_order",
+      seed: 0, draw_count: 1, chain_count: 1, chain_order: [0],
       chain: 0, draw: 0, sample_stats_mode: "per_draw_v2",
       tree_depth: 1, tree_accept: 0.9, energy: 1.0, diverging: false, parameter_count: 1,
       parameter_order: ["theta"], values: { theta: 0.5 },
@@ -50,6 +56,7 @@ function runtimePosteriorBytes() {
         draws_format: "v0-provisional",
         artifact_kind: "posterior_draws",
         artifact_scope: "observed_data_conditioned_parameter_draws",
+        workflow_phases: workflowPhases,
         seed: 0,
         draws_per_chain: 1,
         chain_count: 1,

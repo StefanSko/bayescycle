@@ -3,6 +3,15 @@ import { parseStrictJson } from "./strict-json.mjs";
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_DEPTH = 64;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
+const SAMPLE_WORKFLOW_PHASES = Object.freeze([
+  "parse_json",
+  "decode_ir",
+  "bind_data",
+  "build_posterior_state",
+  "evaluate_logp_grad",
+  "run_nuts",
+  "emit_artifact",
+]);
 
 export class PortablePosteriorError extends Error {
   constructor(message) {
@@ -63,6 +72,10 @@ export async function validatePortablePosterior({
   }
   kindScope(header, "posterior header");
   kindScope(trailer, "posterior trailer");
+  if (JSON.stringify(header.workflow_phases) !== JSON.stringify(SAMPLE_WORKFLOW_PHASES) ||
+      JSON.stringify(trailer.workflow_phases) !== JSON.stringify(SAMPLE_WORKFLOW_PHASES)) {
+    throw new PortablePosteriorError("posterior workflow phases are invalid");
+  }
   const fingerprint = await modelDataFingerprint(modelBytes, dataBytes);
   const hasFingerprint = header.model_data_fingerprint !== undefined ||
     trailer.model_data_fingerprint !== undefined;
@@ -183,6 +196,9 @@ export async function validatePortablePosterior({
     kindScope(draw, `posterior draw ${sourceDrawIndex}`);
     if (draw.draw_index === undefined || draw.draw_index !== sourceDrawIndex) {
       throw new PortablePosteriorError("posterior draw_index values are required and contiguous");
+    }
+    if (draw.draw_index_base !== "zero_based_retained_draw_order") {
+      throw new PortablePosteriorError("posterior draw_index_base is invalid");
     }
     const chain = integer(draw.chain, "posterior chain");
     const drawIndex = integer(draw.draw, "posterior draw");

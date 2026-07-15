@@ -14,6 +14,15 @@ MAX_POSTERIOR_SOURCE_BYTES = 8 * 1024 * 1024
 MAX_POSTERIOR_LINE_BYTES = 8 * 1024 * 1024
 _MAX_DEPTH = 64
 _MAX_SAFE_INTEGER = 9_007_199_254_740_991
+_SAMPLE_WORKFLOW_PHASES = (
+    "parse_json",
+    "decode_ir",
+    "bind_data",
+    "build_posterior_state",
+    "evaluate_logp_grad",
+    "run_nuts",
+    "emit_artifact",
+)
 
 
 class PortablePosteriorError(ValueError):
@@ -89,6 +98,10 @@ def validate_portable_posterior(
     _marker(trailer, "posterior trailer")
     _kind_scope(header, "posterior header")
     _kind_scope(trailer, "posterior trailer")
+    if header.get("workflow_phases") != list(_SAMPLE_WORKFLOW_PHASES) or trailer.get(
+        "workflow_phases"
+    ) != list(_SAMPLE_WORKFLOW_PHASES):
+        raise PortablePosteriorError("posterior workflow phases are invalid")
     expected_fingerprint = _fingerprint(model_bytes, data_bytes)
     for document, label in ((header, "header"), (trailer, "trailer")):
         if document.get("model_data_fingerprint") != expected_fingerprint:
@@ -207,6 +220,8 @@ def validate_portable_posterior(
         raw_index = document.get("draw_index")
         if _integer(raw_index, "posterior draw_index") != source_index:
             raise PortablePosteriorError("posterior draw indices are not contiguous")
+        if document.get("draw_index_base") != "zero_based_retained_draw_order":
+            raise PortablePosteriorError("posterior draw_index_base is invalid")
         chain = _integer(document.get("chain"), "posterior chain")
         draw = _integer(document.get("draw"), "posterior draw")
         if _integer(document.get("seed"), "posterior draw seed") != header_seed:
