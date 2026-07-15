@@ -505,6 +505,15 @@ def _simulate_one(
                 vector_bounds,
             )
             values[outcome.name] = free_value
+            if not isinstance(site.value, VectorScatterOp) or not isinstance(
+                site.value.observed_values,
+                DataRef,
+            ):
+                raise TypeError(
+                    f"PartiallyObserved site {outcome.name!r} must use declared observed data"
+                )
+            observed_idx = _evaluate_expr(site.value.observed_idx, values)
+            values[site.value.observed_values.name] = observed_value[observed_idx]
         else:
             observed_target_shape = observed_shapes[outcome.name]
             if observed_target_shape is None:
