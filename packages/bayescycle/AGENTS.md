@@ -1,58 +1,32 @@
-# AGENTS.md
+# Bayescycle guidance
 
-## Project identity
+## Responsibility
 
-`bayescycle` is the Python workflow CLI that connects `bayeswire` model files
-to the Bayesite Rust engine (default) or the bayesjax in-process backend
-(optional, via the `[inproc]` extra).
+Bayescycle is the Python workflow CLI between Bayeswire model files and either
+the Bayesite executable (default) or Bayesjax (`[inproc]`). It owns model-file
+loading, IR materialization, canonical workflow inputs, run-directory paths and
+provenance, backend planning, and backend invocation.
 
-It owns:
+It owns no model semantics, distribution math, sampler algorithms, plotting,
+reports, or artifact database. The optional root
+`.agents/skills/bayescycle-study/` protocol must not expand the runtime package.
 
-- loading a Python model file
-- serializing `bayeswire` IR
-- preparing a run directory
-- serializing narrow run-directory metadata explicitly exposed by `bayeswire`
-- invoking the Bayesite engine CLI
+Keep [`docs/invariants.md`](docs/invariants.md) true.
 
-It does not own model semantics, distribution math, inference algorithms,
-plotting, reports, or artifact/session management.
+## Boundaries
 
-The optional `.agents/skills/bayescycle-study/` directory is an agent protocol
-asset, not core runtime. It may document how agents should use `bayescycle`, but
-it must not expand `src/bayescycle` into a study notebook, reporting system, or
-artifact database without an explicit architecture decision.
-
-## Architecture
-
-Prefer:
-
-- typed dataclasses for phase boundaries
-- explicit state transitions
-- narrow CLI-facing APIs
-- stdlib-first implementation
-
-Avoid:
-
-- hidden global configuration
-- broad workflow frameworks
-- engine semantics in Python
-- inventing model semantics that `bayeswire` did not expose
-- untyped dictionaries in core code
-- speculative abstractions
-
-## Tooling
-
-Use `uv run ...` for Python/project commands so scripts do not depend on a bare
-`python` executable being present on `PATH`. Prefer `uv run python ...` over
-`python ...` in docs, scripts, and ad-hoc validation commands.
+- Normalize CLI input quickly into immutable typed requests and explicit plans.
+- Resolve complete backend intent before writing a run directory.
+- Run artifacts are append-only; never clear or overwrite an existing output.
+- Bayesite commands are data before execution. Preflight the engine before
+  materializing workflow artifacts.
+- Backend adapters own backend options and sampler facts. Bayescycle serializes
+  only facts explicitly exposed by a backend and never infers model semantics.
+- The default install and execution path must remain free of JAX.
+- Use `uv run ...` and `uv run python ...` in code, docs, and validation.
 
 ## Validation
 
-Before reporting completion, normally run:
-
-```bash
-uv run ruff format --check .
-uv run ruff check .
-uv run ty check
-uv run pytest
-```
+Run the shared package checks from this directory. Changes to backend selection,
+provisioning, or dependency wiring also require the root guards and the no-JAX
+profile. See the root `AGENTS.md` for commands and changelog rules.

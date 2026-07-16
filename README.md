@@ -1,107 +1,79 @@
 # bayescycle
 
-**A Bayesian workflow an agent can run end-to-end through files,
-deterministically, with an audit trail.**
-
-Every workflow step is a command that reads files and writes files. Every
-run is seeded and replayable. Run directories are append-only. Provenance
-records what was actually done. The customer is an agent — and the human
-auditing it — and the product is trustworthy *process*, not a sampler.
+**A file-based Bayesian workflow that agents and humans can replay and audit.**
 
 ```text
-model.py ──bayeswire──▶ model.ir.json ──bayesite──▶ run/ ──bayesite-idata──▶ fit.nc ──bayesite-viz──▶ plots
-   │                        (IR)         (engine)    │                                     ▲
-   └── declarative eDSL                              └── diagnostics, posterior checks ────┘
+model.py -> bayeswire IR -> bayesite/bayesjax -> run/ -> NetCDF -> plots
 ```
 
-## The toolchain
+Every phase reads and writes explicit artifacts. Runs are seeded, run
+directories are append-only, and provenance records the inputs and backend that
+produced each result.
 
-This repository is a uv-workspace monorepo publishing five lockstep Python
-distributions, plus one external Rust engine:
+## Toolchain
 
-| Package | What it is | Trust surface |
-|---|---|---|
-| [`bayeswire`](packages/bayeswire) | Model declaration eDSL, `bayeswire_ir` wire codec, dimension sidecars, the normative [spec](spec/), and the golden conformance corpus | **Stdlib only** |
-| [`bayescycle`](packages/bayescycle) | Workflow CLI: model file → IR → run directory → backend invocation → follow-up phases | bayeswire only |
-| [`bayesjax`](packages/bayesjax) | JAX/BlackJAX reference backend and float64 oracle behind the corpus fixtures | JAX stack (opt-in `[inproc]`) |
-| [`bayesite-idata`](packages/bayesite-idata) | Run directory → ArviZ DataTree/NetCDF exporter | arviz stack, behind a `uvx` process boundary |
-| [`bayesite-viz`](packages/bayesite-viz) | ArviZ plotting CLI (`trace`, `rank`, `ppc`, `ess-rhat`, …) | arviz stack, behind a `uvx` process boundary |
-| [bayesite](https://github.com/StefanSko/bayesite) | Zero-dependency Rust NUTS engine (separate repository) | One auditable static binary |
+This repository publishes five lockstep Python distributions:
 
-The default execution path — author a model, serialize IR, sample with the
-Bayesite engine — runs Python in an environment containing exactly one
-stdlib-only package plus one pinned release binary. JAX never enters it;
-CI asserts this. The heavyweight visualization stack is reachable only
-through a `uvx` process boundary at a pinned version and never joins
-`bayescycle`'s dependency closure.
+| Distribution | Responsibility |
+|---|---|
+| [`bayeswire`](packages/bayeswire) | Stdlib-only model eDSL, resolved IR, normative [`spec/`](spec/), and conformance corpus |
+| [`bayescycle`](packages/bayescycle) | Workflow CLI, run directories, backend invocation, replay |
+| [`bayesjax`](packages/bayesjax) | Optional JAX/BlackJAX NUTS backend and float64 oracle |
+| [`bayesite-idata`](packages/bayesite-idata) | Run directory to ArviZ DataTree/NetCDF |
+| [`bayesite-viz`](packages/bayesite-viz) | ArviZ plotting CLI |
 
-## Why it looks like this
+[Bayesite](https://github.com/StefanSko/bayesite) is the external
+zero-dependency Rust engine used by default. Bayescycle provisions a pinned,
+SHA-256-verified release. The visualization distributions run through pinned
+`uvx` environments and do not enter Bayescycle's default dependency closure.
 
-- **The contract is the product.** The tools compose through one normative
-  wire spec ([`spec/`](spec/)) and a golden conformance corpus that every
-  producer and consumer is tested against — the Rust engine vendors both by
-  byte-reviewed file copy and proves logp/gradient parity against the same
-  fixtures.
-- **The model is data, not code.** `model.ir.json` is an inspectable
-  document; decoding runs no user code, so every downstream phase — a
-  diagnose, a posterior check, a re-fit months later — proceeds from the
-  artifact alone.
-- **Determinism over convenience.** Exact-version sibling pins, a pinned
-  engine release, `uvx --exclude-newer` for the plotting boundary: fixed
-  inputs and seeds give fixed bytes.
-
-## Quickstart (from this repository)
+## Quickstart
 
 ```bash
-# Workflow CLI on the default no-JAX path
-uv sync --package bayescycle
-uv run bayescycle --help
-
-# Provision the pinned Bayesite engine release, then sample
-uv run bayescycle engine ensure
-uv run bayescycle sample model.py --data data.json -o run/
-
-# Follow-up phases own their run-directory artifacts
-uv run bayescycle diagnose run/
-uv run bayescycle posterior-check run/ --seed 456
-
-# Export and plot (heavyweight stack stays behind uvx)
-uv run bayescycle plot trace run/
+uv tool install bayescycle
+bayescycle sample model.py --data data.json -o run/
+bayescycle diagnose run/
+bayescycle posterior-check run/ --seed 456
+bayescycle plot trace run/
 ```
 
-The in-process JAX backend is opt-in:
+The first Bayesite-backed command provisions the pinned engine if necessary.
+The optional in-process backend is installed explicitly:
 
 ```bash
-uv sync --package bayescycle --extra inproc
-uv run bayescycle sample model.py --data data.json -o run/ --backend bayesjax
+uv tool install 'bayescycle[inproc]'
+bayescycle sample model.py --data data.json -o run-jax/ --backend bayesjax
 ```
 
-## Repository layout
+See [`packages/bayeswire`](packages/bayeswire) for model authoring and
+[`packages/bayescycle`](packages/bayescycle) for generation, replay, engine, and
+visualization commands. The browser Playground is documented in
+[`playground/README.md`](playground/README.md).
 
-```text
-packages/    five Python packages (three workspace members; the two viz
-             packages are standalone uv projects behind the uvx boundary)
-spec/        the normative wire contracts: IR format, tags, data documents,
-             dimension sidecars, model/data fingerprint
-docs/        release procedure and current protocol documents
-tests/       root guards: lockstep versions, sibling pins, workspace wiring
-scripts/     bump_version.py — one version, one commit, one tag
-.agents/     the gated agentic study protocol (bayescycle-study skill)
-```
+## Design constraints
 
-Workspace-level working discipline lives in [`AGENTS.md`](AGENTS.md); each
-package has its own `AGENTS.md` with its identity and invariants. Releases
-are lockstep: a `vX.Y.Z` tag publishes all five distributions
-([`docs/releasing.md`](docs/releasing.md)).
+- `spec/` and the golden corpus are the interoperability contract.
+- Decoding IR executes no user model code.
+- Bayeswire is stdlib-only; the default Bayescycle path contains no JAX.
+- Bayesjax and Bayesite must agree where conformance coverage says they do.
+- Exact model and data bytes identify a fit; consumers never reserialize to
+  compute hashes.
 
 ## Development
 
+The root uv workspace contains Bayeswire, Bayesjax, and Bayescycle. The two
+visualization projects are standalone uv projects with independent lock files.
+
 ```bash
-uv run pytest tests -q                  # root workspace guards
-uv sync --package <member> && cd packages/<member>  # then that package's
-#   ruff format --check . && ruff check . && ty check && pytest
-cd packages/bayesite-viz && uv sync     # viz packages are standalone
+uv run pytest tests -q
+uv sync --package bayescycle
+cd packages/bayescycle
+uv run ruff format --check .
+uv run ruff check .
+uv run ty check
+uv run pytest
 ```
 
-CI runs all of the above per PR, including the no-JAX profile with a real
-pinned engine binary.
+Working rules are in [`AGENTS.md`](AGENTS.md); package-specific invariants live
+beside each package. Releases are described in
+[`docs/releasing.md`](docs/releasing.md).

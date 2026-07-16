@@ -36,7 +36,7 @@ Models:
 - `models/ordinal_logistic_regression.stan`
   - scalar slope and ordered cutpoints
   - `y ~ ordered_logistic(beta * x, cutpoints)` with Stan-native one-based labels;
-    jaxstan validation subtracts one at the reference boundary
+    Bayesjax validation subtracts one at the reference boundary
 - `models/multivariate_normal_likelihood.stan`
   - `mu ~ normal(0, prior_scale)`
   - `y ~ multi_normal_cholesky(mu, chol)`
@@ -68,15 +68,15 @@ uv run --script scripts/check_partially_observed_mvn_stan_reference.py
 uv run --script scripts/stress_stan_posterior_reference.py --runs 50
 ```
 
-The log-density check compares jaxstan's unconstrained compiled log-density
+The log-density check compares Bayesjax's unconstrained compiled log-density
 **differences** to CmdStan's log-probability differences at equivalent fixed
 parameter values. CmdStanPy's `log_prob` reports densities up to
 parameter-independent constants, and those constants cancel in differences. For
-constrained parameters, CmdStan receives constrained values while jaxstan
+constrained parameters, CmdStan receives constrained values while Bayesjax
 receives the corresponding unconstrained values; both include the Jacobian
 adjustment.
 
-The posterior checks run Stan and jaxstan on the same fixed data and compare
+The posterior checks run Stan and Bayesjax on the same fixed data and compare
 posterior means using the combined Monte Carlo standard error. Scalar cases are
 compared directly. The fixed-kernel GP posterior script compares fixed linear
 projections of the latent vector (`f[0]`, `f[n // 2]`, `mean(f)`, and
@@ -84,8 +84,8 @@ projections of the latent vector (`f[0]`, `f[n // 2]`, `mean(f)`, and
 scalar summaries. The partially observed MVN script compares the missing
 coordinate against Stan's equivalent explicit-parameter encoding. The
 hierarchical count/proportion posterior scripts compare scalar hyperparameters
-from one shared Stan/jaxstan run. The ordinal posterior script compares `beta`,
-both cutpoints, and the cutpoint gap. The posterior scripts align jaxstan's
+from one shared Stan/Bayesjax run. The ordinal posterior script compares `beta`,
+both cutpoints, and the cutpoint gap. The posterior scripts align Bayesjax's
 `target_acceptance_rate` with Stan's `adapt_delta`; scalar posterior checks
 default to `0.95`, while hierarchical count, ordinal, partial-MVN, and GP scripts
 default to `0.90` for their geometries. The stress script repeats scalar

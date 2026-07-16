@@ -4,7 +4,7 @@ This document specifies the serialized form of resolved model metadata
 (`ModelMeta`), the `bayeswire_ir` version 1 wire format. It is the normative
 cross-language contract between every producer and consumer in the bayes\*
 toolchain: the authoring frontend in this repository, sampling backends such
-as jaxstanv5 (Python/JAX) and bayesite (Rust), and any tooling or caches in
+as Bayesjax (Python/JAX) and Bayesite (Rust), and any tooling or caches in
 between. The reference implementation lives in `bayeswire.ir`; the built-in
 tag and field inventory is generated into [`ir-v1-tags.md`](ir-v1-tags.md)
 and enforced by tests. Downstream repositories vendor these documents from a
@@ -155,8 +155,8 @@ The corpus (`src/bayeswire/corpus/`, shipped as package data) holds the golden d
 hashes (`hashes.json`), and cross-backend evaluation fixtures
 (`fixtures/<model>.json`) bundling each IR document with concrete bind data
 and log-density plus gradient values at deterministic unconstrained points.
-The recorded values are **JAX-oracle outputs**: produced by the jaxstanv5
-backend in float64. Fixture file layout is a corpus convention, not part of
+The recorded values are **JAX-oracle outputs** produced by Bayesjax in float64.
+Fixture file layout is a corpus convention, not part of
 this wire format.
 
 Producers conform by reproducing the corpus documents byte-for-byte from the
@@ -166,7 +166,7 @@ and reproducing the recorded evaluations within this tolerance policy:
 - **float64 evaluation** (e.g. bayesite): log density within relative
   tolerance `1e-12`, gradient components within relative tolerance `1e-10`,
   each with an absolute magnitude floor of `1e-8` on the reference value.
-- **float32 evaluation** (e.g. jaxstanv5's default test precision): log
+- **float32 evaluation** (e.g. Bayesjax at float32 precision): log
   density and gradient components within relative and absolute tolerance
   `1e-3`.
 
