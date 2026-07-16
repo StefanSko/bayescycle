@@ -290,3 +290,21 @@ def test_rejects_unknown_or_missing_serialized_fields() -> None:
     duplicate = FIXTURE.read_bytes().replace(b'"kind":"draw"', b'"kind":"wrong","kind":"draw"')
     with pytest.raises(GenerationPlanError, match="duplicate"):
         parse_generation_plan_document(duplicate)
+
+
+def test_design_source_accepts_slots_named_like_structural_fields() -> None:
+    plan = generate_datasets(
+        MODEL_BYTES,
+        design=DESIGN_BYTES,
+        design_source={
+            "count": "linspace(-2, 2, 3)",
+            "dtype": "int64",
+            "seed": "[0]",
+            "values": "[1.5]",
+        },
+        parameter_source=Fixed(FIXED_BYTES),
+        count=2,
+        seed=7,
+    )
+    data = serialize_generation_plan(plan)
+    assert parse_generation_plan_document(data).bytes == data

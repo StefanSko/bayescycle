@@ -111,6 +111,29 @@ export default [
     },
   },
   {
+    name: "round-trips design_source slots named like structural fields",
+    fn: async () => {
+      const plan = generateDatasets(MODEL_BYTES, {
+        design: DESIGN_BYTES,
+        designSource: {
+          count: "linspace(-2, 2, 3)",
+          dtype: "int64",
+          seed: "[0]",
+          values: "[1.5]",
+        },
+        parameterSource: fixed(FIXED_BYTES),
+        count: 2,
+        seed: 7,
+      });
+      const bytes = await serializeGenerationPlan(plan);
+      const parsed = await parseGenerationPlanDocument(bytes);
+      assert(
+        TEXT.decode(parsed.bytes) === TEXT.decode(bytes),
+        "structural-name provenance did not round-trip",
+      );
+    },
+  },
+  {
     name: "canonicalizes adversarial design-source keys by Unicode code points",
     fn: async () => {
       const designSource = {

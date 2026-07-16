@@ -7,6 +7,7 @@ CASES = [
     "generation convenience equals draw of joint predict for every source",
     "serialized fixed plan matches shared versioned fixture and identities",
     "serializes design-source shared fixture and rejects malformed provenance",
+    "round-trips design_source slots named like structural fields",
     "canonicalizes adversarial design-source keys by Unicode code points",
     "rejects unsorted and non-well-formed design-source strings",
     "serializes exact model-prior and posterior source variants",
