@@ -75,8 +75,7 @@ toolchain-normative, not internal to any one package.
 
 - `CHANGELOG.md` is the curated user-facing history for all five lockstep
   distributions. Every user-visible PR updates its `Unreleased` section, or
-  explains in the PR why no entry is needed. `implementation-notes.md` files
-  are engineering provenance, not release notes.
+  explains in the PR why no entry is needed.
 - Release preparation moves `Unreleased` entries into one dated version
   section. Root guards require a section for the current lockstep package
   version. `CLAUDE.md` is a symlink to this file, so both agent entry points
@@ -94,7 +93,5 @@ including the wire-format-change path, is in
 ## Further reading
 
 - [`docs/releasing.md`](docs/releasing.md) — the release procedure.
-- [`docs/toolchain.html`](docs/toolchain.html) — philosophy and a visual
-  walkthrough of the full model-to-plot journey.
 - `packages/bayeswire/AGENTS.md`, `packages/bayesjax/AGENTS.md`,
   `packages/bayescycle/AGENTS.md` — per-package working discipline.

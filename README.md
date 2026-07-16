@@ -76,9 +76,6 @@ uv sync --package bayescycle --extra inproc
 uv run bayescycle sample model.py --data data.json -o run/ --backend bayesjax
 ```
 
-An executed end-to-end walkthrough with the philosophy behind each phase is
-in [`docs/toolchain.html`](docs/toolchain.html).
-
 ## Repository layout
 
 ```text
@@ -86,7 +83,7 @@ packages/    five Python packages (three workspace members; the two viz
              packages are standalone uv projects behind the uvx boundary)
 spec/        the normative wire contracts: IR format, tags, data documents,
              dimension sidecars, model/data fingerprint
-docs/        toolchain walkthrough, release procedure, migration history
+docs/        release procedure and current protocol documents
 tests/       root guards: lockstep versions, sibling pins, workspace wiring
 scripts/     bump_version.py — one version, one commit, one tag
 .agents/     the gated agentic study protocol (bayescycle-study skill)

@@ -154,34 +154,6 @@ The run-directory contract is documented in [`docs/run-directory-v0.md`](docs/ru
 initial backend that emits this contract, but the contract is owned by
 `bayescycle` rather than by a specific sampler.
 
-An executed mixed-backend walkthrough is available as
-[`docs/mixed-backend-workflow.html`](docs/mixed-backend-workflow.html). It is
-generated from a real, intentionally non-linear run: a wide-prior model is
-rejected at the prior-predictive gate and respecified, then an explicit mixed
-TOML plan drives the canonical data artifact handoff from a Bayesite simulation
-to a bayesjax in-process recovery fit checked back against truth by Bayesite.
-
-A fully worked end-to-end walkthrough of the complete workflow is available as a
-self-contained page:
-[`docs/workflow-walkthrough.html`](docs/workflow-walkthrough.html). It is also
-non-linear: a first model with wide priors fails the prior-predictive gate and is
-respecified before the simulation gate (prior predictive, simulate, recover, sbc)
-and the real fit (diagnostics, posterior check, ArviZ visualization) proceed, with
-the filesystem effects and append-only `run.json` provenance of each command
-annotated.
-
-Both pages, plus the SQLite run index, are regenerated from scratch by
-[`docs/build-walkthroughs.sh`](docs/build-walkthroughs.sh), which drives the CLI
-through both workflows and then runs
-[`docs/workflow-walkthrough.py`](docs/workflow-walkthrough.py),
-[`docs/mixed-backend-workflow.py`](docs/mixed-backend-workflow.py), and
-[`docs/run-provenance-db.py`](docs/run-provenance-db.py). The append-only
-`run.json` (`bayescycle.run.v1`) records serialize directly into
-[`docs/walkthrough-runs.sqlite`](docs/walkthrough-runs.sqlite) (tables `runs`,
-`run_inputs`, `run_outputs`, and a derived `workflow_edges` graph that captures
-the cross-backend handoff). Difficulties hit while regenerating these are logged
-in [`docs/walkthrough-difficulties.md`](docs/walkthrough-difficulties.md).
-
 Simulation-gate commands are also first-class and own their run-directory output paths:
 
 ```bash
@@ -324,8 +296,8 @@ generative models, and makes visualization a required phase-gate concern through
 `bayesite-viz` artifacts.
 
 The skill is intentionally outside `src/bayescycle`: it may use the CLI, but the
-Python package remains a narrow deterministic workflow harness. See
-[`docs/agentic-workflow.md`](docs/agentic-workflow.md).
+Python package remains a narrow deterministic workflow harness. Its protocol is
+maintained in [`.agents/skills/bayescycle-study/`](../../.agents/skills/bayescycle-study/).
 
 ## Development
 

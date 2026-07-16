@@ -10,6 +10,11 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+### Changed
+
+- Remove stale implementation logs, completed plans, generated walkthroughs,
+  and duplicated documentation so maintained guidance has a clear owner.
+
 ## [0.6.0] - 2026-07-15
 
 ### Added
