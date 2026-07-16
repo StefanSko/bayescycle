@@ -29,6 +29,7 @@ main { display: grid; grid-template-columns: 1fr 1.05fr 1.05fr; gap: 1rem; paddi
 .doc-stack { display: grid; gap: 1rem; }
 section { background: var(--paper); border: 1px solid var(--line); border-radius: .75rem; padding: 1rem; box-shadow: 0 8px 30px rgb(53 43 26 / 5%); }
 .section-heading { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+.section-heading h2 { white-space: nowrap; }
 label { display: block; margin: .75rem 0 .3rem; font-size: .82rem; font-weight: 700; }
 textarea, input, select { border: 1px solid #bdb5a7; border-radius: .35rem; background: #fff; color: inherit; }
 textarea { width: 100%; resize: vertical; padding: .6rem; font: .82rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 4; }

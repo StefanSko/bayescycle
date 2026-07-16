@@ -74,3 +74,9 @@ def test_exact_length_design_slots_enforce_their_shape(page: Page, base_url: str
 
     page.locator("#design-expr-x").fill("linspace(-2, 2, 3)")
     expect(page.locator("#generate-button")).to_be_enabled()
+
+    # A cleared numeric field is invalid input, not an implicit zero.
+    page.locator("#generation-seed").fill("")
+    expect(page.locator("#generate-button")).to_be_disabled()
+    page.locator("#generation-seed").fill("0")
+    expect(page.locator("#generate-button")).to_be_enabled()

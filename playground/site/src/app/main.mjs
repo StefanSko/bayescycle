@@ -36,6 +36,9 @@ const truth = element("#truth-data");
 
 source.addEventListener("input", () => {
   exampleLoadRevision += 1;
+  // A pre-compile source edit invalidates pending shared form state: the
+  // sender's schema no longer describes the model being compiled.
+  if (authoringRestore.kind === "shared") authoringRestore = { kind: "documents" };
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
@@ -959,12 +962,18 @@ function validSeedSettings(settings = samplerSettings()) {
   return Number.isSafeInteger(settings.seed) && settings.seed >= 0;
 }
 
+// Upper bounds keep one submission tab-safe: each chain launches its own
+// wasm worker, and the engine itself enforces max_treedepth 1..20.
 function validSampleSettings(settings = samplerSettings()) {
   return Number.isSafeInteger(settings.chains) && settings.chains >= 1 &&
+    settings.chains <= 8 &&
     Number.isSafeInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
+    settings.num_warmup <= 100000 &&
     Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 4 &&
+    settings.num_draws <= 100000 &&
     validSeedSettings(settings) &&
     Number.isSafeInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
+    settings.max_treedepth <= 20 &&
     Number.isFinite(settings.target_accept) && settings.target_accept > 0 &&
     settings.target_accept < 1;
 }
@@ -1200,8 +1209,12 @@ function selectedDatasetSource() {
   return element("input[name='dataset-source']:checked").value;
 }
 
-function integerValue(selector) { return Number(element(selector).value); }
-function numberValue(selector) { return Number(element(selector).value); }
+// A cleared field is invalid input, not an implicit zero.
+function integerValue(selector) { return numberValue(selector); }
+function numberValue(selector) {
+  const text = element(selector).value.trim();
+  return text === "" ? NaN : Number(text);
+}
 function countLabel(count, singular) { return `${count} ${singular}${count === 1 ? "" : "s"}`; }
 function element(selector) {
   const value = document.querySelector(selector);

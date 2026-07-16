@@ -105,3 +105,17 @@ def test_recipient_edits_before_compile_outrank_shared_form_state(
         expect(fresh.locator("#truth-data")).to_have_value(truth)
     finally:
         fresh.close()
+
+    edited = page.context.browser.new_page()
+    try:
+        edited.goto(shared_url)
+        edited.locator("#load-shared").click()
+        source = edited.locator("#model-source").input_value()
+        edited.locator("#model-source").fill(source + "\n# recipient tweak\n")
+        edited.locator("#compile-button").click()
+        expect(edited.locator("#ir-hash")).to_be_visible(timeout=120_000)
+        # A pre-compile source edit drops the sender's pending form state.
+        expect(edited.locator("#design-json-field")).to_be_visible()
+        expect(edited.locator("#truth-json-field")).to_be_visible()
+    finally:
+        edited.close()
