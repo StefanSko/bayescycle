@@ -72,13 +72,13 @@ export function reduce(state, event) {
       });
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
-      return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
+      return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" } });
     case "compile-succeeded":
       if (!matches(state.compile, event, "compiling") || event.revision !== state.sourceRevision) return state;
       return freeze({ ...state, compile: { status: "compiled", irBytes: event.irBytes, irHash: event.irHash, modelSchema: event.modelSchema, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
     case "compile-failed":
       if (!matches(state.compile, event, "compiling")) return state;
-      return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
+      return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" } });
     case "run-started":
       if (event.revision !== state.projectRevision) return state;
       return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision, operation: event.operation, datasetSource: event.datasetSource ?? null }, notice: null });

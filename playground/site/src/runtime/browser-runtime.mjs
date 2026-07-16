@@ -24,6 +24,16 @@ import {
   validateGenerationPlan,
 } from "../generation/plan.mjs";
 import { validatePortablePosterior } from "../generation/posterior-source.mjs";
+import {
+  MAX_SAMPLE_CHAINS,
+  MAX_SAMPLE_DRAWS,
+  MAX_SAMPLE_TREEDEPTH,
+  MAX_SAMPLE_WARMUP,
+  MIN_SAMPLE_CHAINS,
+  MIN_SAMPLE_DRAWS,
+  MIN_SAMPLE_TREEDEPTH,
+  MIN_SAMPLE_WARMUP,
+} from "../sampling-limits.mjs";
 
 const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
@@ -293,7 +303,13 @@ export class BrowserRuntime {
     const settings = request.settings ?? {};
     const modelBytes = asIrBytes(request.modelIr);
     const dataBytes = asDocumentBytes(request.data);
-    const chains = integerSetting(settings, "chains", 4);
+    const chains = boundedIntegerSetting(
+      settings,
+      "chains",
+      4,
+      MIN_SAMPLE_CHAINS,
+      MAX_SAMPLE_CHAINS,
+    );
     const counts = Array.from({ length: chains }, () => ({ retainedDraws: 0, divergences: 0 }));
     const result = await sample({
       model: modelBytes,
@@ -490,11 +506,40 @@ function integerSetting(settings, name, fallback) {
   return value;
 }
 
+function boundedIntegerSetting(settings, name, fallback, minimum, maximum) {
+  const value = integerSetting(settings, name, fallback);
+  if (value < minimum || value > maximum) {
+    throw new RuntimeError(
+      "InvalidSettings",
+      `${name} must be an integer in ${minimum}..${maximum}`,
+    );
+  }
+  return value;
+}
+
 function engineSettings(settings = {}) {
   return {
-    num_warmup: integerSetting(settings, "num_warmup", 1000),
-    num_draws: integerSetting(settings, "num_draws", 2000),
-    max_treedepth: integerSetting(settings, "max_treedepth", 10),
+    num_warmup: boundedIntegerSetting(
+      settings,
+      "num_warmup",
+      1000,
+      MIN_SAMPLE_WARMUP,
+      MAX_SAMPLE_WARMUP,
+    ),
+    num_draws: boundedIntegerSetting(
+      settings,
+      "num_draws",
+      2000,
+      MIN_SAMPLE_DRAWS,
+      MAX_SAMPLE_DRAWS,
+    ),
+    max_treedepth: boundedIntegerSetting(
+      settings,
+      "max_treedepth",
+      10,
+      MIN_SAMPLE_TREEDEPTH,
+      MAX_SAMPLE_TREEDEPTH,
+    ),
     target_accept: typeof settings.target_accept === "number" ? settings.target_accept : 0.8,
   };
 }

@@ -1,4 +1,5 @@
 import {
+  MAX_DOCUMENT_INPUT_BYTES,
   MAX_DOCUMENT_SCALARS,
   parseDocument,
   parseDocumentValue,
@@ -15,6 +16,16 @@ import {
 } from "../generation/plan.mjs";
 import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
+import {
+  MAX_SAMPLE_CHAINS,
+  MAX_SAMPLE_DRAWS,
+  MAX_SAMPLE_TREEDEPTH,
+  MAX_SAMPLE_WARMUP,
+  MIN_SAMPLE_CHAINS,
+  MIN_SAMPLE_DRAWS,
+  MIN_SAMPLE_TREEDEPTH,
+  MIN_SAMPLE_WARMUP,
+} from "../sampling-limits.mjs";
 import {
   MAX_DESIGN_FORM_SLOTS,
   MAX_PARAMETER_FORM_FIELDS,
@@ -136,11 +147,21 @@ async function loadExample() {
   const entry = examples.get(selectedId);
   if (entry === undefined) return;
   const loadRevision = ++exampleLoadRevision;
-  const [modelSource, observedText, designText, truthText] = await Promise.all([
-    fetchAsset(entry.source), fetchOptionalAsset(entry.observed),
-    fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
-  ]);
+  let assets;
+  try {
+    assets = await Promise.all([
+      fetchAsset(entry.source), fetchOptionalAsset(entry.observed),
+      fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
+    ]);
+  } catch (error) {
+    if (loadRevision !== exampleLoadRevision ||
+        element("#examples-menu").value !== selectedId) return;
+    element("#compile-error").hidden = false;
+    element("#compile-error").textContent = message(error);
+    return;
+  }
   if (loadRevision !== exampleLoadRevision || element("#examples-menu").value !== selectedId) return;
+  const [modelSource, observedText, designText, truthText] = assets;
   setProject(
     { source: modelSource, observed: observedText, design: designText, truth: truthText },
     { kind: "documents" },
@@ -150,7 +171,36 @@ async function loadExample() {
 async function fetchAsset(path) {
   const response = await fetch(new URL(path, EXAMPLES_ROOT));
   if (!response.ok) throw new Error(`Could not load example asset ${path}`);
-  return response.text();
+  if (response.body === null) {
+    throw new Error(`Could not stream example asset ${path}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const parts = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > MAX_DOCUMENT_INPUT_BYTES) {
+        await reader.cancel("example asset too large");
+        throw new Error(
+          `Example asset ${path} exceeds ${MAX_DOCUMENT_INPUT_BYTES} UTF-8 bytes`,
+        );
+      }
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(`Example asset ${path} is not valid UTF-8`, { cause: error });
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  return parts.join("");
 }
 
 function fetchOptionalAsset(path) {
@@ -1159,15 +1209,17 @@ function validSeedSettings(settings = samplerSettings()) {
 // Upper bounds keep one submission tab-safe: each chain launches its own
 // wasm worker, and the engine itself enforces max_treedepth 1..20.
 function validSampleSettings(settings = samplerSettings()) {
-  return Number.isSafeInteger(settings.chains) && settings.chains >= 1 &&
-    settings.chains <= 8 &&
-    Number.isSafeInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
-    settings.num_warmup <= 100000 &&
-    Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 4 &&
-    settings.num_draws <= 100000 &&
+  return Number.isSafeInteger(settings.chains) &&
+    settings.chains >= MIN_SAMPLE_CHAINS && settings.chains <= MAX_SAMPLE_CHAINS &&
+    Number.isSafeInteger(settings.num_warmup) &&
+    settings.num_warmup >= MIN_SAMPLE_WARMUP &&
+    settings.num_warmup <= MAX_SAMPLE_WARMUP &&
+    Number.isSafeInteger(settings.num_draws) &&
+    settings.num_draws >= MIN_SAMPLE_DRAWS && settings.num_draws <= MAX_SAMPLE_DRAWS &&
     validSeedSettings(settings) &&
-    Number.isSafeInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
-    settings.max_treedepth <= 20 &&
+    Number.isSafeInteger(settings.max_treedepth) &&
+    settings.max_treedepth >= MIN_SAMPLE_TREEDEPTH &&
+    settings.max_treedepth <= MAX_SAMPLE_TREEDEPTH &&
     Number.isFinite(settings.target_accept) && settings.target_accept > 0 &&
     settings.target_accept < 1;
 }
@@ -1270,8 +1322,8 @@ function render() {
   const authoringErrorElement = element("#authoring-error");
   authoringErrorElement.hidden = visibleAuthoringError === null;
   authoringErrorElement.textContent = visibleAuthoringError ?? "";
-  const activeRun = state.generation.attempt.status === "running" ||
-    state.run.status === "running";
+  const activeRun = state.compile.status === "compiling" ||
+    state.generation.attempt.status === "running" || state.run.status === "running";
   element("#cancel-run").hidden = !activeRun;
   element("#run-status").textContent = state.generation.attempt.status === "running"
     ? "Generating paired datasets is running…"

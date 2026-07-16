@@ -211,6 +211,7 @@ export function validateModelSchema(value, maxSchemaBytes = MAX_IR_BYTES) {
       if (typeof dimension !== "string" || dimension === "") {
         throw malformedSchema(`parameter ${index} shape must contain non-empty strings`);
       }
+      requireBoundedText(dimension, `parameter ${index} shape dimension`);
       shapeByteBudget -= utf8BytesUpTo(dimension, shapeByteBudget) + 3;
       if (shapeByteBudget < 0) {
         throw malformedSchema("parameter shapes exceed compiler output byte limit");

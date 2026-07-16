@@ -102,8 +102,10 @@ input to a later compilation.
     still owned by those attempts. The first failed sampling chain terminates
     its in-flight siblings; cancellation never waits for sibling chains to
     finish naturally or degrades into a partial-success warning.
-12. A failed or cancelled follow-up operation does not erase artifacts from an earlier
-    successful run.
+12. A failed or cancelled follow-up operation, including recompilation, does
+    not erase artifacts or fit lineage from an earlier successful run. A
+    successful compile with changed model bytes still invalidates prior run
+    descendants.
 13. Capability failures are visible and bounded. The frontend never drops
     score factors or claims that every scoreable model is ancestrally
     sampleable.
@@ -117,16 +119,21 @@ input to a later compilation.
 - Shared projects never compile automatically.
 - User-visible failures are bounded and actionable; malformed JSON, invalid
   settings, compile failures, and engine failures do not disappear into the
-  developer console.
+  developer console. The shared Cancel control is visible for compilation as
+  well as generation and fitting.
 - Share fragments are rejected above 65,536 compressed characters and are
   decompressed as a stream with a 1 MiB output ceiling.
 - User data documents are rejected above 4 MiB of UTF-8 before JSON parsing.
   Normalization accepts at most 32 nesting levels and 100,000 scalar values,
   and flattening is linear in the accepted document size.
 - Compiler schemas contain at most 1,024 parameter, data, and observed entries
-  in total. Names, priors, and constraints contain at most 512 characters.
+  in total. Names, priors, constraints, and shape dimension names contain at
+  most 512 characters.
   The UI renders parameter forms for at most 200 parameters and design cards
   for at most 50 data slots; larger accepted schemas stay in JSON mode.
+- Sampling limits are enforced at the runtime boundary before worker dispatch,
+  not only by the UI: 1–8 chains, 0–100,000 warmup iterations, 4–100,000 draws,
+  and tree depth 1–20.
 
 ## Explicit non-guarantees
 

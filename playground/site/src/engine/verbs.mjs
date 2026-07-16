@@ -1,5 +1,9 @@
 // Source: src/engine/verbs.ts, bayesledger @ 7346d71.
 
+import {
+  MAX_SAMPLE_CHAINS,
+  MIN_SAMPLE_CHAINS,
+} from "../sampling-limits.mjs";
 import { EngineError } from "./types.mjs";
 
 /**
@@ -17,8 +21,12 @@ import { EngineError } from "./types.mjs";
 /** @param {SampleInputs} inputs @returns {Promise<RunResult>} */
 export async function sample(inputs) {
   return guard(async () => {
-    if (!Number.isInteger(inputs.chains) || inputs.chains < 1) {
-      throw new EngineError("InvalidSettings", "sample chains must be a positive integer");
+    if (!Number.isInteger(inputs.chains) || inputs.chains < MIN_SAMPLE_CHAINS ||
+        inputs.chains > MAX_SAMPLE_CHAINS) {
+      throw new EngineError(
+        "InvalidSettings",
+        `sample chains must be an integer in ${MIN_SAMPLE_CHAINS}..${MAX_SAMPLE_CHAINS}`,
+      );
     }
     const group = linkedAbortController(inputs.signal);
     try {
