@@ -71,7 +71,7 @@ input to a later compilation.
    run-directory vocabulary, including `model.ir.json`, `data.json`,
    `posterior.ndjson`, `diagnostics.json`, and the paired
    `generated_datasets.ndjson` artifact defined by
-   [`docs/generation-plan-v0.md`](../docs/generation-plan-v0.md).
+   [`spec/generated-datasets-v0.md`](../spec/generated-datasets-v0.md).
 5. Generation reaches the runtime through one immutable exact-key `generate`
    plan. Application/UI modules do not select fixed, prior-predictive, or
    posterior-predictive engine commands. `BrowserRuntime` may use a private

@@ -32,15 +32,24 @@ Core invariants that should remain true as the codebase changes.
 - `Submodel(Model)` composes one already-resolved model as a closed namespace:
   it accepts no input wiring, includes every child stochastic factor (including
   `Observed` likelihoods), and prefixes child data bind keys.
-- `with_prior(Target, prior=Source)` performs immutable, complete prior
-  replacement between two closed model classes. The source is structurally
-  prior-only, supplies every target Param by exact name and compatible static
-  interface, and may retain additional hierarchical Params. The complete
-  contract is in [`prior-composition.md`](prior-composition.md).
-- Prior composition removes exactly declaration-backed target Param sites,
-  retains all target outcomes, partially observed values, and additional
-  factors, and closes to ordinary flat `ModelMeta`; open inputs, wiring, and
-  composition nodes are never model metadata.
+- `with_prior(Target, prior=Source)` is immutable, complete prior replacement
+  between two independently closed model classes. It never binds data or
+  exposes open wiring.
+- The source is structurally prior-only: its free values are exactly its Params,
+  every Param has one declaration-backed site, and it has no observed values,
+  non-Param free values, or additional factors. Source-only hierarchical Params
+  are retained and their dependencies must follow source Param order.
+- Every target Param has an exact same-name source Param with matching
+  constraint, size, dimensions, and coordinates. The source distribution is the
+  replacement prior; there is no renaming, broadcasting, partial replacement,
+  or constraint subtyping.
+- Composition removes exactly declaration-backed target Param sites, retains
+  target outcomes, partially observed values, and additional factors, and
+  rejects role collisions or dangling references before and after the merge.
+  Source data precedes compatible target-only data; source Params and their
+  sites precede retained target free values and factors.
+- The result closes to ordinary flat `ModelMeta`; composition state and
+  `model_dependencies(...)` provenance never enter IR or the dimension sidecar.
 - Parents may reference composed parameters, data, derived expressions, and
   partially observed values. Child `Observed` declarations contribute factors
   but are not expression values, matching ordinary same-class behavior.

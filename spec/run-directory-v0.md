@@ -63,14 +63,14 @@ run/
 ```
 
 `generated_datasets.ndjson` uses the provisional functional-generation
-contract in [`../../../docs/generation-plan-v0.md`](../../../docs/generation-plan-v0.md).
-It retains one natural-scale parameter document and one complete canonical
-dataset per draw, plus exact model/design/source lineage. A selected dataset is
-passed to conditioning without model-aware transformation.
+contract in [`generated-datasets-v0.md`](generated-datasets-v0.md). It retains
+one natural-scale parameter document and one complete canonical dataset per
+draw, plus exact model/design/source lineage. A selected dataset is passed to
+conditioning without model-aware transformation.
 
 `data.json` and `simulated_data.json` use the canonical
-`bayescycle.data.json.v1` format documented in
-[`canonical-data-artifacts.md`](canonical-data-artifacts.md). The Bayesite
+`bayescycle.data.json.v1` format specified in
+[`data-document-v1.md`](data-document-v1.md). The Bayesite
 adapter passes `data.json` to the engine unchanged; it may still create
 backend-private materializations for generated outputs, such as
 `run/.bayesite/simulated_data.json` before canonicalization, but those files
@@ -85,9 +85,8 @@ directory remains the durable artifact contract. For Bayesite-backed runs it
 also records an optional `engine` block: `kind` (`explicit`, `system`, or
 `provisioned`, describing how the engine executable was resolved), `path`, and
 an optional `version` and `sha256` (the latter only ever set for an
-auto-provisioned engine). Generation instead uses
-`bayescycle.generation-run.v0` exactly as specified in
-[`../../../docs/generation-plan-v0.md`](../../../docs/generation-plan-v0.md).
+auto-provisioned engine). Generation instead uses `bayescycle.generation-run.v0` exactly as specified in
+[`generated-datasets-v0.md`](generated-datasets-v0.md).
 
 `dims.json` may only contain dimension labels and coordinates explicitly exposed
 by `bayeswire`; bayescycle must not infer labels from names, shapes, or data.

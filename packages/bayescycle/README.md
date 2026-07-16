@@ -81,7 +81,7 @@ run/dims.json       # optional; written only when the model declares dimension m
 and invokes the Bayesite adapter, which passes the canonical `run/data.json`
 straight to the engine (the engine parses the `bayescycle.data.json.v1` wrapper
 natively, so both backends fingerprint the same bytes; see
-`docs/posterior-draws-v0.md`):
+[`../../spec/posterior-draws-v0.md`](../../spec/posterior-draws-v0.md)):
 
 ```bash
 bayesite sample --model run/model.ir.json --data run/data.json --out run/posterior.ndjson
@@ -148,11 +148,12 @@ so the run directory always contains `run/posterior.ndjson`.
 bayescycle sample model.py --data data.json -o run/ -- --experimental-engine-flag
 ```
 
-The run-directory contract is documented in [`docs/run-directory-v0.md`](docs/run-directory-v0.md),
-[`docs/canonical-data-artifacts.md`](docs/canonical-data-artifacts.md), and
-[`docs/posterior-draws-v0.md`](docs/posterior-draws-v0.md). Bayesite is the
-initial backend that emits this contract, but the contract is owned by
-`bayescycle` rather than by a specific sampler.
+The run and data contracts are specified in
+[`../../spec/run-directory-v0.md`](../../spec/run-directory-v0.md),
+[`../../spec/data-document-v1.md`](../../spec/data-document-v1.md), and
+[`../../spec/posterior-draws-v0.md`](../../spec/posterior-draws-v0.md).
+Bayesite is the initial backend that emits this contract, but the contract is
+owned by `bayescycle` rather than by a specific sampler.
 
 Simulation-gate commands are also first-class and own their run-directory output paths:
 

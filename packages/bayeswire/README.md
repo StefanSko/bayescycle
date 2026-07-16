@@ -150,9 +150,8 @@ SimulationRegression = with_prior(LinearRegression, prior=SimulationPrior)
 flat `bayeswire_ir` v1. Prior prediction uses `SimulationPrior`; the original
 `LinearRegression` remains unchanged. The source must be structurally
 prior-only and must supply every target Param by the same name with an exactly
-compatible constraint, size, and dimensions. See
-[`docs/prior-composition.md`](docs/prior-composition.md) for the complete v0
-contract.
+compatible constraint, size, and dimensions. The durable composition rules are
+listed in [`docs/invariants.md`](docs/invariants.md).
 
 Use `Submodel` to reuse a complete, already-validated model under an explicit
 namespace rather than through Python inheritance:

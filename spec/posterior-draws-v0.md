@@ -42,7 +42,8 @@ The header records:
 
 `model_data_fingerprint`, when present, is `sha256:` plus the SHA-256 digest of
 `b"bayescycle-model-data-v1\n" + model_ir_bytes + b"\n" + data_json_bytes`, per
-the normative bayeswire spec `model-data-fingerprint-v1.md`. `data_json_bytes`
+the normative [`model-data-fingerprint-v1.md`](model-data-fingerprint-v1.md).
+`data_json_bytes`
 is the canonical `run/data.json` artifact for both the in-process bayesjax
 backend and the Bayesite engine: bayescycle passes that file directly to every
 data-consuming engine command, so both backends fingerprint identical bytes.
