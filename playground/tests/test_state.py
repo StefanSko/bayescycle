@@ -14,6 +14,8 @@ CASES = [
     "inference edits preserve fit and independent generation",
     "replacement fits invalidate posterior-sourced collections",
     "source edits invalidate compilation and artifacts",
+    "failed recompile preserves artifacts and fit lineage",
+    "successful recompile invalidates prior artifacts",
     "document edits retain compilation but invalidate artifacts",
     "later runs clear stale follow-up notices",
     "successful follow-ups preserve earlier artifacts",

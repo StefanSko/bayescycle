@@ -524,6 +524,68 @@ export default [
     },
   },
   {
+    name: "runtime accepts sampling settings at documented boundaries",
+    fn: async () => {
+      const cases = [
+        [{ chains: 1 }, 1],
+        [{ chains: 8 }, 8],
+        [{ chains: 1, num_warmup: 0 }, 1],
+        [{ chains: 1, num_warmup: 100000 }, 1],
+        [{ chains: 1, num_draws: 4 }, 1],
+        [{ chains: 1, num_draws: 100000 }, 1],
+        [{ chains: 1, max_treedepth: 1 }, 1],
+        [{ chains: 1, max_treedepth: 20 }, 1],
+      ];
+      for (const [settings, expectedCalls] of cases) {
+        let calls = 0;
+        const runtime = new BrowserRuntime({
+          execute: async () => {
+            calls += 1;
+            return { rawBytes: runtimePosteriorBytes() };
+          },
+        });
+        await runtime.run({
+          operation: "sample",
+          modelIr: bytes('{"bayeswire_ir":1}'),
+          data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+          settings,
+        });
+        assert(calls === expectedCalls, `${JSON.stringify(settings)} made ${calls} calls`);
+      }
+    },
+  },
+  {
+    name: "runtime rejects out-of-range sampling settings before executor dispatch",
+    fn: async () => {
+      for (const settings of [
+        { chains: 0 }, { chains: 9 },
+        { chains: 1, num_warmup: -1 }, { chains: 1, num_warmup: 100001 },
+        { chains: 1, num_draws: 3 }, { chains: 1, num_draws: 100001 },
+        { chains: 1, max_treedepth: 0 }, { chains: 1, max_treedepth: 21 },
+      ]) {
+        let calls = 0;
+        let error;
+        try {
+          await new BrowserRuntime({
+            execute: async () => {
+              calls += 1;
+              return { rawBytes: runtimePosteriorBytes() };
+            },
+          }).run({
+            operation: "sample",
+            modelIr: bytes('{"bayeswire_ir":1}'),
+            data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+            settings,
+          });
+        } catch (reason) {
+          error = reason;
+        }
+        assert(error?.kind === "InvalidSettings", `${JSON.stringify(settings)} was accepted`);
+        assert(calls === 0, `${JSON.stringify(settings)} reached executor ${calls} times`);
+      }
+    },
+  },
+  {
     name: "first chain failure aborts every sibling execution",
     fn: async () => {
       const calls = [];

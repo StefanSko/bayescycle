@@ -237,7 +237,7 @@ export default [
     },
   },
   {
-    name: "model schema cardinality and text boundaries are enforced",
+    name: "model schema cardinality and all text boundaries are enforced",
     fn: () => {
       const parameter = (name, overrides = {}) => ({
         name,
@@ -270,7 +270,9 @@ export default [
       const atCap = "x".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS);
       compilerModule.validateModelSchema({
         ...MODEL_SCHEMA,
-        parameters: [parameter(atCap, { prior: atCap, constraint: atCap })],
+        parameters: [parameter(atCap, {
+          prior: atCap, constraint: atCap, shape: [atCap],
+        })],
       });
       for (const [field, value] of [
         ["name", "n".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS + 1)],
@@ -286,6 +288,19 @@ export default [
         } catch (error) { message = String(error); }
         assert(message.includes("malformed model schema") && message.includes("512"), `${field} cap was not enforced: ${message}`);
       }
+      let shapeMessage = "";
+      try {
+        compilerModule.validateModelSchema({
+          ...MODEL_SCHEMA,
+          parameters: [parameter("short", {
+            shape: ["s".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS + 1)],
+          })],
+        });
+      } catch (error) { shapeMessage = String(error); }
+      assert(
+        shapeMessage.includes("shape dimension") && shapeMessage.includes("512"),
+        `shape dimension cap was not enforced: ${shapeMessage}`,
+      );
     },
   },
   {

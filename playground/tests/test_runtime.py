@@ -18,6 +18,8 @@ CASES = [
     "selected canonical data bytes remain byte-exact through conditioning",
     "runtime serializes accepted object data into the sample artifact",
     "runtime conditions on one dataset through the workflow operation",
+    "runtime accepts sampling settings at documented boundaries",
+    "runtime rejects out-of-range sampling settings before executor dispatch",
     "first chain failure aborts every sibling execution",
     "run abort propagates to every in-flight chain",
     "runtime sampling returns valid merged posterior and progress",

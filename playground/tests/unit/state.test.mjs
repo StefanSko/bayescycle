@@ -463,6 +463,65 @@ export default [
     },
   },
   {
+    name: "failed recompile preserves artifacts and fit lineage",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "model", revision: 1 });
+      state = reduce(state, { type: "compile-started", requestId: "initial", revision: 1 });
+      state = reduce(state, {
+        type: "compile-succeeded", requestId: "initial", revision: 1,
+        irBytes: new Uint8Array([1]), irHash: "same", modelSchema: {},
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "fit", revision: 1,
+        operation: "condition", datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "run-succeeded", requestId: "fit", revision: 1,
+        artifacts: [{ name: "posterior.ndjson", generation: "successful" }],
+      });
+      const artifacts = state.artifacts;
+      assert(state.fitDatasetSource === "generated", "test setup lost fit lineage");
+
+      state = reduce(state, { type: "compile-started", requestId: "replacement", revision: 1 });
+      assert(state.artifacts[0] === artifacts[0], "recompile start erased artifacts");
+      assert(state.fitDatasetSource === "generated", "recompile start erased fit lineage");
+      state = reduce(state, {
+        type: "compile-failed", requestId: "replacement", revision: 1,
+        error: "cancelled",
+      });
+      assert(state.artifacts[0] === artifacts[0], "failed recompile erased artifacts");
+      assert(state.fitDatasetSource === "generated", "failed recompile erased fit lineage");
+    },
+  },
+  {
+    name: "successful recompile invalidates prior artifacts",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "model", revision: 1 });
+      state = reduce(state, { type: "compile-started", requestId: "initial", revision: 1 });
+      state = reduce(state, {
+        type: "compile-succeeded", requestId: "initial", revision: 1,
+        irBytes: new Uint8Array([1]), irHash: "old", modelSchema: {},
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "fit", revision: 1,
+        operation: "condition", datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "run-succeeded", requestId: "fit", revision: 1,
+        artifacts: [{ name: "posterior.ndjson" }],
+      });
+      state = reduce(state, { type: "compile-started", requestId: "replacement", revision: 1 });
+      state = reduce(state, {
+        type: "compile-succeeded", requestId: "replacement", revision: 1,
+        irBytes: new Uint8Array([2]), irHash: "different", modelSchema: {},
+      });
+      assert(state.artifacts.length === 0, "successful recompile retained prior artifacts");
+      assert(state.fitDatasetSource === null, "successful recompile retained fit lineage");
+    },
+  },
+  {
     name: "document edits retain compilation but invalidate artifacts",
     fn: () => {
       let state = initialState();

@@ -10,7 +10,7 @@ CASES = [
     "worker terminates on startup failure malformed response and worker error",
     "oversized compiler output is bounded before use",
     "oversized model source is rejected before worker construction",
-    "model schema cardinality and text boundaries are enforced",
+    "model schema cardinality and all text boundaries are enforced",
     "abort during post-response hashing rejects compilation",
     "worker terminates on compile timeout and cancellation",
 ]
