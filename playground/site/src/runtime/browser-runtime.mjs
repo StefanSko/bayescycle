@@ -7,7 +7,11 @@ import {
   recoverCheck,
   sample,
 } from "../engine/index.mjs";
-import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
+import {
+  normalizeDocument,
+  parseDocument,
+  serializeDocument,
+} from "../data/documents.mjs";
 import {
   parseGeneratedDatasets,
   verifyGeneratedDatasets,
@@ -36,24 +40,36 @@ export class BrowserRuntime {
     return this.compiler.compile(source, options);
   }
 
-  /** @param {Record<string, unknown> & {operation: string}} request @param {(event: Record<string, unknown>) => void} [onProgress] */
-  async run(request, onProgress = () => {}) {
+  /**
+   * @param {Record<string, unknown> & {operation: string}} request
+   * @param {((event: Record<string, unknown>) => void) | {signal?: AbortSignal}} [onProgress]
+   * @param {{signal?: AbortSignal}} [options]
+   */
+  async run(request, onProgress = () => {}, options = {}) {
+    if (typeof onProgress !== "function") {
+      options = onProgress;
+      onProgress = () => {};
+    }
+    const signal = options.signal;
+    requireNotCancelled(signal);
     let result;
     switch (request.operation) {
       case "condition":
-        result = await this.#condition(request, onProgress);
+        result = await this.#condition(request, onProgress, signal);
         break;
       case "sample":
-        result = await this.#sample(request, onProgress);
+        result = await this.#sample(request, onProgress, signal);
         break;
       case "generate":
-        result = await this.#generate(request);
+        result = await this.#generate(request, signal);
         break;
       case "diagnose":
         result = oneArtifact(
           "diagnostics.json",
           "application/json",
-          requireOutput(await diagnose({ fits: [asText(request.fit, "fit")], executor: this.executor })),
+          requireOutput(await diagnose({
+            fits: [asText(request.fit, "fit")], executor: this.executor, signal,
+          })),
         );
         break;
       case "recover-check":
@@ -62,8 +78,9 @@ export class BrowserRuntime {
           "application/json",
           requireOutput(await recoverCheck({
             fit: asText(request.fit, "fit"),
-            truth: asObject(request.truth, "truth"),
+            truth: asDocumentObject(request.truth, "truth"),
             executor: this.executor,
+            signal,
           })),
         );
         break;
@@ -73,7 +90,7 @@ export class BrowserRuntime {
     return { type: "artifacts", id: request.id, ...result };
   }
 
-  async #generate(request) {
+  async #generate(request, signal) {
     let plan;
     try {
       plan = validateGenerationPlan(request.plan);
@@ -135,6 +152,7 @@ export class BrowserRuntime {
         posteriorBytes: parameters.fitArtifact.posteriorBytes,
       });
     }
+    requireNotCancelled(signal);
     const output = requireOutput(await generate({
       model: exactText(modelBytes, "generation model IR"),
       design: exactText(designBytes, "generation design"),
@@ -143,7 +161,9 @@ export class BrowserRuntime {
       count: plan.count,
       seed: plan.seed,
       executor: this.executor,
+      signal,
     }));
+    requireNotCancelled(signal);
     const parsedOutput = parseGeneratedDatasets(output.rawBytes);
     await verifyGeneratedDatasets(parsedOutput, {
       modelBytes,
@@ -176,6 +196,7 @@ export class BrowserRuntime {
       expectedCount: plan.count,
       expectedSeed: plan.seed,
     });
+    requireNotCancelled(signal);
     const generated = artifact(
       "generated_datasets.ndjson",
       "application/x-ndjson",
@@ -216,8 +237,8 @@ export class BrowserRuntime {
     return { artifacts: published };
   }
 
-  async #condition(request, onProgress) {
-    const sampled = await this.#sample(request, onProgress);
+  async #condition(request, onProgress, signal) {
+    const sampled = await this.#sample(request, onProgress, signal);
     const posterior = sampled.artifacts.find(
       (entry) => entry.name === "posterior.ndjson",
     );
@@ -230,24 +251,28 @@ export class BrowserRuntime {
       const diagnosed = requireOutput(await diagnose({
         fits: [exactText(posterior.bytes, "posterior")],
         executor: this.executor,
+        signal,
       }));
       artifacts.push(artifact(
         "diagnostics.json", "application/json", diagnosed.rawBytes,
       ));
     } catch (error) {
+      if (signal?.aborted === true) throw error;
       warnings.push(`Posterior completed; diagnostics unavailable: ${error.message}`);
     }
     if (request.pairedParameters !== undefined) {
       try {
         const recovery = requireOutput(await recoverCheck({
           fit: exactText(posterior.bytes, "posterior"),
-          truth: asObject(request.pairedParameters, "paired parameters"),
+          truth: asDocumentObject(request.pairedParameters, "paired parameters"),
           executor: this.executor,
+          signal,
         }));
         artifacts.push(artifact(
           "recovery_check.json", "application/json", recovery.rawBytes,
         ));
       } catch (error) {
+        if (signal?.aborted === true) throw error;
         warnings.push(`Posterior completed; recovery check unavailable: ${error.message}`);
       }
     }
@@ -258,7 +283,7 @@ export class BrowserRuntime {
     };
   }
 
-  async #sample(request, onProgress) {
+  async #sample(request, onProgress, signal) {
     const settings = request.settings ?? {};
     const modelBytes = asIrBytes(request.modelIr);
     const dataBytes = asDocumentBytes(request.data);
@@ -271,6 +296,7 @@ export class BrowserRuntime {
       seed: integerSetting(settings, "seed", 0),
       chains,
       executor: this.executor,
+      signal,
       onDrawBatch: ({ chainId, draws }) => {
         const count = counts[chainId];
         if (count === undefined) return;
@@ -280,6 +306,7 @@ export class BrowserRuntime {
       },
     });
     if (!result.ok) throw runtimeError(result.error);
+    requireNotCancelled(signal);
     const streams = result.outputs.map((output) => UTF8.decode(output.rawBytes));
     const merged = streams.length === 1 ? streams[0] : mergeChainFits(streams);
     const posteriorBytes = ENCODE.encode(merged);
@@ -408,7 +435,20 @@ function asDocumentBytes(value) {
   if (value !== null && typeof value === "object" && !(value instanceof Uint8Array)) {
     return ENCODE.encode(serializeDocument(normalizeDocument(value)));
   }
-  return asBytes(value, "data");
+  const bytes = asBytes(value, "data");
+  parseDocument(exactText(bytes, "data"));
+  return bytes;
+}
+
+function asDocumentObject(value, label) {
+  try {
+    if (value !== null && typeof value === "object" && !(value instanceof Uint8Array)) {
+      return normalizeDocument(value);
+    }
+    return parseDocument(exactText(asBytes(value, label), label));
+  } catch (error) {
+    throw new RuntimeError("InvalidRequest", `${label}: ${error.message}`);
+  }
 }
 
 function asIrBytes(value) {
@@ -425,6 +465,12 @@ function asObject(value, label) {
     throw new RuntimeError("InvalidRequest", `${label} must contain a JSON object`);
   }
   return parsed;
+}
+
+function requireNotCancelled(signal) {
+  if (signal?.aborted === true) {
+    throw new RuntimeError("Cancelled", "Runtime operation was cancelled");
+  }
 }
 
 function integerSetting(settings, name, fallback) {

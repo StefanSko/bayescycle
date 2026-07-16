@@ -63,12 +63,13 @@ export class WorkerEngine {
 
   /**
    * @param {Record<string, unknown> & {command: string}} request
-   * @param {{chainId?: number, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void}} [options]
+   * @param {{chainId?: number, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void, signal?: AbortSignal}} [options]
    * @returns {Promise<import("./types.mjs").EngineOutput>}
    */
   execute(request, options = {}) {
     const worker = this.workerFactory();
     const id = globalThis.crypto.randomUUID();
+    const signal = options.signal;
     const message = {
       type: "run",
       id,
@@ -78,9 +79,31 @@ export class WorkerEngine {
       chainId: options.chainId ?? 0,
     };
     return new Promise((resolve, reject) => {
-      const malformed = () => {
+      let settled = false;
+      const dispose = () => {
+        signal?.removeEventListener("abort", onAbort);
+        worker.onmessage = null;
+        worker.onerror = null;
         worker.terminate();
-        reject(new EngineError("MalformedEngineResponse", "Engine worker returned a malformed response"));
+      };
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        dispose();
+        reject(error);
+      };
+      const succeed = (value) => {
+        if (settled) return;
+        settled = true;
+        dispose();
+        resolve(value);
+      };
+      const onAbort = () => fail(new EngineError("Cancelled", "Engine operation was cancelled"));
+      const malformed = () => {
+        fail(new EngineError(
+          "MalformedEngineResponse",
+          "Engine worker returned a malformed response",
+        ));
       };
       worker.onmessage = (event) => {
         const response = event.data;
@@ -102,20 +125,21 @@ export class WorkerEngine {
           return;
         }
         if (response.type === "error") {
-          worker.terminate();
           if (!validError(response)) {
-            reject(new EngineError("MalformedEngineResponse", "Engine worker returned a malformed error"));
+            fail(new EngineError(
+              "MalformedEngineResponse",
+              "Engine worker returned a malformed error",
+            ));
             return;
           }
-          reject(new EngineError(response.error.error, response.error.message));
+          fail(new EngineError(response.error.error, response.error.message));
           return;
         }
         if (!validResult(response)) {
           malformed();
           return;
         }
-        worker.terminate();
-        resolve({
+        succeed({
           rawBytes: response.rawBytes,
           ...(response.header === undefined ? {} : { header: response.header }),
           ...(response.trailer === undefined ? {} : { trailer: response.trailer }),
@@ -125,10 +149,18 @@ export class WorkerEngine {
         });
       };
       worker.onerror = (event) => {
-        worker.terminate();
-        reject(new EngineError("WorkerFailure", event.message));
+        fail(new EngineError("WorkerFailure", event.message));
       };
-      worker.postMessage(message);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted === true) {
+        onAbort();
+        return;
+      }
+      try {
+        worker.postMessage(message);
+      } catch (error) {
+        fail(error);
+      }
     });
   }
 }

@@ -1,3 +1,5 @@
+import { MAX_DOCUMENT_INPUT_BYTES } from "../data/documents.mjs";
+
 /*
  * Design expressions use a permanently pinned 32-bit PRNG. The seed is first
  * offset by the golden-ratio word, then each draw applies the two Math.imul
@@ -23,6 +25,11 @@ export function evaluateDesignExpression(text) {
   if (typeof text !== "string") throw new TypeError("design expression must be text");
   const source = text.trim();
   if (source === "") throw new Error("enter a design expression");
+  if (exceedsUtf8Bytes(source, MAX_DOCUMENT_INPUT_BYTES)) {
+    throw new Error(
+      `design expression exceeds maximum UTF-8 size of ${MAX_DOCUMENT_INPUT_BYTES} bytes`,
+    );
+  }
   if (source.startsWith("[")) return literalArray(source);
 
   const call = source.match(CALL);
@@ -205,6 +212,17 @@ function requireFiniteResults(values, name) {
 
 function requireNoNamed(named, name) {
   if (Object.keys(named).length !== 0) throw new Error(`${name} does not accept named arguments`);
+}
+
+function exceedsUtf8Bytes(value, maximumBytes) {
+  let byteLength = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    byteLength += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 :
+      codePoint <= 0xffff ? 3 : 4;
+    if (byteLength > maximumBytes) return true;
+  }
+  return false;
 }
 
 function requireBoundedCount(count, label) {

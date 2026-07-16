@@ -5,12 +5,12 @@ import { EngineError } from "./types.mjs";
 /**
  * @typedef {Record<string, unknown>} EngineDocument
  * @typedef {{execute: (request: Record<string, unknown>, options?: Record<string, unknown>) => Promise<import("./types.mjs").EngineOutput>}} EngineExecutor
- * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, chains: number, executor: EngineExecutor, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void}} SampleInputs
- * @typedef {{fits: string[], executor: EngineExecutor}} DiagnoseInputs
- * @typedef {{model: string, design: string, parameterSource: EngineDocument, identities: EngineDocument, count: number, seed: number, executor: EngineExecutor}} GenerateInputs
- * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor}} RecoverInputs
- * @typedef {{fit: string, truth: EngineDocument, targets?: EngineDocument, interval?: number, executor: EngineExecutor}} RecoverCheckInputs
- * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor}} SbcInputs
+ * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, chains: number, executor: EngineExecutor, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void, signal?: AbortSignal}} SampleInputs
+ * @typedef {{fits: string[], executor: EngineExecutor, signal?: AbortSignal}} DiagnoseInputs
+ * @typedef {{model: string, design: string, parameterSource: EngineDocument, identities: EngineDocument, count: number, seed: number, executor: EngineExecutor, signal?: AbortSignal}} GenerateInputs
+ * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor, signal?: AbortSignal}} RecoverInputs
+ * @typedef {{fit: string, truth: EngineDocument, targets?: EngineDocument, interval?: number, executor: EngineExecutor, signal?: AbortSignal}} RecoverCheckInputs
+ * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor, signal?: AbortSignal}} SbcInputs
  * @typedef {{ok: true, outputs: import("./types.mjs").EngineOutput[]} | {ok: false, error: import("./types.mjs").EngineErrorShape}} RunResult
  */
 
@@ -20,27 +20,36 @@ export async function sample(inputs) {
     if (!Number.isInteger(inputs.chains) || inputs.chains < 1) {
       throw new EngineError("InvalidSettings", "sample chains must be a positive integer");
     }
-    const outputs = await Promise.all(
-      Array.from({ length: inputs.chains }, (_, chainId) =>
-        inputs.executor.execute(
-          {
-            command: "sample",
-            model: inputs.model,
-            data: inputs.data,
-            settings: inputs.settings,
-            seed: inputs.seed,
-            chain_id: chainId,
-          },
-          {
-            chainId,
-            ...(inputs.onDrawBatch === undefined
-              ? {}
-              : { onDrawBatch: inputs.onDrawBatch }),
-          },
+    const group = linkedAbortController(inputs.signal);
+    try {
+      const outputs = await Promise.all(
+        Array.from({ length: inputs.chains }, (_, chainId) =>
+          inputs.executor.execute(
+            {
+              command: "sample",
+              model: inputs.model,
+              data: inputs.data,
+              settings: inputs.settings,
+              seed: inputs.seed,
+              chain_id: chainId,
+            },
+            {
+              chainId,
+              signal: group.controller.signal,
+              ...(inputs.onDrawBatch === undefined
+                ? {}
+                : { onDrawBatch: inputs.onDrawBatch }),
+            },
+          ),
         ),
-      ),
-    );
-    return { ok: true, outputs };
+      );
+      return { ok: true, outputs };
+    } catch (error) {
+      group.controller.abort();
+      throw error;
+    } finally {
+      group.dispose();
+    }
   });
 }
 
@@ -57,7 +66,7 @@ export async function diagnose(inputs) {
     const output = await inputs.executor.execute({
       command: "diagnose",
       fit: inputs.fits.length === 1 ? firstFit : mergeChainFits(inputs.fits),
-    });
+    }, { signal: inputs.signal });
     return { ok: true, outputs: [output] };
   });
 }
@@ -73,7 +82,7 @@ export async function generate(inputs) {
       count: inputs.count,
       seed: inputs.seed,
       identities: inputs.identities,
-    });
+    }, { signal: inputs.signal });
     return { ok: true, outputs: [output] };
   });
 }
@@ -88,7 +97,7 @@ export async function recoverCheck(inputs) {
       ...(inputs.targets === undefined ? {} : { targets: inputs.targets }),
       ...(inputs.interval === undefined ? {} : { settings: { interval: inputs.interval } }),
     };
-    const output = await inputs.executor.execute(request);
+    const output = await inputs.executor.execute(request, { signal: inputs.signal });
     return { ok: true, outputs: [output] };
   });
 }
@@ -102,7 +111,7 @@ export async function recover(inputs) {
       data: inputs.data,
       settings: inputs.settings,
       seed: inputs.seed,
-    });
+    }, { signal: inputs.signal });
     return { ok: true, outputs: [output] };
   });
 }
@@ -116,7 +125,7 @@ export async function sbc(inputs) {
       data: inputs.data,
       settings: inputs.settings,
       seed: inputs.seed,
-    });
+    }, { signal: inputs.signal });
     return { ok: true, outputs: [output] };
   });
 }
@@ -192,6 +201,17 @@ function unavailableDiagnostics(parameterOrder) {
       .filter((name) => typeof name === "string")
       .map((name) => [name, null]),
   );
+}
+
+function linkedAbortController(signal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted === true) controller.abort();
+  return {
+    controller,
+    dispose: () => signal?.removeEventListener("abort", abort),
+  };
 }
 
 async function guard(operation) {

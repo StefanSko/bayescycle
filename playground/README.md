@@ -7,14 +7,16 @@ workflow semantics.
 The UI talks to one runtime boundary:
 
 ```text
-runtime.compile(source)
-runtime.run(request, onProgress)
+runtime.compile(source, { signal })
+runtime.run(request, onProgress, { signal })
 ```
 
 Compilation runs explicit user-controlled Python in a fresh disposable Pyodide
 worker. The trusted client validates and hashes the returned IR bytes before a
-separate engine worker consumes them. The complete trust boundary and explicit
-non-guarantees are in [`invariants.md`](invariants.md).
+separate engine worker consumes them. Long-running attempts are cancellable,
+and accepted source, share, schema, and JSON document inputs have explicit
+browser-safe bounds. The complete trust boundary and explicit non-guarantees
+are in [`invariants.md`](invariants.md).
 
 Runtime artifacts use the toolchain contracts in:
 
