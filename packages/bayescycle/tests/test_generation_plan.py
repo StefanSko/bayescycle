@@ -21,11 +21,18 @@ from bayescycle._workflow.generation_plan import (
     generation_invalidation_key,
     generation_plan_identity,
     parse_generation_plan_document,
+    resolve_generation_plan_document,
     serialize_generation_plan,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "playground/tests/fixtures/generation_plan.fixed.v0.json"
+DESIGN_SOURCE_FIXTURE = (
+    ROOT / "playground/tests/fixtures/generation_plan.fixed.design-source.v0.json"
+)
+DESIGN_SOURCE_ORDER_FIXTURE = (
+    ROOT / "playground/tests/fixtures/generation_plan.fixed.design-source-order.v0.json"
+)
 MODEL_BYTES = b'{"bayeswire_ir":1,"model":{}}\n'
 OTHER_MODEL_BYTES = b'{"bayeswire_ir":1,"model":{"name":"other"}}\n'
 DESIGN_BYTES = (
@@ -84,6 +91,111 @@ def test_serialized_fixed_plan_matches_shared_versioned_fixture() -> None:
     assert document.invalidation_key == INVALIDATION_KEY
     assert generation_plan_identity(plan) == IDENTITY
     assert generation_invalidation_key(plan) == INVALIDATION_KEY
+
+
+def test_design_source_matches_shared_fixture_and_resolves_byte_identically() -> None:
+    source = {
+        "x": "linspace(-2, 2, 3)",
+        "stale_μ": "repeat([0], 3)",
+    }
+    plan = generate_datasets(
+        MODEL_BYTES,
+        design=DESIGN_BYTES,
+        design_source=source,
+        parameter_source=Fixed(FIXED_BYTES),
+        count=2,
+        seed=7,
+    )
+    source["x"] = "changed after construction"
+    fixture = DESIGN_SOURCE_FIXTURE.read_bytes()
+    assert serialize_generation_plan(plan) == fixture
+    assert parse_generation_plan_document(fixture).bytes == fixture
+
+    resolved = resolve_generation_plan_document(
+        fixture,
+        model_ir_bytes=MODEL_BYTES,
+        design_bytes=DESIGN_BYTES,
+        fixed_parameters_bytes=FIXED_BYTES,
+    )
+    assert resolved.design_source == {
+        "x": "linspace(-2, 2, 3)",
+        "stale_μ": "repeat([0], 3)",
+    }
+    assert serialize_generation_plan(resolved) == fixture
+
+
+@pytest.mark.parametrize(
+    "design_source",
+    [[], {"": "x"}, {"x": ""}, {"x": 1}, None],
+)
+def test_rejects_malformed_serialized_design_source(design_source: object) -> None:
+    document = json.loads(DESIGN_SOURCE_FIXTURE.read_bytes())
+    document["design_source"] = design_source
+    encoded = json.dumps(document, separators=(",", ":")).encode() + b"\n"
+    with pytest.raises(GenerationPlanError, match="design_source"):
+        parse_generation_plan_document(encoded)
+
+
+def test_design_source_canonicalizes_adversarial_keys_by_code_points() -> None:
+    source = {
+        "10": "10",
+        "2": "2",
+        "01": "01",
+        "x": "x",
+        "1": "1",
+        "😀": "astral",
+        "！": "high BMP",
+    }
+    plan = generate_datasets(
+        MODEL_BYTES,
+        design=DESIGN_BYTES,
+        design_source=source,
+        parameter_source=Fixed(FIXED_BYTES),
+        count=2,
+        seed=7,
+    )
+    fixture = DESIGN_SOURCE_ORDER_FIXTURE.read_bytes()
+    assert serialize_generation_plan(plan) == fixture
+    assert parse_generation_plan_document(fixture).bytes == fixture
+
+
+def test_rejects_unsorted_design_source_document() -> None:
+    canonical = DESIGN_SOURCE_FIXTURE.read_text(encoding="utf-8")
+    source = '"design_source":{"stale_μ":"repeat([0], 3)","x":"linspace(-2, 2, 3)"}'
+    unsorted = '"design_source":{"x":"linspace(-2, 2, 3)","stale_μ":"repeat([0], 3)"}'
+    with pytest.raises(GenerationPlanError, match="strictly ascending"):
+        parse_generation_plan_document(canonical.replace(source, unsorted).encode())
+
+
+@pytest.mark.parametrize("design_source", [{"\ud800": "x"}, {"x": "\ud800"}])
+def test_rejects_non_well_formed_in_memory_design_source(
+    design_source: dict[str, str],
+) -> None:
+    with pytest.raises(GenerationPlanError, match="well-formed Unicode scalar-value"):
+        generate_datasets(
+            MODEL_BYTES,
+            design=DESIGN_BYTES,
+            design_source=design_source,
+            parameter_source=Fixed(FIXED_BYTES),
+        )
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    ['"design_source":{"\\ud800":"x"}', '"design_source":{"x":"\\ud800"}'],
+)
+def test_rejects_non_well_formed_document_design_source(replacement: str) -> None:
+    canonical = DESIGN_SOURCE_FIXTURE.read_text(encoding="utf-8")
+    source = '"design_source":{"stale_μ":"repeat([0], 3)","x":"linspace(-2, 2, 3)"}'
+    with pytest.raises(GenerationPlanError, match="well-formed Unicode scalar-value"):
+        parse_generation_plan_document(canonical.replace(source, replacement).encode())
+
+
+def test_serializer_wraps_residual_unicode_encode_error() -> None:
+    plan = _fixed_plan()
+    object.__setattr__(plan, "design_source", {"x": "\ud800"})
+    with pytest.raises(GenerationPlanError, match="well-formed Unicode"):
+        serialize_generation_plan(plan)
 
 
 def test_serializes_all_exact_parameter_source_variants() -> None:

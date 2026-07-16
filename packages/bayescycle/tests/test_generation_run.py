@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -468,6 +469,107 @@ def test_generation_run_rejects_external_unbounded_or_invalid_metadata(tmp_path:
     metadata_path.write_text('{"format":' + nested + "}\n")
     with pytest.raises(WorkflowError, match="depth"):
         load_generation_run(run_dir)
+
+
+def test_generation_run_preserves_design_source_through_replay(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model_bytes = b'{"bayeswire_ir":1,"model":{}}\n'
+    design_bytes = (
+        b'{"format":"bayescycle.data.json.v1","variables":'
+        b'{"x":{"dtype":"float64","shape":[1],"values":[0.0]}}}\n'
+    )
+    parameter_bytes = (
+        b'{"format":"bayescycle.data.json.v1","variables":'
+        b'{"alpha":{"dtype":"float64","shape":[],"values":[0.5]}}}\n'
+    )
+    plan = generate_datasets(
+        model_bytes,
+        design=design_bytes,
+        design_source={"x": "repeat([0], 1)"},
+        parameter_source=Fixed(parameter_bytes),
+        count=1,
+        seed=0,
+    )
+    engine = _write_fake_generation_engine(tmp_path)
+    original = tmp_path / "design-source-run"
+    assert execute_generation_run(output_dir=original, plan=plan, engine=str(engine)) == 0
+    original_plan = (original / "generation-plan.json").read_bytes()
+    assert json.loads(original_plan)["design_source"] == {"x": "repeat([0], 1)"}
+
+    replay = tmp_path / "design-source-replay"
+    assert (
+        main(
+            [
+                "replay",
+                str(original),
+                "-o",
+                str(replay),
+                "--engine",
+                str(engine),
+                "--check-only",
+            ]
+        )
+        == 0
+    )
+    assert not replay.exists()
+    capsys.readouterr()
+
+    assert main(["replay", str(original), "-o", str(replay), "--engine", str(engine)]) == 0
+    assert (replay / "generation-plan.json").read_bytes() == original_plan
+    assert json.loads(capsys.readouterr().out)["byte_identical"] is True
+
+
+def test_replay_check_reports_lone_surrogate_as_domain_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model_bytes = b'{"bayeswire_ir":1,"model":{}}\n'
+    design_bytes = (
+        b'{"format":"bayescycle.data.json.v1","variables":'
+        b'{"x":{"dtype":"float64","shape":[1],"values":[0.0]}}}\n'
+    )
+    parameter_bytes = (
+        b'{"format":"bayescycle.data.json.v1","variables":'
+        b'{"alpha":{"dtype":"float64","shape":[],"values":[0.5]}}}\n'
+    )
+    plan = generate_datasets(
+        model_bytes,
+        design=design_bytes,
+        design_source={"x": "repeat([0], 1)"},
+        parameter_source=Fixed(parameter_bytes),
+        count=1,
+        seed=0,
+    )
+    engine = _write_fake_generation_engine(tmp_path)
+    original = tmp_path / "surrogate-run"
+    assert execute_generation_run(output_dir=original, plan=plan, engine=str(engine)) == 0
+
+    plan_path = original / "generation-plan.json"
+    malformed = plan_path.read_bytes().replace(b'"repeat([0], 1)"', b'"\\ud800"')
+    plan_path.write_bytes(malformed)
+    metadata_path = original / "run.json"
+    metadata = json.loads(metadata_path.read_bytes())
+    metadata["plan"]["sha256"] = f"sha256:{hashlib.sha256(malformed).hexdigest()}"
+    metadata_path.write_text(json.dumps(metadata, separators=(",", ":")) + "\n")
+    capsys.readouterr()
+
+    replay = tmp_path / "surrogate-replay"
+    code = main(
+        [
+            "replay",
+            str(original),
+            "-o",
+            str(replay),
+            "--engine",
+            str(engine),
+            "--check-only",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "well-formed Unicode scalar-value" in captured.err
+    assert "Traceback" not in captured.err
+    assert not replay.exists()
 
 
 def test_generation_run_is_portable_and_replays_without_python_source(

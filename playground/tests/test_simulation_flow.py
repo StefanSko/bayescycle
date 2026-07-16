@@ -6,6 +6,15 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_explicit_documents_simulate_sample_and_check_recovery(page: Page, base_url: str) -> None:
+    page.add_init_script(
+        """const createObjectURL = URL.createObjectURL.bind(URL);
+        window.__artifactBlobs = new Map();
+        URL.createObjectURL = (blob) => {
+            const url = createObjectURL(blob);
+            window.__artifactBlobs.set(url, blob);
+            return url;
+        };"""
+    )
     page.goto(f"{base_url}/site/")
     expect(page.locator("#generate-button")).to_be_attached()
     source = """from bayeswire import Data, Observed, Param, model
@@ -39,6 +48,24 @@ class Generative:
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-generation-plan")).to_be_visible()
     expect(page.locator("#artifact-generation-run")).to_be_visible()
+    forms_plan = page.locator("#artifact-generation-plan a").evaluate(
+        "async (link) => JSON.parse(await window.__artifactBlobs.get(link.href).text())"
+    )
+    assert forms_plan["design_source"] == {"x": "linspace(-2, 2, 25)"}
+
+    page.locator("#design-json-toggle").click()
+    page.locator("#generate-button").click()
+    page.wait_for_function(
+        """async () => {
+            const link = document.querySelector("#artifact-generation-plan a");
+            if (link === null || link.href === "") return false;
+            const blob = window.__artifactBlobs.get(link.href);
+            if (blob === undefined) return false;
+            const plan = JSON.parse(await blob.text());
+            return !Object.hasOwn(plan, "design_source");
+        }""",
+        timeout=120_000,
+    )
     expect(page.locator("#dataset-source-generated")).to_be_enabled()
     page.locator("#dataset-source-generated").check()
     expect(page.locator("#fit-button")).to_be_enabled()

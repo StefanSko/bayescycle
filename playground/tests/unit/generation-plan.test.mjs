@@ -31,8 +31,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-async function fixtureBytes() {
-  const response = await fetch("/tests/fixtures/generation_plan.fixed.v0.json");
+async function fixtureBytes(name = "generation_plan.fixed.v0.json") {
+  const response = await fetch(`/tests/fixtures/${name}`);
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -73,6 +73,93 @@ export default [
       assert(document.identityHash === IDENTITY && document.invalidationKey === INVALIDATION_KEY, "parsed identities differ");
       assert(await generationPlanIdentity(plan) === IDENTITY, "plan identity differs");
       assert(await generationInvalidationKey(plan) === INVALIDATION_KEY, "invalidation key differs");
+    },
+  },
+  {
+    name: "serializes design-source shared fixture and rejects malformed provenance",
+    fn: async () => {
+      const designSource = {
+        x: "linspace(-2, 2, 3)",
+        "stale_μ": "repeat([0], 3)",
+      };
+      const plan = generateDatasets(MODEL_BYTES, {
+        design: DESIGN_BYTES,
+        designSource,
+        parameterSource: fixed(FIXED_BYTES),
+        count: 2,
+        seed: 7,
+      });
+      designSource.x = "changed after construction";
+      const fixture = await fixtureBytes("generation_plan.fixed.design-source.v0.json");
+      assert(TEXT.decode(await serializeGenerationPlan(plan)) === TEXT.decode(fixture), "design-source fixture bytes differ");
+      const parsed = await parseGenerationPlanDocument(fixture);
+      assert(TEXT.decode(parsed.bytes) === TEXT.decode(fixture), "design-source parsed bytes changed");
+
+      const document = JSON.parse(TEXT.decode(fixture));
+      for (const malformed of [[], { "": "x" }, { x: "" }, { x: 1 }]) {
+        document.design_source = malformed;
+        await rejects(
+          () => parseGenerationPlanDocument(UTF8.encode(`${JSON.stringify(document)}\n`)),
+          "design_source",
+        );
+      }
+      await rejects(() => generateDatasets(MODEL_BYTES, {
+        design: DESIGN_BYTES,
+        designSource: null,
+        parameterSource: fixed(FIXED_BYTES),
+      }), "design_source");
+    },
+  },
+  {
+    name: "canonicalizes adversarial design-source keys by Unicode code points",
+    fn: async () => {
+      const designSource = {
+        10: "10",
+        2: "2",
+        "01": "01",
+        x: "x",
+        1: "1",
+        "😀": "astral",
+        "！": "high BMP",
+      };
+      const plan = generateDatasets(MODEL_BYTES, {
+        design: DESIGN_BYTES,
+        designSource,
+        parameterSource: fixed(FIXED_BYTES),
+        count: 2,
+        seed: 7,
+      });
+      const fixture = await fixtureBytes("generation_plan.fixed.design-source-order.v0.json");
+      assert(TEXT.decode(await serializeGenerationPlan(plan)) === TEXT.decode(fixture), "adversarial key order differs");
+      assert(TEXT.decode((await parseGenerationPlanDocument(fixture)).bytes) === TEXT.decode(fixture), "ordered fixture did not parse");
+    },
+  },
+  {
+    name: "rejects unsorted and non-well-formed design-source strings",
+    fn: async () => {
+      for (const designSource of [{ "\ud800": "x" }, { x: "\ud800" }]) {
+        await rejects(() => generateDatasets(MODEL_BYTES, {
+          design: DESIGN_BYTES,
+          designSource,
+          parameterSource: fixed(FIXED_BYTES),
+        }), "well-formed Unicode scalar-value");
+      }
+
+      const fixture = TEXT.decode(
+        await fixtureBytes("generation_plan.fixed.design-source.v0.json"),
+      );
+      const source = '"design_source":{"stale_μ":"repeat([0], 3)","x":"linspace(-2, 2, 3)"}';
+      const malformedSources = [
+        '"design_source":{"x":"linspace(-2, 2, 3)","stale_μ":"repeat([0], 3)"}',
+        '"design_source":{"\\ud800":"x"}',
+        '"design_source":{"x":"\\ud800"}',
+      ];
+      for (const malformed of malformedSources) {
+        await rejects(
+          () => parseGenerationPlanDocument(UTF8.encode(fixture.replace(source, malformed))),
+          malformed.includes("stale_μ") ? "strictly ascending" : "well-formed Unicode scalar-value",
+        );
+      }
     },
   },
   {

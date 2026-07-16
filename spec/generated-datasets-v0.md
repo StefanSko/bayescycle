@@ -36,8 +36,8 @@ supported by this v0 generation profile.
 ## Generation plan
 
 An executable plan owns exact model, design, and source bytes. Durable
-`generation-plan.json` is hash-only provenance, encoded as compact UTF-8 JSON
-followed by one LF:
+`generation-plan.json` is hash-resolved provenance, encoded as compact UTF-8
+JSON followed by one LF:
 
 ```json
 {
@@ -45,6 +45,7 @@ followed by one LF:
   "kind":"draw",
   "count":100,
   "seed":0,
+  "design_source":{"x":"linspace(-2, 2, 25)"},
   "distribution":{
     "kind":"joint-predict",
     "parameters":{"kind":"fixed","parameters_hash":"sha256:..."},
@@ -75,6 +76,15 @@ The other exact parameter-source forms are:
   "fit_data_hash":"sha256:..."
 }
 ```
+
+Optional top-level `design_source`, when present, appears between `seed` and
+`distribution` and maps design slot names to the non-empty expression strings
+that authored them. Keys and values must be well-formed Unicode scalar-value
+strings; keys are non-empty, and entries are serialized in strictly ascending
+lexicographic order by Unicode code points. Parsers reject any other entry
+order. The field is provenance only: consumers never evaluate it, require it
+to match design variables, or use it for generation. Exact `design.json` bytes
+remain authoritative. Plans authored through direct JSON omit the field.
 
 Optional model-prior provenance has exactly
 `claimed_source_model_hash` and `claimed_outcome_model_hash`. These are opaque
