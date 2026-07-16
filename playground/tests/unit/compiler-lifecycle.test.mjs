@@ -154,6 +154,26 @@ export default [
       }
       assert(dtypeError.includes("dtype is unsupported"), "unknown schema dtype was accepted");
 
+      compilerModule.validateModelSchema({
+        ...MODEL_SCHEMA,
+        data: [{ name: "x", dtype: "float64", kind: "vector", length: 0 }],
+      });
+      for (const length of [-1, 1.5, "3"]) {
+        let lengthError = "";
+        try {
+          compilerModule.validateModelSchema({
+            ...MODEL_SCHEMA,
+            data: [{ name: "x", dtype: "float64", kind: "vector", length }],
+          });
+        } catch (error) {
+          lengthError = String(error);
+        }
+        assert(
+          lengthError.includes("length must be a non-negative integer"),
+          `schema length ${JSON.stringify(length)} was accepted`,
+        );
+      }
+
       let errorWorker;
       const failing = client({ workerFactory: () => {
         errorWorker = new FakeWorker(() => queueMicrotask(() => errorWorker.emit("error", { message: "boom" })));

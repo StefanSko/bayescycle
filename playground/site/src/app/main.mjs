@@ -353,6 +353,10 @@ function defaultDesignExpressions(schema) {
 
 function defaultExpression(slot) {
   if (slot.kind !== "vector") return "[]";
+  // linspace needs n >= 2; exact lengths below that get a literal default.
+  if (slot.length !== null && slot.length < 2) {
+    return JSON.stringify(Array(slot.length).fill(0));
+  }
   return `linspace(-2, 2, ${slot.length ?? 25})`;
 }
 

@@ -195,8 +195,8 @@ export function validateModelSchema(value) {
     if (!["scalar", "vector", "matrix", "array"].includes(entry.kind)) {
       throw malformedSchema(`data ${index} kind is unsupported`);
     }
-    if (entry.length !== null && (!Number.isSafeInteger(entry.length) || entry.length < 1)) {
-      throw malformedSchema(`data ${index} length must be a positive integer or null`);
+    if (entry.length !== null && (!Number.isSafeInteger(entry.length) || entry.length < 0)) {
+      throw malformedSchema(`data ${index} length must be a non-negative integer or null`);
     }
     return Object.freeze({ ...entry });
   });
