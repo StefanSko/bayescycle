@@ -7,7 +7,6 @@ CASES = [
     "generation convenience equals draw of joint predict for every source",
     "serialized fixed plan matches shared versioned fixture and identities",
     "rejects designSource as a generation option",
-    "serializes design-source shared fixture and rejects malformed provenance",
     "serializes exact model-prior and posterior source variants",
     "plans own bytes and reject functions DOM and backend-like values",
     "rejects plan bounds unknown fields and mutable executable shapes",

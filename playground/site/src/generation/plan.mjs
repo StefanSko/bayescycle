@@ -76,25 +76,16 @@ export function jointPredict(parameters, outcomes) {
   return Object.freeze({ kind: "joint-predict", parameters, outcomes });
 }
 
-export function draw(distribution, count, seed, designSource = undefined) {
+export function draw(distribution, count, seed) {
   validateJointPredict(distribution);
   integer(count, "count", 1, MAX_GENERATION_COUNT);
   integer(seed, "seed", 0, MAX_SAFE_INTEGER);
-  if (designSource === undefined) {
-    return Object.freeze({ kind: "draw", count, seed, distribution });
-  }
-  return Object.freeze({
-    kind: "draw",
-    count,
-    seed,
-    designSource: designSourceValue(designSource),
-    distribution,
-  });
+  return Object.freeze({ kind: "draw", count, seed, distribution });
 }
 
 export function generateDatasets(modelIrBytes, options) {
   if (!isObject(options)) throw new GenerationPlanError("generation options must be an object");
-  const allowed = new Set(["design", "designSource", "parameterSource", "count", "seed"]);
+  const allowed = new Set(["design", "parameterSource", "count", "seed"]);
   const unknown = Object.keys(options).filter((key) => !allowed.has(key));
   if (unknown.length > 0 || !("design" in options) || !("parameterSource" in options)) {
     throw new GenerationPlanError(`generation options have unknown or missing fields: ${JSON.stringify(unknown)}`);
@@ -103,23 +94,14 @@ export function generateDatasets(modelIrBytes, options) {
     jointPredict(options.parameterSource, outcomesOf(modelIrBytes, options.design)),
     options.count ?? 100,
     options.seed ?? 0,
-    options.designSource,
   );
 }
 
 export function validateGenerationPlan(value) {
-  const hasDesignSource = isObject(value) && Object.hasOwn(value, "designSource");
-  exactKeys(
-    value,
-    hasDesignSource
-      ? ["kind", "count", "seed", "designSource", "distribution"]
-      : ["kind", "count", "seed", "distribution"],
-    "draw plan",
-  );
+  exactKeys(value, ["kind", "count", "seed", "distribution"], "draw plan");
   if (value.kind !== "draw") throw new GenerationPlanError("plan kind must be draw");
   integer(value.count, "count", 1, MAX_GENERATION_COUNT);
   integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
-  if (hasDesignSource) designSourceValue(value.designSource);
   validateJointPredict(value.distribution);
   return value;
 }
@@ -133,9 +115,6 @@ export async function serializeGenerationPlan(plan) {
     kind: "draw",
     count: plan.count,
     seed: plan.seed,
-    ...(Object.hasOwn(plan, "designSource")
-      ? { design_source: Object.fromEntries(Object.entries(plan.designSource)) }
-      : {}),
     distribution: {
       kind: "joint-predict",
       parameters,
@@ -167,18 +146,10 @@ export async function parseGenerationPlanDocument(input) {
   if (!isObject(value) || value.generation_plan_format !== "v0-provisional") {
     throw new GenerationPlanError("generation plan format must be v0-provisional");
   }
-  const hasDesignSource = Object.hasOwn(value, "design_source");
-  exactKeys(
-    value,
-    hasDesignSource
-      ? ["generation_plan_format", "kind", "count", "seed", "design_source", "distribution"]
-      : ["generation_plan_format", "kind", "count", "seed", "distribution"],
-    "generation plan",
-  );
+  exactKeys(value, ["generation_plan_format", "kind", "count", "seed", "distribution"], "generation plan");
   if (value.kind !== "draw") throw new GenerationPlanError("generation plan kind must be draw");
   integer(value.count, "count", 1, MAX_GENERATION_COUNT);
   integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
-  if (hasDesignSource) designSourceValue(value.design_source);
   const distribution = value.distribution;
   exactKeys(distribution, ["kind", "parameters", "outcomes"], "distribution");
   if (distribution.kind !== "joint-predict") {
@@ -332,20 +303,6 @@ function authoredProvenanceValue(value) {
     claimedSourceModelHash: value.claimedSourceModelHash,
     claimedOutcomeModelHash: value.claimedOutcomeModelHash,
   });
-}
-
-function designSourceValue(value) {
-  if (!isObject(value)) throw new GenerationPlanError("design_source must be an object");
-  const entries = Object.entries(value);
-  for (const [name, expression] of entries) {
-    if (name.length === 0) {
-      throw new GenerationPlanError("design_source keys must be non-empty strings");
-    }
-    if (typeof expression !== "string" || expression.length === 0) {
-      throw new GenerationPlanError("design_source values must be non-empty strings");
-    }
-  }
-  return Object.freeze(Object.fromEntries(entries));
 }
 
 function copyBytes(value, label, maximum = MAX_GENERATION_INPUT_BYTES) {
