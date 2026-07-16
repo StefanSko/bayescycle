@@ -49,6 +49,11 @@ def test_native_document_surfaces_are_present() -> None:
         "observed-data",
         "design-data",
         "truth-data",
+        "design-slots",
+        "design-json-toggle",
+        "parameter-fields",
+        "truth-json-toggle",
+        "observed-data-field",
         "generation-count",
         "artifact-generated-datasets",
         "generated-dataset-index",
@@ -99,6 +104,15 @@ def test_application_does_not_infer_raw_ir_semantics() -> None:
     )
     for token in forbidden:
         assert token not in application_source
+
+
+def test_model_schema_comes_from_live_python_worker() -> None:
+    worker_source = (SITE_ROOT / "src" / "compile" / "compiler-worker.mjs").read_text()
+    client_source = (SITE_ROOT / "src" / "compile" / "index.mjs").read_text()
+    application_source = (SITE_ROOT / "src" / "app" / "main.mjs").read_text()
+    assert '"model_schema": _model_schema(selected_model)' in worker_source
+    assert "validateModelSchema(message.modelSchema)" in client_source
+    assert "JSON.parse" not in application_source.split("function configureAuthoring", 1)[0]
 
 
 def test_svg_renderer_theme_variables_are_defined() -> None:

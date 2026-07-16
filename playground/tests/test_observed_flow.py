@@ -37,10 +37,12 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     expect(page.locator("#run-error")).to_be_hidden()
 
     expect(page.locator("#param-source-posterior")).to_be_enabled()
+    expect(page.locator("#design-json-toggle")).to_be_disabled()
+    expect(page.locator("#design-data")).to_be_visible()
     page.locator("#design-data").fill('{"n_schools":8,"sigma":[15,10,16,11,9,11,10,18]}')
     page.locator("#generation-count").fill("2")
     page.locator("#param-source-posterior").check()
-    expect(page.locator("#generate-button")).to_have_text("Generate from posterior")
+    expect(page.locator("#generate-button")).to_have_text("Simulate 2 datasets from the posterior")
     expect(page.locator("#generate-button")).to_be_enabled()
     page.locator("#generate-button").click()
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)

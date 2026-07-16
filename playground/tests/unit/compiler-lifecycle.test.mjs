@@ -4,6 +4,13 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+const MODEL_SCHEMA = {
+  schema_format: "bayescycle.playground.model-schema.v0",
+  parameters: [],
+  data: [],
+  observed: [],
+};
+
 class FakeWorker {
   constructor(onPost = () => {}) {
     this.listeners = new Map();
@@ -96,7 +103,7 @@ export default [
     name: "worker terminates before success and declaration failure settle",
     fn: async () => {
       for (const response of [
-        (request) => ({ type: "compiled", id: request.id, irBytes: new TextEncoder().encode("{}").buffer, irHash: "untrusted" }),
+        (request) => ({ type: "compiled", id: request.id, irBytes: new TextEncoder().encode("{}").buffer, modelSchema: MODEL_SCHEMA, irHash: "untrusted" }),
         (request) => ({ type: "compile-error", id: request.id, exceptionType: "ValueError", message: "bad model", traceback: "trace" }),
       ]) {
         let worker;
@@ -124,6 +131,49 @@ export default [
       } });
       await rejectedAfterTermination(malformed.compile("source"), malformedWorker, "malformed");
 
+      let malformedSchemaWorker;
+      const malformedSchema = client({ workerFactory: () => {
+        malformedSchemaWorker = readyThen((request) => ({
+          type: "compiled", id: request.id,
+          irBytes: new TextEncoder().encode("{}").buffer,
+          modelSchema: { ...MODEL_SCHEMA, extra: true },
+        }))();
+        return malformedSchemaWorker;
+      } });
+      await rejectedAfterTermination(
+        malformedSchema.compile("source"), malformedSchemaWorker, "malformed model schema",
+      );
+      let dtypeError = "";
+      try {
+        compilerModule.validateModelSchema({
+          ...MODEL_SCHEMA,
+          data: [{ name: "x", dtype: "float128", kind: "vector", length: null }],
+        });
+      } catch (error) {
+        dtypeError = String(error);
+      }
+      assert(dtypeError.includes("dtype is unsupported"), "unknown schema dtype was accepted");
+
+      compilerModule.validateModelSchema({
+        ...MODEL_SCHEMA,
+        data: [{ name: "x", dtype: "float64", kind: "vector", length: 0 }],
+      });
+      for (const length of [-1, 1.5, "3"]) {
+        let lengthError = "";
+        try {
+          compilerModule.validateModelSchema({
+            ...MODEL_SCHEMA,
+            data: [{ name: "x", dtype: "float64", kind: "vector", length }],
+          });
+        } catch (error) {
+          lengthError = String(error);
+        }
+        assert(
+          lengthError.includes("length must be a non-negative integer"),
+          `schema length ${JSON.stringify(length)} was accepted`,
+        );
+      }
+
       let errorWorker;
       const failing = client({ workerFactory: () => {
         errorWorker = new FakeWorker(() => queueMicrotask(() => errorWorker.emit("error", { message: "boom" })));
@@ -144,7 +194,7 @@ export default [
       let worker;
       const compiler = client({
         workerFactory: () => {
-          worker = readyThen((request) => ({ type: "compiled", id: request.id, irBytes: new Uint8Array([1, 2]).buffer }))();
+          worker = readyThen((request) => ({ type: "compiled", id: request.id, irBytes: new Uint8Array([1, 2]).buffer, modelSchema: MODEL_SCHEMA }))();
           return worker;
         },
         maxOutputBytes: 1,

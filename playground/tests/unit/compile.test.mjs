@@ -29,6 +29,27 @@ function canonicalString(value) {
   return JSON.stringify(canonicalJson(value));
 }
 
+function equalLinearSchema(schema) {
+  assert(
+    canonicalString(schema.data) === canonicalString([
+      { name: "x", dtype: "float64", kind: "vector", length: null },
+    ]),
+    `unexpected linear data schema: ${JSON.stringify(schema.data)}`,
+  );
+  assert(
+    JSON.stringify(schema.observed) === JSON.stringify([{ name: "y" }]),
+    `unexpected linear observed schema: ${JSON.stringify(schema.observed)}`,
+  );
+  assert(
+    schema.parameters.map((parameter) => parameter.name).join(",") === "alpha,beta,sigma" &&
+      schema.parameters[0].prior === "Normal(0.0, 1.0)" &&
+      schema.parameters[0].default === 0 &&
+      schema.parameters[2].constraint === "> 0" &&
+      schema.parameters[2].default === null,
+    `unexpected linear parameter schema: ${JSON.stringify(schema.parameters)}`,
+  );
+}
+
 export default [
   {
     name: "all 11 corpus models match native hashes and golden IR",
@@ -45,9 +66,21 @@ export default [
         const result = await compile(source);
         assert(result.ok, `${name} compilation failed:\n${result.traceback}`);
         assert(
+          result.modelSchema.schema_format === "bayescycle.playground.model-schema.v0",
+          `${name} did not return the worker-derived model schema`,
+        );
+        assert(
+          result.modelSchema.parameters.every((parameter) =>
+            typeof parameter.prior === "string" && Array.isArray(parameter.shape)),
+          `${name} returned malformed parameter schema entries`,
+        );
+        assert(
           result.irHash === hashes[name],
           `${name} hash mismatch: expected ${hashes[name]}, got ${result.irHash}`,
         );
+        if (name === "linear_regression") {
+          equalLinearSchema(result.modelSchema);
+        }
         const actual = canonicalString(JSON.parse(UTF8.decode(result.irBytes)));
         const golden = canonicalString(JSON.parse(goldenText));
         assert(actual === golden, `${name} IR differs from its golden document`);
@@ -90,6 +123,33 @@ export default [
         result.message === "Expected exactly one @model class, found 0",
         `unexpected model-count error: ${result.message}`,
       );
+    },
+  },
+  {
+    name: "index vector design slots are marked integer",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Data, Observed, Param, model
+from bayeswire.distributions import Binomial, Normal
+
+@model
+class IndexedGroups:
+    theta = Param(Normal(0.0, 1.0), size=3)
+    idx = Data.vector()
+    x = Data.vector()
+    w = Data.vector(3)
+    trials = Data.vector()
+    y = Observed(Normal(theta[idx] + x + w, 1.0))
+    k = Observed(Binomial(trials, 0.5))
+`);
+      assert(result.ok, `indexed model compilation failed: ${result.message}`);
+      const byName = Object.fromEntries(
+        result.modelSchema.data.map((slot) => [slot.name, slot]),
+      );
+      assert(byName.idx.dtype === "int64", `index slot dtype: ${byName.idx.dtype}`);
+      assert(byName.x.dtype === "float64", `value slot dtype: ${byName.x.dtype}`);
+      assert(byName.trials.dtype === "int64", `trial-count slot dtype: ${byName.trials.dtype}`);
+      assert(byName.w.length === 3, `exact-shape slot length: ${byName.w.length}`);
+      assert(byName.x.length === null, `unresolved slot length: ${byName.x.length}`);
     },
   },
   {
