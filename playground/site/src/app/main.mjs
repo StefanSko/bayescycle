@@ -141,6 +141,11 @@ function fetchOptionalAsset(path) {
 }
 
 async function shareProject() {
+  // Authoring state describes the compiled schema; a source edit resets the
+  // compile, so stale form modes and entries are omitted from the payload
+  // and the recipient lands in the JSON documents instead.
+  const authoringCurrent = state.compile.status === "compiled" &&
+    state.compile.revision === state.sourceRevision;
   const project = {
     v: 1,
     source: source.value,
@@ -152,10 +157,12 @@ async function shareProject() {
       seed: integerValue("#generation-seed"),
       count: integerValue("#generation-count"),
     },
-    authoring: {
-      design: { json: designJsonMode, expressions: { ...designExpressions } },
-      truth: { json: truthJsonMode, values: { ...fixedValueEntries } },
-    },
+    ...(authoringCurrent ? {
+      authoring: {
+        design: { json: designJsonMode, expressions: { ...designExpressions } },
+        truth: { json: truthJsonMode, values: { ...fixedValueEntries } },
+      },
+    } : {}),
   };
   const payload = await encodeProject(project);
   const url = new URL(window.location.href);
