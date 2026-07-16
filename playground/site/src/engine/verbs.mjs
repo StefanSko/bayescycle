@@ -8,10 +8,6 @@ import { EngineError } from "./types.mjs";
  * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, chains: number, executor: EngineExecutor, onDrawBatch?: (batch: import("./types.mjs").DrawBatch) => void}} SampleInputs
  * @typedef {{fits: string[], executor: EngineExecutor}} DiagnoseInputs
  * @typedef {{model: string, design: string, parameterSource: EngineDocument, identities: EngineDocument, count: number, seed: number, executor: EngineExecutor}} GenerateInputs
- * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor}} PriorPredictiveInputs
- * @typedef {{model: EngineDocument, data: EngineDocument, fit: string, seed: number, executor: EngineExecutor}} PosteriorPredictiveInputs
- * @typedef {PosteriorPredictiveInputs} PosteriorCheckInputs
- * @typedef {{model: EngineDocument, data: EngineDocument, truth: EngineDocument, seed: number, executor: EngineExecutor}} SimulateInputs
  * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor}} RecoverInputs
  * @typedef {{fit: string, truth: EngineDocument, targets?: EngineDocument, interval?: number, executor: EngineExecutor}} RecoverCheckInputs
  * @typedef {{model: EngineDocument, data: EngineDocument, settings: EngineDocument, seed: number, executor: EngineExecutor}} SbcInputs
@@ -77,62 +73,6 @@ export async function generate(inputs) {
       count: inputs.count,
       seed: inputs.seed,
       identities: inputs.identities,
-    });
-    return { ok: true, outputs: [output] };
-  });
-}
-
-/** @param {PriorPredictiveInputs} inputs @returns {Promise<RunResult>} */
-export async function priorPredictive(inputs) {
-  return guard(async () => {
-    const output = await inputs.executor.execute({
-      command: "prior-predictive",
-      model: inputs.model,
-      data: inputs.data,
-      settings: inputs.settings,
-      seed: inputs.seed,
-    });
-    return { ok: true, outputs: [output] };
-  });
-}
-
-/** @param {PosteriorPredictiveInputs} inputs @returns {Promise<RunResult>} */
-export async function posteriorPredictive(inputs) {
-  return guard(async () => {
-    const output = await inputs.executor.execute({
-      command: "posterior-predictive",
-      model: inputs.model,
-      data: inputs.data,
-      fit: inputs.fit,
-      seed: inputs.seed,
-    });
-    return { ok: true, outputs: [output] };
-  });
-}
-
-/** @param {PosteriorCheckInputs} inputs @returns {Promise<RunResult>} */
-export async function posteriorCheck(inputs) {
-  return guard(async () => {
-    const output = await inputs.executor.execute({
-      command: "posterior-check",
-      model: inputs.model,
-      data: inputs.data,
-      fit: inputs.fit,
-      seed: inputs.seed,
-    });
-    return { ok: true, outputs: [output] };
-  });
-}
-
-/** @param {SimulateInputs} inputs @returns {Promise<RunResult>} */
-export async function simulate(inputs) {
-  return guard(async () => {
-    const output = await inputs.executor.execute({
-      command: "simulate",
-      model: inputs.model,
-      data: inputs.data,
-      truth: inputs.truth,
-      seed: inputs.seed,
     });
     return { ok: true, outputs: [output] };
   });
