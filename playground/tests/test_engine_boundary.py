@@ -9,6 +9,8 @@ def test_engine_worker_message_boundary(
 ) -> None:
     results = run_suite(page, base_url, "engine-boundary")
     assert [result["name"] for result in results] == [
-        "engine worker rejects malformed and unknown responses"
+        "engine worker rejects malformed and unknown responses",
+        "first chain failure and run abort terminate sibling workers",
+        "aborting an engine execution terminates its worker with a typed cancellation",
     ]
-    assert results[0]["ok"], results
+    assert all(result["ok"] for result in results), results

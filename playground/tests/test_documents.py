@@ -9,6 +9,11 @@ CASES = [
     "accepts and preserves every canonical dtype",
     "rejects ragged arrays and invalid canonical values",
     "serializes canonical bytes deterministically",
+    "rejects document byte depth and scalar caps with named errors",
+    "normalizes a near-cap document in one flat value pass",
+    "canonical document round-trips at the scalar limit",
+    "normalization preserves proto-named variables byte-exactly",
+    "representative normalization matches pinned canonical bytes",
 ]
 
 

@@ -203,6 +203,92 @@ export default [
     },
   },
   {
+    name: "oversized model source is rejected before worker construction",
+    fn: async () => {
+      let boundaryWorker;
+      const boundaryCompiler = client({
+        workerFactory: () => {
+          boundaryWorker = readyThen((request) => ({
+            type: "compile-error", id: request.id,
+            exceptionType: "ValueError", message: "bounded", traceback: "bounded",
+          }))();
+          return boundaryWorker;
+        },
+      });
+      const boundaryResult = await boundaryCompiler.compile(
+        "x".repeat(compilerModule.MAX_MODEL_SOURCE_BYTES),
+      );
+      assert(!boundaryResult.ok, "exact source byte cap did not reach the worker");
+      assert(boundaryWorker.terminated, "boundary source worker survived settlement");
+
+      let workerConstructions = 0;
+      const compiler = client({
+        workerFactory: () => {
+          workerConstructions += 1;
+          return new FakeWorker();
+        },
+      });
+      const source = "é".repeat(Math.floor(compilerModule.MAX_MODEL_SOURCE_BYTES / 2) + 1);
+      let message = "";
+      try { await compiler.compile(source); } catch (error) { message = String(error); }
+      assert(message.includes("UTF-8 size"), `source cap error was unclear: ${message}`);
+      assert(message.includes(String(compilerModule.MAX_MODEL_SOURCE_BYTES)), `source cap value missing: ${message}`);
+      assert(workerConstructions === 0, "oversized source constructed a worker");
+    },
+  },
+  {
+    name: "model schema cardinality and text boundaries are enforced",
+    fn: () => {
+      const parameter = (name, overrides = {}) => ({
+        name,
+        prior: "Normal(0, 1)",
+        constraint: null,
+        shape: [],
+        default: null,
+        ...overrides,
+      });
+      compilerModule.validateModelSchema({
+        ...MODEL_SCHEMA,
+        parameters: Array.from(
+          { length: compilerModule.MAX_MODEL_SCHEMA_ENTRIES },
+          (_, index) => parameter(`p${index}`),
+        ),
+      });
+      let cardinalityMessage = "";
+      try {
+        compilerModule.validateModelSchema({
+          ...MODEL_SCHEMA,
+          parameters: Array.from(
+            { length: compilerModule.MAX_MODEL_SCHEMA_ENTRIES + 1 },
+            (_, index) => parameter(`p${index}`),
+          ),
+        });
+      } catch (error) { cardinalityMessage = String(error); }
+      assert(cardinalityMessage.includes("malformed model schema"), `wrong cardinality domain: ${cardinalityMessage}`);
+      assert(cardinalityMessage.includes(String(compilerModule.MAX_MODEL_SCHEMA_ENTRIES)), `cardinality cap missing: ${cardinalityMessage}`);
+
+      const atCap = "x".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS);
+      compilerModule.validateModelSchema({
+        ...MODEL_SCHEMA,
+        parameters: [parameter(atCap, { prior: atCap, constraint: atCap })],
+      });
+      for (const [field, value] of [
+        ["name", "n".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS + 1)],
+        ["prior", "p".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS + 1)],
+        ["constraint", "c".repeat(compilerModule.MAX_MODEL_SCHEMA_TEXT_CHARACTERS + 1)],
+      ]) {
+        let message = "";
+        try {
+          compilerModule.validateModelSchema({
+            ...MODEL_SCHEMA,
+            parameters: [parameter("short", { [field]: value })],
+          });
+        } catch (error) { message = String(error); }
+        assert(message.includes("malformed model schema") && message.includes("512"), `${field} cap was not enforced: ${message}`);
+      }
+    },
+  },
+  {
     name: "worker terminates on compile timeout and cancellation",
     fn: async () => {
       let timeoutWorker;

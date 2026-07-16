@@ -9,10 +9,14 @@ CASES = [
     "runtime rejects malformed successful generation output",
     "runtime generates paired datasets through the vendored wasm",
     "runtime returns named diagnostic artifacts",
+    "runtime propagates abort signals to diagnostic and recovery verbs",
     "retired legacy operations are rejected",
     "runtime preserves exact model bytes and returns enveloped run inputs",
+    "selected canonical data bytes remain byte-exact through conditioning",
     "runtime serializes accepted object data into the sample artifact",
     "runtime conditions on one dataset through the workflow operation",
+    "first chain failure aborts every sibling execution",
+    "run abort propagates to every in-flight chain",
     "runtime sampling returns valid merged posterior and progress",
 ]
 

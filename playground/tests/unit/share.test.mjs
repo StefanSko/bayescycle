@@ -2,6 +2,8 @@ import {
   decodeProject,
   encodeProject,
   FRAGMENT_WARN_LENGTH,
+  MAX_COMPRESSED_PAYLOAD_CHARACTERS,
+  MAX_DECOMPRESSED_PAYLOAD_BYTES,
 } from "/site/src/app/share.mjs";
 
 function assert(condition, message) {
@@ -106,6 +108,12 @@ function bytesPayload(bytes) {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
+async function compressedJsonPayload(value) {
+  const input = new Blob([new TextEncoder().encode(JSON.stringify(value))]).stream();
+  const compressed = input.pipeThrough(new CompressionStream("deflate-raw"));
+  return bytesPayload(new Uint8Array(await new Response(compressed).arrayBuffer()));
+}
+
 export default [
   {
     name: "round-trips projects byte-equal",
@@ -145,6 +153,65 @@ export default [
         versionMessage = String(error instanceof Error ? error.message : error);
       }
       assert(/version/i.test(versionMessage), `version rejection was unclear: ${versionMessage}`);
+    },
+  },
+  {
+    name: "rejects compressed payloads above the character cap",
+    fn: async () => {
+      let boundaryMessage = "";
+      try {
+        await decodeProject("A".repeat(MAX_COMPRESSED_PAYLOAD_CHARACTERS));
+      } catch (error) { boundaryMessage = String(error); }
+      assert(!boundaryMessage.includes("compressed payload exceeds"), "exact compressed character cap was rejected as oversized");
+
+      let message = "";
+      try {
+        await decodeProject("A".repeat(MAX_COMPRESSED_PAYLOAD_CHARACTERS + 1));
+      } catch (error) {
+        message = String(error);
+      }
+      assert(message.includes(String(MAX_COMPRESSED_PAYLOAD_CHARACTERS)), `compressed cap was unclear: ${message}`);
+      assert(message.includes("compressed payload"), `compressed cap domain was unclear: ${message}`);
+    },
+  },
+  {
+    name: "encoder never emits a payload above decoder limits",
+    fn: async () => {
+      const emptySize = new TextEncoder().encode(JSON.stringify({ v: 1, source: "" })).byteLength;
+      const boundary = {
+        v: 1,
+        source: "x".repeat(MAX_DECOMPRESSED_PAYLOAD_BYTES - emptySize),
+      };
+      assertDeepEqual(
+        await decodeProject(await encodeProject(boundary)),
+        boundary,
+        "exact decompressed byte cap did not round-trip",
+      );
+
+      let message = "";
+      try {
+        await encodeProject({
+          v: 1,
+          source: "x".repeat(MAX_DECOMPRESSED_PAYLOAD_BYTES + 1),
+        });
+      } catch (error) { message = String(error); }
+      assert(message.includes(String(MAX_DECOMPRESSED_PAYLOAD_BYTES)), `encoder cap was unclear: ${message}`);
+      const valid = { v: 1, source: "still shareable" };
+      assertDeepEqual(await decodeProject(await encodeProject(valid)), valid, "encoder emitted an invalid payload");
+    },
+  },
+  {
+    name: "rejects streaming decompression above the byte cap",
+    fn: async () => {
+      const payload = await compressedJsonPayload({
+        v: 1,
+        source: "x".repeat(MAX_DECOMPRESSED_PAYLOAD_BYTES + 1),
+      });
+      assert(payload.length < MAX_COMPRESSED_PAYLOAD_CHARACTERS, "bomb did not isolate decompression cap");
+      let message = "";
+      try { await decodeProject(payload); } catch (error) { message = String(error); }
+      assert(message.includes(String(MAX_DECOMPRESSED_PAYLOAD_BYTES)), `decompressed cap was unclear: ${message}`);
+      assert(message.includes("decompressed payload"), `decompressed cap domain was unclear: ${message}`);
     },
   },
   {

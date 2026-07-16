@@ -73,6 +73,15 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
         old.close()
 
 
+def test_oversized_share_payload_surfaces_on_review_screen(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/#project={'A' * 65537}")
+    expect(page.locator("#share-review")).to_be_visible()
+    expect(page.locator("#share-source")).to_contain_text(
+        "compressed payload exceeds 65536 characters"
+    )
+    expect(page.locator("#load-shared")).to_be_disabled()
+
+
 def test_recipient_edits_before_compile_outrank_shared_form_state(
     page: Page, base_url: str
 ) -> None:
