@@ -93,8 +93,6 @@ including the wire-format-change path, is in
 
 ## Further reading
 
-- [`docs/monorepo-migration.md`](docs/monorepo-migration.md) — how this
-  layout came to be, and current migration status.
 - [`docs/releasing.md`](docs/releasing.md) — the release procedure.
 - [`docs/toolchain.html`](docs/toolchain.html) — philosophy and a visual
   walkthrough of the full model-to-plot journey.

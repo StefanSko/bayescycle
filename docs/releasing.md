@@ -2,10 +2,8 @@
 
 This repository is a **uv workspace monorepo** publishing five lockstep
 Python distributions to PyPI: `bayeswire`, `bayesjax`, `bayescycle`,
-`bayesite-viz`, `bayesite-idata` (see
-[`monorepo-migration.md`](monorepo-migration.md) for how this replaced the
-old four-repo layout). A release tags one `main` commit and publishes all
-five at the same version number in one workflow run.
+`bayesite-viz`, and `bayesite-idata`. A release tags one `main` commit and
+publishes all five at the same version number in one workflow run.
 
 The wire format is still the product whenever a release carries a
 canonical-bytes change: `bayeswire_ir` is the serialization boundary every
@@ -137,7 +135,6 @@ hash.
 
 A scheduled `bayesite HEAD vs workspace HEAD` job (the engine built from
 source, run against this workspace's `main`) has not been re-created since
-the migration — see [`monorepo-migration.md`](monorepo-migration.md) for
-status. Until it exists, `bayesite` compatibility is checked at vendor-refresh,
-engine-pin-bump, and released-Bayesjax G7-pin time, not continuously against
-workspace `main`.
+the migration. Until it exists, `bayesite` compatibility is checked at
+vendor-refresh, engine-pin-bump, and released-Bayesjax G7-pin time, not
+continuously against workspace `main`.

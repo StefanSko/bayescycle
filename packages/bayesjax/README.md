@@ -82,7 +82,7 @@ schema = inferencedata_groups(bound, result)
 
 It maps posterior draws, post-warmup NUTS diagnostics, observed data, constant
 data, and declared `Dim(...)` metadata into InferenceData-compatible groups and
-dimension names. See [`docs/inferencedata-compatibility.md`](docs/inferencedata-compatibility.md).
+dimension names.
 
 ## The language lives in bayeswire
 
