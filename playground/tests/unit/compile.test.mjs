@@ -29,6 +29,27 @@ function canonicalString(value) {
   return JSON.stringify(canonicalJson(value));
 }
 
+function equalLinearSchema(schema) {
+  assert(
+    JSON.stringify(schema.data) === JSON.stringify([
+      { name: "x", dtype: "float64", kind: "vector" },
+    ]),
+    `unexpected linear data schema: ${JSON.stringify(schema.data)}`,
+  );
+  assert(
+    JSON.stringify(schema.observed) === JSON.stringify([{ name: "y" }]),
+    `unexpected linear observed schema: ${JSON.stringify(schema.observed)}`,
+  );
+  assert(
+    schema.parameters.map((parameter) => parameter.name).join(",") === "alpha,beta,sigma" &&
+      schema.parameters[0].prior === "Normal(0.0, 1.0)" &&
+      schema.parameters[0].default === 0 &&
+      schema.parameters[2].constraint === "> 0" &&
+      schema.parameters[2].default === null,
+    `unexpected linear parameter schema: ${JSON.stringify(schema.parameters)}`,
+  );
+}
+
 export default [
   {
     name: "all 11 corpus models match native hashes and golden IR",
@@ -45,9 +66,21 @@ export default [
         const result = await compile(source);
         assert(result.ok, `${name} compilation failed:\n${result.traceback}`);
         assert(
+          result.modelSchema.schema_format === "bayescycle.playground.model-schema.v0",
+          `${name} did not return the worker-derived model schema`,
+        );
+        assert(
+          result.modelSchema.parameters.every((parameter) =>
+            typeof parameter.prior === "string" && Array.isArray(parameter.shape)),
+          `${name} returned malformed parameter schema entries`,
+        );
+        assert(
           result.irHash === hashes[name],
           `${name} hash mismatch: expected ${hashes[name]}, got ${result.irHash}`,
         );
+        if (name === "linear_regression") {
+          equalLinearSchema(result.modelSchema);
+        }
         const actual = canonicalString(JSON.parse(UTF8.decode(result.irBytes)));
         const golden = canonicalString(JSON.parse(goldenText));
         assert(actual === golden, `${name} IR differs from its golden document`);

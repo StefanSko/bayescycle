@@ -21,10 +21,16 @@ class Generative:
     y = Observed(Normal(alpha + beta * x, sigma))
 """
     page.locator("#model-source").fill(source)
-    page.locator("#design-data").fill('{"x": [-1, -0.5, 0, 0.5, 1]}')
-    page.locator("#truth-data").fill('{"alpha": 0.2, "beta": 0.6, "sigma": 0.8}')
     page.locator("#compile-button").click()
-    expect(page.locator("#generate-button")).to_be_enabled(timeout=120_000)
+    expect(page.locator("#design-expr-x")).to_be_visible(timeout=120_000)
+    expect(page.locator("#fixed-value-sigma")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
+    page.locator("#design-expr-x").fill("linspace(-2, 2, 25)")
+    expect(page.locator("#design-preview-x")).to_contain_text("shape [25]")
+    page.locator("#fixed-value-alpha").fill("0.2")
+    page.locator("#fixed-value-beta").fill("0.6")
+    page.locator("#fixed-value-sigma").fill("0.8")
+    expect(page.locator("#generate-button")).to_be_enabled()
     page.locator("#chains").fill("2")
     page.locator("#warmup").fill("8")
     page.locator("#draws").fill("12")
@@ -40,3 +46,27 @@ class Generative:
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-recovery")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-generated-datasets")).to_be_visible()
+
+
+def test_schema_names_that_match_object_prototype_keys_render_safely(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        """from bayeswire import Data, Observed, Param, model
+from bayeswire.distributions import Normal
+
+@model
+class PrototypeNames:
+    toString = Param(Normal(0.0, 1.0))
+    constructor = Data.vector()
+    y = Observed(Normal(toString + constructor, 1.0))
+"""
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-constructor")).to_have_value(
+        "linspace(-2, 2, 25)", timeout=120_000
+    )
+    expect(page.locator("#fixed-value-toString")).to_have_value("0")
+    assert '"constructor"' in page.locator("#design-data").input_value()
+    assert '"toString"' in page.locator("#truth-data").input_value()

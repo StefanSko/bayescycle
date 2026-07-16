@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Compile and sample Bayeswire models entirely in your browser.">
+  <meta name="description" content="Compile, simulate, and fit Bayeswire models entirely in your browser.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:">
   <title>Bayescycle Playground</title>
   <link rel="stylesheet" href="./styles.css">
@@ -16,7 +16,7 @@
     <button id="load-shared" class="primary" type="button">Load reviewed project</button>
   </aside>
   <header class="page-header">
-    <div><p class="eyebrow">Runs entirely in this browser · <span id="playground-version">v0.5.0</span></p><h1>Bayescycle Playground</h1></div>
+    <div><p class="eyebrow">Runs entirely in this browser · <span id="playground-version">v0.6.0</span></p><h1>Bayescycle Playground</h1></div>
     <p class="lede">No compilation backend: a disposable browser worker compiles source, then separate Bayesite workers run inference.</p>
   </header>
   <main>
@@ -36,22 +36,22 @@
         <output id="compile-status" class="status" for="model-source compile-button" aria-live="polite"></output>
         <pre id="compile-error" class="error" role="alert" hidden></pre>
       </section>
-
-      <section aria-labelledby="documents-heading">
-        <h2 id="documents-heading">2 · Documents</h2>
-        <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
-        <label for="observed-data">Observed data JSON</label>
-        <textarea id="observed-data" rows="12" spellcheck="false" placeholder='{"x": [1, 2], "y": [3, 4]}'></textarea>
-        <details id="generation-documents" open>
-          <summary>Generation documents</summary>
-          <label for="design-data">Design/context JSON</label>
-          <textarea id="design-data" rows="7" spellcheck="false" placeholder='{"x": [-1, 0, 1]}'></textarea>
-        </details>
-      </section>
     </div>
 
-    <section aria-labelledby="generate-heading">
-      <h2 id="generate-heading">3 · Generate datasets</h2>
+    <section aria-labelledby="simulate-heading">
+      <h2 id="simulate-heading">2 · Simulate data</h2>
+      <p class="hint">The compiled model is the simulator: choose where parameter values come from, and the model draws the outcomes.</p>
+
+      <h3 class="subheading">Design inputs</h3>
+      <div id="design-slots"><p class="hint">Compile a model to author its design inputs.</p></div>
+      <div class="field-actions"><button id="design-json-toggle" class="linklike" type="button">use design forms</button></div>
+      <div id="design-json-field">
+        <label for="design-data">Design/context JSON</label>
+        <textarea id="design-data" rows="7" spellcheck="false" placeholder='{"x": [-1, 0, 1]}'></textarea>
+        <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
+      </div>
+
+      <h3 class="subheading">Parameters come from</h3>
       <fieldset>
         <legend>Parameter source</legend>
         <label class="radio-option" for="param-source-fixed"><input id="param-source-fixed" type="radio" name="param-source" value="fixed" checked> Fixed values</label>
@@ -62,32 +62,45 @@
         </div>
       </fieldset>
       <div id="fixed-values-field">
-        <label for="truth-data">Fixed parameter values</label>
-        <textarea id="truth-data" rows="7" spellcheck="false" placeholder='{"alpha": 0, "beta": 1}'></textarea>
+        <div id="parameter-fields"><p class="hint">Compile a model to author fixed parameter values.</p></div>
+        <div class="field-actions"><button id="truth-json-toggle" class="linklike" type="button">use parameter form</button></div>
+        <div id="truth-json-field">
+          <label for="truth-data">Fixed parameter values JSON</label>
+          <textarea id="truth-data" rows="7" spellcheck="false" placeholder='{"alpha": 0, "beta": 1}'></textarea>
+        </div>
       </div>
       <div class="settings">
         <label for="generation-seed">Generation seed<input id="generation-seed" type="number" min="0" value="0"></label>
         <label for="generation-count">Dataset count<input id="generation-count" type="number" min="1" max="1000" value="100"></label>
       </div>
-      <button id="generate-button" class="primary" type="button" disabled>Generate at fixed values</button>
+      <button id="generate-button" class="primary" type="button" disabled>Simulate 100 datasets at fixed values</button>
       <div id="generation-selection" hidden>
-        <label for="generated-dataset-index">Selected generated pair</label>
+        <label for="generated-dataset-index">Selected simulated pair</label>
         <select id="generated-dataset-index" disabled></select>
         <output id="selected-pair-summary" class="status" for="generated-dataset-index"></output>
       </div>
-      <p class="hint">Uses Design/context as x. Generated datasets keep their paired parameter values for recovery.</p>
+      <details>
+        <summary>Generation plan</summary>
+        <pre id="plan-summary" class="plan-summary"></pre>
+        <p class="hint">The immutable plan is hashed into the portable generation run.</p>
+      </details>
     </section>
 
     <section aria-labelledby="condition-heading">
-      <h2 id="condition-heading">4 · Condition on a dataset</h2>
+      <h2 id="condition-heading">3 · Condition on a dataset</h2>
       <fieldset>
         <legend>Dataset source</legend>
-        <label class="radio-option" for="dataset-source-observed"><input id="dataset-source-observed" type="radio" name="dataset-source" value="observed" checked> Observed data</label>
         <div class="radio-with-hint">
-          <label class="radio-option" for="dataset-source-generated"><input id="dataset-source-generated" type="radio" name="dataset-source" value="generated" disabled> Generated dataset</label>
+          <label class="radio-option" for="dataset-source-generated"><input id="dataset-source-generated" type="radio" name="dataset-source" value="generated" disabled> Simulated dataset</label>
           <span id="generated-source-hint" class="inline-hint">enables recovery against its paired parameter values</span>
         </div>
+        <label class="radio-option" for="dataset-source-observed"><input id="dataset-source-observed" type="radio" name="dataset-source" value="observed" checked> Observed data</label>
       </fieldset>
+      <div id="observed-data-field">
+        <label for="observed-data">Observed data JSON</label>
+        <textarea id="observed-data" rows="8" spellcheck="false" placeholder='{"x": [1, 2], "y": [3, 4]}'></textarea>
+        <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
+      </div>
       <h3 class="subheading">Inference settings</h3>
       <div class="settings">
         <label for="chains">Chains<input id="chains" type="number" min="1" value="4"></label>

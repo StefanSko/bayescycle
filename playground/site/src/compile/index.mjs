@@ -83,14 +83,25 @@ export class CompilerClient {
         if (message === null || typeof message !== "object" || message.id !== id) return;
         if (validSuccess(message)) {
           const irBytes = new Uint8Array(message.irBytes);
-          if (irBytes.byteLength > this.maxOutputBytes) {
+          let modelSchema;
+          let schemaBytes;
+          try {
+            modelSchema = validateModelSchema(message.modelSchema);
+            schemaBytes = new TextEncoder().encode(JSON.stringify(modelSchema));
+          } catch (error) {
+            fail(error);
+            return;
+          }
+          if (irBytes.byteLength > this.maxOutputBytes || schemaBytes.byteLength > this.maxOutputBytes) {
             fail(new Error(`Compiler output exceeds ${this.maxOutputBytes} bytes`));
             return;
           }
           // Dispose the mutable interpreter before performing trusted hashing.
           dispose();
           void sha256(irBytes).then(
-            (irHash) => succeed({ ok: true, irBytes, irHash, executionContext: "worker" }),
+            (irHash) => succeed({
+              ok: true, irBytes, irHash, modelSchema, executionContext: "worker",
+            }),
             fail,
           );
           return;
@@ -136,7 +147,91 @@ function isReady(value) {
 function validSuccess(value) {
   const keys = Object.keys(value);
   return value.type === "compiled" && value.irBytes instanceof ArrayBuffer &&
-    keys.every((key) => ["type", "id", "irBytes", "irHash"].includes(key));
+    value.modelSchema !== null && typeof value.modelSchema === "object" &&
+    ["type", "id", "irBytes", "modelSchema"].every((key) => keys.includes(key)) &&
+    keys.every((key) => ["type", "id", "irBytes", "modelSchema", "irHash"].includes(key));
+}
+
+export function validateModelSchema(value) {
+  requireObjectKeys(value, ["schema_format", "parameters", "data", "observed"], "model schema");
+  if (value.schema_format !== "bayescycle.playground.model-schema.v0") {
+    throw malformedSchema("unsupported schema_format");
+  }
+  if (!Array.isArray(value.parameters) || !Array.isArray(value.data) ||
+      !Array.isArray(value.observed)) {
+    throw malformedSchema("parameters, data, and observed must be arrays");
+  }
+  const parameterNames = new Set();
+  const parameters = value.parameters.map((parameter, index) => {
+    requireObjectKeys(
+      parameter,
+      ["name", "prior", "constraint", "shape", "default"],
+      `parameter ${index}`,
+    );
+    requireName(parameter.name, parameterNames, `parameter ${index}`);
+    if (typeof parameter.prior !== "string" || parameter.prior === "") {
+      throw malformedSchema(`parameter ${index} prior must be non-empty text`);
+    }
+    if (parameter.constraint !== null && typeof parameter.constraint !== "string") {
+      throw malformedSchema(`parameter ${index} constraint must be text or null`);
+    }
+    if (!Array.isArray(parameter.shape) ||
+        !parameter.shape.every((dimension) => typeof dimension === "string" && dimension !== "")) {
+      throw malformedSchema(`parameter ${index} shape must contain non-empty strings`);
+    }
+    if (parameter.default !== null &&
+        (typeof parameter.default !== "number" || !Number.isFinite(parameter.default))) {
+      throw malformedSchema(`parameter ${index} default must be a finite number or null`);
+    }
+    return Object.freeze({ ...parameter, shape: Object.freeze([...parameter.shape]) });
+  });
+  const dataNames = new Set();
+  const data = value.data.map((entry, index) => {
+    requireObjectKeys(entry, ["name", "dtype", "kind"], `data ${index}`);
+    requireName(entry.name, dataNames, `data ${index}`);
+    if (!["bool", "int32", "int64", "float32", "float64"].includes(entry.dtype)) {
+      throw malformedSchema(`data ${index} dtype is unsupported`);
+    }
+    if (!["scalar", "vector", "matrix", "array"].includes(entry.kind)) {
+      throw malformedSchema(`data ${index} kind is unsupported`);
+    }
+    return Object.freeze({ ...entry });
+  });
+  const observedNames = new Set();
+  const observed = value.observed.map((entry, index) => {
+    requireObjectKeys(entry, ["name"], `observed ${index}`);
+    requireName(entry.name, observedNames, `observed ${index}`);
+    return Object.freeze({ ...entry });
+  });
+  return Object.freeze({
+    schema_format: value.schema_format,
+    parameters: Object.freeze(parameters),
+    data: Object.freeze(data),
+    observed: Object.freeze(observed),
+  });
+}
+
+function requireObjectKeys(value, expected, label) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw malformedSchema(`${label} must be an object`);
+  }
+  const keys = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(keys) !== JSON.stringify(wanted)) {
+    throw malformedSchema(`${label} requires exactly ${wanted.join(", ")}`);
+  }
+}
+
+function requireName(name, names, label) {
+  if (typeof name !== "string" || name === "") {
+    throw malformedSchema(`${label} name must be non-empty text`);
+  }
+  if (names.has(name)) throw malformedSchema(`duplicate name ${name}`);
+  names.add(name);
+}
+
+function malformedSchema(detail) {
+  return new Error(`Compiler worker returned a malformed model schema: ${detail}`);
 }
 
 function validFailure(value) {

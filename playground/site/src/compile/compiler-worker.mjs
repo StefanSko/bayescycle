@@ -24,7 +24,12 @@ async function handleMessage(message) {
     if (result.ok === true) {
       const bytes = decodeBase64(result.ir_base64);
       self.postMessage(
-        { type: "compiled", id: message.id, irBytes: bytes.buffer },
+        {
+          type: "compiled",
+          id: message.id,
+          irBytes: bytes.buffer,
+          modelSchema: result.model_schema,
+        },
         [bytes.buffer],
       );
     } else {
@@ -97,11 +102,150 @@ function decodeBase64(encoded) {
 
 const PYTHON_COMPILE = String.raw`
 import base64
+from dataclasses import fields, is_dataclass
 import json
+import math
 import traceback
 
 import bayeswire.ir
-from bayeswire.model import is_model_class, model_dependencies, model_meta
+from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval, VectorBounds
+from bayeswire.distributions import Normal, Truncated
+from bayeswire.model import (
+    DataDimRef,
+    ResolvedDataRankSchema,
+    ResolvedDataShapeSchema,
+    attached_model_dimensions,
+    is_model_class,
+    model_dependencies,
+    model_meta,
+)
+from bayeswire.model.expr import ConstNode, DataRef, ParamRef
+
+
+SCHEMA_FORMAT = "bayescycle.playground.model-schema.v0"
+
+
+def _friendly_value(value):
+    if isinstance(value, ConstNode):
+        return _friendly_value(value.value)
+    if isinstance(value, DataRef | ParamRef):
+        return value.name
+    if value is None or isinstance(value, bool | int | float | str):
+        return repr(value) if not isinstance(value, str) else value
+    if isinstance(value, tuple):
+        return "[" + ", ".join(_friendly_value(item) for item in value) + "]"
+    if is_dataclass(value) and not isinstance(value, type):
+        arguments = ", ".join(
+            _friendly_value(getattr(value, field.name)) for field in fields(value)
+        )
+        return f"{type(value).__name__}({arguments})"
+    return type(value).__name__
+
+
+def _constraint_label(constraint):
+    if constraint is None:
+        return None
+    if isinstance(constraint, Positive):
+        return "> 0"
+    if isinstance(constraint, UnitInterval):
+        return "0 < value < 1"
+    if isinstance(constraint, Interval):
+        return f"{constraint.lower} < value < {constraint.upper}"
+    if isinstance(constraint, Ordered):
+        return "strictly increasing"
+    if isinstance(constraint, VectorBounds):
+        sides = []
+        if constraint.lower is not None:
+            sides.append(f"> {_friendly_value(constraint.lower)}")
+        if constraint.upper is not None:
+            sides.append(f"< {_friendly_value(constraint.upper)}")
+        return "per-coordinate " + " and ".join(sides)
+    return type(constraint).__name__
+
+
+def _constant_number(value):
+    if isinstance(value, ConstNode):
+        value = value.value
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _parameter_default(parameter):
+    if parameter.size is not None:
+        return None
+    distribution = parameter.distribution
+    if isinstance(distribution, Truncated):
+        distribution = distribution.base
+    if not isinstance(distribution, Normal):
+        return None
+    value = _constant_number(distribution.loc)
+    if value is None:
+        return None
+    constraint = parameter.constraint
+    if isinstance(constraint, Positive) and value <= 0:
+        return None
+    if isinstance(constraint, UnitInterval) and not 0 < value < 1:
+        return None
+    if isinstance(constraint, Interval) and not constraint.lower < value < constraint.upper:
+        return None
+    return value
+
+
+def _parameter_shape(name, parameter, dimensions):
+    variable_dims = dimensions.variables.get(name) if dimensions is not None else None
+    if variable_dims is not None and variable_dims.names:
+        return list(variable_dims.names)
+    if parameter.size is None:
+        return []
+    if isinstance(parameter.size, DataRef):
+        return [parameter.size.name]
+    return [str(parameter.size)]
+
+
+def _data_kind(schema):
+    rank = schema.rank if isinstance(schema, ResolvedDataRankSchema) else len(schema.dims)
+    return {0: "scalar", 1: "vector", 2: "matrix"}.get(rank, "array")
+
+
+def _integer_data_names(meta):
+    names = set()
+    for data in meta.data.values():
+        if isinstance(data.schema, ResolvedDataShapeSchema):
+            names.update(dim.name for dim in data.schema.dims if isinstance(dim, DataDimRef))
+    for parameter in meta.params.values():
+        if isinstance(parameter.size, DataRef):
+            names.add(parameter.size.name)
+    return names
+
+
+def _model_schema(model):
+    meta = model_meta(model)
+    dimensions = attached_model_dimensions(model)
+    integer_data = _integer_data_names(meta)
+    return {
+        "schema_format": SCHEMA_FORMAT,
+        "parameters": [
+            {
+                "name": name,
+                "prior": _friendly_value(parameter.distribution),
+                "constraint": _constraint_label(parameter.constraint),
+                "shape": _parameter_shape(name, parameter, dimensions),
+                "default": _parameter_default(parameter),
+            }
+            for name, parameter in meta.params.items()
+        ],
+        "data": [
+            {
+                "name": name,
+                "dtype": "int64" if name in integer_data else "float64",
+                "kind": _data_kind(data.schema),
+            }
+            for name, data in meta.data.items()
+        ],
+        "observed": [{"name": observed.name} for observed in meta.observed_nodes],
+    }
 
 
 def compile_editor_source(source):
@@ -135,10 +279,12 @@ def compile_editor_source(source):
                 models = roots
         if len(models) != 1:
             raise ValueError(f"Expected exactly one @model class, found {len(models)}")
-        ir_bytes = bayeswire.ir.canonical_bytes(model_meta(models[0]))
+        selected_model = models[0]
+        ir_bytes = bayeswire.ir.canonical_bytes(model_meta(selected_model))
         result = {
             "ok": True,
             "ir_base64": base64.b64encode(ir_bytes).decode("ascii"),
+            "model_schema": _model_schema(selected_model),
         }
     except BaseException as error:
         frames = traceback.extract_tb(error.__traceback__)

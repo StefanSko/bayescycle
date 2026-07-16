@@ -468,9 +468,17 @@ export default [
       let state = initialState();
       state = reduce(state, { type: "source-edited", source: "one", revision: 1 });
       state = reduce(state, { type: "compile-started", requestId: "c1", revision: 1 });
-      state = reduce(state, { type: "compile-succeeded", requestId: "c1", revision: 1, irBytes: new Uint8Array([1]), irHash: "abc" });
+      const modelSchema = {
+        schema_format: "bayescycle.playground.model-schema.v0",
+        parameters: [], data: [], observed: [],
+      };
+      state = reduce(state, {
+        type: "compile-succeeded", requestId: "c1", revision: 1,
+        irBytes: new Uint8Array([1]), irHash: "abc", modelSchema,
+      });
       state = reduce(state, { type: "documents-edited", documents: { observed: "{}", design: "", truth: "" }, revision: 2 });
       assert(state.compile.status === "compiled", "document edit discarded compilation");
+      assert(state.compile.modelSchema === modelSchema, "compile state did not retain model schema");
       assert(state.run.status === "idle" && state.artifacts.length === 0, "document edit retained artifacts");
     },
   },

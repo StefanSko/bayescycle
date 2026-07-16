@@ -12,6 +12,9 @@ formats retain their own compatibility policies.
 
 ### Changed
 
+- Rework the Playground's data-authoring workflow into a schema-driven
+  **Simulate data** section with design expressions and previews, generated
+  fixed-parameter forms, JSON escape hatches, and count-aware simulation controls.
 - Remove stale implementation logs, completed plans, generated walkthroughs,
   and duplicated documentation so maintained guidance has a clear owner.
 

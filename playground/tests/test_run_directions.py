@@ -42,7 +42,9 @@ def test_all_parameter_sources_use_one_native_generation_operation(
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
     page.locator("#param-source-prior").check()
-    expect(page.locator("#generate-button")).to_have_text("Generate from model prior")
+    expect(page.locator("#generate-button")).to_have_text(
+        "Simulate 2 datasets from the model prior"
+    )
     page.locator("#generate-button").click()
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
@@ -51,7 +53,7 @@ def test_all_parameter_sources_use_one_native_generation_operation(
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#param-source-posterior")).to_be_enabled()
     page.locator("#param-source-posterior").check()
-    expect(page.locator("#generate-button")).to_have_text("Generate from posterior")
+    expect(page.locator("#generate-button")).to_have_text("Simulate 2 datasets from the posterior")
     page.locator("#generate-button").click()
     expect(page.locator("#artifact-generated-datasets")).to_be_visible(timeout=120_000)
 
@@ -67,3 +69,8 @@ def test_all_parameter_sources_use_one_native_generation_operation(
         "['simulate', 'prior-predictive', 'posterior-predictive']"
         ".includes(request.command))"
     )
+
+    page.locator("#observed-data").fill('{"x":[-1,0,1],"y":[-0.5,0.5,1.5]}')
+    expect(page.locator("#param-source-fixed")).to_be_checked()
+    expect(page.locator("#plan-summary")).to_contain_text("parameters: fixed values")
+    expect(page.locator("#plan-summary")).not_to_contain_text("posterior from fit")

@@ -1,5 +1,6 @@
 import { parseDocument, serializeDocument } from "../data/documents.mjs";
 import { parseGeneratedDatasets } from "../generation/artifact.mjs";
+import { evaluateDesignExpression } from "../generation/design-expr.mjs";
 import {
   fixed,
   generateDatasets,
@@ -18,6 +19,12 @@ let state = initialState();
 let revision = 0;
 let pendingSharedProject;
 let exampleLoadRevision = 0;
+let renderedSchema = null;
+let designJsonMode = true;
+let truthJsonMode = true;
+let designExpressions = {};
+let fixedValueEntries = {};
+let authoringRestore = { kind: "fresh" };
 const examples = new Map();
 const objectUrls = new Set();
 const EXAMPLES_ROOT = new URL("../../examples/", import.meta.url);
@@ -33,7 +40,16 @@ source.addEventListener("input", () => {
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
 observed.addEventListener("input", observedEdited);
-for (const input of [design, truth]) input.addEventListener("input", generationInputsEdited);
+design.addEventListener("input", () => {
+  designJsonMode = true;
+  generationInputsEdited();
+});
+truth.addEventListener("input", () => {
+  truthJsonMode = true;
+  generationInputsEdited();
+});
+element("#design-json-toggle").addEventListener("click", toggleDesignJson);
+element("#truth-json-toggle").addEventListener("click", toggleTruthJson);
 for (const selector of [
   "#chains", "#warmup", "#draws", "#inference-seed", "#target-accept",
   "#max-treedepth",
@@ -56,7 +72,7 @@ for (const radio of document.querySelectorAll("input[name='dataset-source']")) {
   });
 }
 element("#compile-button").addEventListener("click", () => void compileModel());
-element("#generate-button").addEventListener("click", () => void generateCollection());
+element("#generate-button").addEventListener("click", () => launchRun(generateCollection));
 element("#generated-dataset-index").addEventListener("change", () => {
   selectGeneratedPair(integerValue("#generated-dataset-index"));
 });
@@ -105,7 +121,10 @@ async function loadExample() {
     fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
   ]);
   if (loadRevision !== exampleLoadRevision || element("#examples-menu").value !== selectedId) return;
-  setProject({ source: modelSource, observed: observedText, design: designText, truth: truthText });
+  setProject(
+    { source: modelSource, observed: observedText, design: designText, truth: truthText },
+    { kind: "documents" },
+  );
 }
 
 async function fetchAsset(path) {
@@ -129,6 +148,10 @@ async function shareProject() {
     generation: {
       seed: integerValue("#generation-seed"),
       count: integerValue("#generation-count"),
+    },
+    authoring: {
+      design: { json: designJsonMode, expressions: { ...designExpressions } },
+      truth: { json: truthJsonMode, values: { ...fixedValueEntries } },
     },
   };
   const payload = await encodeProject(project);
@@ -159,22 +182,27 @@ function loadSharedProject() {
     observed: String(pendingSharedProject.observed ?? ""),
     design: String(pendingSharedProject.design ?? ""),
     truth: String(pendingSharedProject.truth ?? ""),
-  });
+  }, validAuthoringState(pendingSharedProject.authoring)
+    ? { kind: "shared", value: pendingSharedProject.authoring }
+    : { kind: "documents" });
   applySamplerSettings(pendingSharedProject.sampler);
   applyGenerationSettings(pendingSharedProject.generation, pendingSharedProject.sampler);
   element("#share-review").hidden = true;
 }
 
-function setProject(project) {
+function setProject(project, restore = { kind: "documents" }) {
   exampleLoadRevision += 1;
   element("#progress").replaceChildren();
   for (const [control, value] of [[source, project.source], [observed, project.observed], [design, project.design], [truth, project.truth]]) {
     control.textContent = value;
     control.value = value;
   }
+  authoringRestore = restore;
+  designJsonMode = true;
+  truthJsonMode = true;
+  renderedSchema = null;
   dispatch({ type: "source-edited", source: project.source, revision: ++revision });
   dispatch({ type: "documents-edited", documents: { observed: project.observed, design: project.design, truth: project.truth }, revision: ++revision });
-  element("#generation-documents").open = project.design.trim() !== "";
   element("#share-output").hidden = true;
 }
 
@@ -249,6 +277,395 @@ function generationInputsEdited() {
   });
 }
 
+function configureAuthoring(schema) {
+  if (authoringRestore.kind === "shared") {
+    const saved = authoringRestore.value;
+    designJsonMode = saved.design.json;
+    truthJsonMode = saved.truth.json;
+    designExpressions = Object.fromEntries(
+      schema.data.map((slot) => [
+        slot.name, entryOr(saved.design.expressions, slot.name, defaultExpression(slot)),
+      ]),
+    );
+    fixedValueEntries = Object.fromEntries(
+      schema.parameters.map((parameter) => [
+        parameter.name,
+        entryOr(saved.truth.values, parameter.name, defaultParameterEntry(parameter)),
+      ]),
+    );
+  } else if (authoringRestore.kind === "documents") {
+    designJsonMode = true;
+    truthJsonMode = true;
+    designExpressions = defaultDesignExpressions(schema);
+    fixedValueEntries = defaultFixedValues(schema);
+  } else if (authoringRestore.kind === "fresh") {
+    designJsonMode = design.value.trim() !== "";
+    truthJsonMode = truth.value.trim() !== "";
+    designExpressions = defaultDesignExpressions(schema);
+    fixedValueEntries = defaultFixedValues(schema);
+  } else {
+    designExpressions = Object.fromEntries(
+      schema.data.map((slot) => [
+        slot.name, entryOr(designExpressions, slot.name, defaultExpression(slot)),
+      ]),
+    );
+    fixedValueEntries = Object.fromEntries(
+      schema.parameters.map((parameter) => [
+        parameter.name,
+        entryOr(fixedValueEntries, parameter.name, defaultParameterEntry(parameter)),
+      ]),
+    );
+  }
+  if (!supportsDesignForms(schema)) designJsonMode = true;
+  authoringRestore = { kind: "preserve" };
+  renderedSchema = null;
+  if (!designJsonMode || !truthJsonMode) {
+    if (!designJsonMode) writeDesignDocumentFromEntries(schema);
+    if (!truthJsonMode) writeTruthDocumentFromEntries(schema);
+    generationInputsEdited();
+  }
+}
+
+function validAuthoringState(value) {
+  return value !== null && typeof value === "object" &&
+    value.design !== null && typeof value.design === "object" &&
+    typeof value.design.json === "boolean" &&
+    value.design.expressions !== null && typeof value.design.expressions === "object" &&
+    !Array.isArray(value.design.expressions) &&
+    Object.values(value.design.expressions).every((entry) => typeof entry === "string") &&
+    value.truth !== null && typeof value.truth === "object" &&
+    typeof value.truth.json === "boolean" &&
+    value.truth.values !== null && typeof value.truth.values === "object" &&
+    !Array.isArray(value.truth.values) &&
+    Object.values(value.truth.values).every((entry) => typeof entry === "string");
+}
+
+function defaultDesignExpressions(schema) {
+  return Object.fromEntries(schema.data.map((slot) => [slot.name, defaultExpression(slot)]));
+}
+
+function defaultExpression(slot) {
+  return slot.kind === "vector" ? "linspace(-2, 2, 25)" : "[]";
+}
+
+function defaultFixedValues(schema) {
+  return Object.fromEntries(
+    schema.parameters.map((parameter) => [parameter.name, defaultParameterEntry(parameter)]),
+  );
+}
+
+function defaultParameterEntry(parameter) {
+  return parameter.default === null ? "" : String(parameter.default);
+}
+
+function toggleDesignJson() {
+  const schema = state.compile.modelSchema;
+  if (state.compile.status !== "compiled" || schema === undefined ||
+      !supportsDesignForms(schema)) return;
+  if (designJsonMode) hydrateDesignExpressions(schema);
+  designJsonMode = !designJsonMode;
+  render();
+}
+
+function toggleTruthJson() {
+  const schema = state.compile.modelSchema;
+  if (state.compile.status !== "compiled" || schema === undefined) return;
+  if (truthJsonMode) hydrateFixedValues(schema);
+  truthJsonMode = !truthJsonMode;
+  render();
+}
+
+function hydrateDesignExpressions(schema) {
+  try {
+    const values = plainDocumentValues(design.value);
+    for (const slot of schema.data) {
+      const value = values[slot.name];
+      if (Array.isArray(value)) designExpressions[slot.name] = JSON.stringify(value);
+    }
+  } catch {
+    // Existing form entries remain available when raw JSON cannot be projected.
+  }
+  updateAuthoringControls(schema);
+}
+
+function hydrateFixedValues(schema) {
+  try {
+    const values = plainDocumentValues(truth.value);
+    for (const parameter of schema.parameters) {
+      const value = values[parameter.name];
+      if (parameter.shape.length === 0 && typeof value === "number") {
+        fixedValueEntries[parameter.name] = String(value);
+      } else if (parameter.shape.length !== 0 && value !== undefined) {
+        fixedValueEntries[parameter.name] = JSON.stringify(value);
+      }
+    }
+  } catch {
+    // Existing form entries remain available when raw JSON cannot be projected.
+  }
+  updateAuthoringControls(schema);
+}
+
+function plainDocumentValues(text) {
+  const document = parseDocument(text);
+  return Object.fromEntries(
+    Object.entries(document.variables).map(([name, variable]) => [
+      name,
+      reshapeValues(variable.values, variable.shape),
+    ]),
+  );
+}
+
+function reshapeValues(values, shape) {
+  if (shape.length === 0) return values[0];
+  const stride = shape.slice(1).reduce((left, right) => left * right, 1);
+  return Array.from({ length: shape[0] }, (_, index) =>
+    reshapeValues(values.slice(index * stride, (index + 1) * stride), shape.slice(1)));
+}
+
+function writeDesignDocumentFromEntries(schema) {
+  try {
+    const value = Object.fromEntries(
+      schema.data.map((slot) => [
+        slot.name,
+        evaluateDesignExpression(entryOr(designExpressions, slot.name, defaultExpression(slot))),
+      ]),
+    );
+    design.value = serializeDocument(parseDocument(JSON.stringify(value)));
+    return true;
+  } catch {
+    design.value = "";
+    return false;
+  }
+}
+
+function writeTruthDocumentFromEntries(schema) {
+  try {
+    const value = Object.fromEntries(schema.parameters.map((parameter) => {
+      const entry = entryOr(fixedValueEntries, parameter.name, "");
+      if (parameter.shape.length === 0) {
+        const number = Number(entry);
+        if (entry.trim() === "" || !Number.isFinite(number)) {
+          throw new Error(`${parameter.name} needs a finite number`);
+        }
+        return [parameter.name, number];
+      }
+      return [parameter.name, JSON.parse(entry)];
+    }));
+    truth.value = serializeDocument(parseDocument(JSON.stringify(value)));
+    return true;
+  } catch {
+    truth.value = "";
+    return false;
+  }
+}
+
+function renderAuthoring() {
+  const schema = state.compile.status === "compiled" ? state.compile.modelSchema : undefined;
+  if (schema === undefined) {
+    renderedSchema = null;
+    element("#design-slots").innerHTML = '<p class="hint">Compile a model to author its design inputs.</p>';
+    element("#parameter-fields").innerHTML = '<p class="hint">Compile a model to author fixed parameter values.</p>';
+    element("#design-json-field").hidden = false;
+    element("#truth-json-field").hidden = false;
+    element("#design-json-toggle").disabled = true;
+    element("#truth-json-toggle").disabled = true;
+    return;
+  }
+  if (renderedSchema !== schema) {
+    buildDesignSlots(schema);
+    buildParameterFields(schema);
+    renderedSchema = schema;
+  }
+  element("#design-json-field").hidden = !designJsonMode;
+  element("#design-slots").hidden = designJsonMode;
+  const designFormsSupported = supportsDesignForms(schema);
+  element("#design-json-toggle").disabled = !designFormsSupported;
+  element("#design-json-toggle").textContent = !designFormsSupported
+    ? "JSON required for non-vector slots"
+    : designJsonMode ? "use design forms" : "edit as JSON";
+  element("#truth-json-field").hidden = !truthJsonMode;
+  element("#parameter-fields").hidden = truthJsonMode;
+  element("#truth-json-toggle").disabled = false;
+  element("#truth-json-toggle").textContent = truthJsonMode ? "use parameter form" : "edit as JSON";
+  if (!designJsonMode) renderDesignPreviews(schema);
+  renderPlanSummary();
+}
+
+function buildDesignSlots(schema) {
+  const container = element("#design-slots");
+  container.replaceChildren();
+  if (schema.data.length === 0) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "This model has no design inputs.";
+    container.append(hint);
+    return;
+  }
+  for (const [index, slot] of schema.data.entries()) {
+    const card = document.createElement("div");
+    card.className = "slot-card";
+    const head = document.createElement("div");
+    head.className = "slot-head";
+    const name = document.createElement("span");
+    name.className = "slot-name";
+    name.textContent = slot.name;
+    const type = document.createElement("span");
+    type.className = "slot-type";
+    type.textContent = `${slot.kind} · ${slot.dtype}`;
+    head.append(name, type);
+    const row = document.createElement("div");
+    row.className = "slot-expr";
+    const equals = document.createElement("span");
+    equals.className = "eq";
+    equals.textContent = "=";
+    const input = document.createElement("input");
+    input.id = `design-expr-${safeId(slot.name)}`;
+    input.type = "text";
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.value = entryOr(designExpressions, slot.name, defaultExpression(slot));
+    input.setAttribute("aria-label", `Design expression for ${slot.name}`);
+    input.dataset.slotIndex = String(index);
+    input.addEventListener("input", () => {
+      designExpressions[slot.name] = input.value;
+      syncDesignForms();
+    });
+    row.append(equals, input);
+    const vocabulary = document.createElement("p");
+    vocabulary.className = "slot-vocab";
+    vocabulary.textContent = "Vocabulary: linspace(start, stop, n) · repeat([v, …], times) · normal(loc, scale, n, seed=<int>) · uniform(low, high, n, seed=<int>) · literal [v, v, …]";
+    const preview = document.createElement("pre");
+    preview.id = `design-preview-${safeId(slot.name)}`;
+    preview.className = "slot-preview";
+    card.append(head, row, vocabulary, preview);
+    container.append(card);
+  }
+}
+
+function buildParameterFields(schema) {
+  const container = element("#parameter-fields");
+  container.replaceChildren();
+  if (schema.parameters.length === 0) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "This model has no fixed parameters.";
+    container.append(hint);
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "param-grid";
+  for (const parameter of schema.parameters) {
+    const label = document.createElement("span");
+    label.className = "param-label";
+    const name = document.createElement("span");
+    name.className = "param-name";
+    name.textContent = parameter.name;
+    const prior = document.createElement("span");
+    prior.className = "param-prior";
+    prior.textContent = parameter.prior;
+    label.append(name, prior);
+    if (parameter.constraint !== null) {
+      const constraint = document.createElement("span");
+      constraint.className = "constraint";
+      constraint.textContent = parameter.constraint;
+      label.append(constraint);
+    }
+    const input = document.createElement("input");
+    input.id = `fixed-value-${safeId(parameter.name)}`;
+    input.value = entryOr(
+      fixedValueEntries, parameter.name, defaultParameterEntry(parameter),
+    );
+    input.type = parameter.shape.length === 0 ? "number" : "text";
+    input.step = parameter.shape.length === 0 ? "any" : "";
+    input.setAttribute("aria-label", `${parameter.name} fixed value`);
+    if (parameter.shape.length !== 0) {
+      input.placeholder = `JSON value with shape [${parameter.shape.join(", ")}]`;
+    }
+    input.addEventListener("input", () => {
+      fixedValueEntries[parameter.name] = input.value;
+      syncTruthForm();
+    });
+    grid.append(label, input);
+  }
+  container.append(grid);
+}
+
+function updateAuthoringControls(schema) {
+  for (const slot of schema.data) {
+    const input = document.getElementById(`design-expr-${safeId(slot.name)}`);
+    if (input !== null) {
+      input.value = entryOr(designExpressions, slot.name, defaultExpression(slot));
+    }
+  }
+  for (const parameter of schema.parameters) {
+    const input = document.getElementById(`fixed-value-${safeId(parameter.name)}`);
+    if (input !== null) input.value = entryOr(fixedValueEntries, parameter.name, "");
+  }
+}
+
+function syncDesignForms() {
+  const schema = state.compile.modelSchema;
+  if (state.compile.status !== "compiled" || schema === undefined) return;
+  writeDesignDocumentFromEntries(schema);
+  renderDesignPreviews(schema);
+  generationInputsEdited();
+}
+
+function syncTruthForm() {
+  const schema = state.compile.modelSchema;
+  if (state.compile.status !== "compiled" || schema === undefined) return;
+  writeTruthDocumentFromEntries(schema);
+  generationInputsEdited();
+}
+
+function renderDesignPreviews(schema) {
+  for (const slot of schema.data) {
+    const input = document.getElementById(`design-expr-${safeId(slot.name)}`);
+    const preview = document.getElementById(`design-preview-${safeId(slot.name)}`);
+    if (input === null || preview === null) continue;
+    try {
+      const values = evaluateDesignExpression(input.value);
+      const shown = values.slice(0, 8).map((value) => Number(value).toFixed(2)).join(", ");
+      input.classList.remove("invalid");
+      preview.classList.remove("invalid");
+      preview.textContent = `${slot.name} ← shape [${values.length}] · [${shown}${values.length > 8 ? ", …" : ""}]`;
+    } catch (error) {
+      input.classList.add("invalid");
+      preview.classList.add("invalid");
+      preview.textContent = `✗ ${message(error)}`;
+    }
+  }
+}
+
+function renderPlanSummary() {
+  const count = element("#generation-count").value;
+  const seed = element("#generation-seed").value;
+  const parameterSource = {
+    fixed: "fixed values",
+    prior: "model prior",
+    posterior: "posterior from fit",
+  }[selectedParamSource()];
+  const designSource = designJsonMode
+    ? "design JSON"
+    : Object.entries(designExpressions).map(([name, expression]) => `${name}: ${expression}`).join(", ");
+  element("#plan-summary").textContent =
+    `draw(count=${count}, seed=${seed})\n  parameters: ${parameterSource}\n  design: ${designSource || "{}"}`;
+}
+
+function supportsDesignForms(schema) {
+  return schema.data.every((slot) => slot.kind === "vector");
+}
+
+function entryOr(entries, name, fallback) {
+  return Object.hasOwn(entries, name) ? entries[name] : fallback;
+}
+
+function safeId(name) {
+  return [...name].map((character) => /[A-Za-z0-9_-]/.test(character)
+    ? character
+    : `-${character.codePointAt(0).toString(16)}-`).join("");
+}
+
 async function compileModel() {
   const requestId = crypto.randomUUID();
   const sourceRevision = state.sourceRevision;
@@ -256,7 +673,13 @@ async function compileModel() {
   try {
     const result = await runtime.compile(state.source);
     if (result.ok) {
-      dispatch({ type: "compile-succeeded", requestId, revision: sourceRevision, irBytes: result.irBytes, irHash: result.irHash });
+      if (state.compile.status !== "compiling" || state.compile.requestId !== requestId ||
+          state.sourceRevision !== sourceRevision) return;
+      configureAuthoring(result.modelSchema);
+      dispatch({
+        type: "compile-succeeded", requestId, revision: sourceRevision,
+        irBytes: result.irBytes, irHash: result.irHash, modelSchema: result.modelSchema,
+      });
     } else {
       dispatch({ type: "compile-failed", requestId, revision: sourceRevision, error: result.traceback });
     }
@@ -434,6 +857,16 @@ function documentBytes(text) {
   return new TextEncoder().encode(serializeDocument(parseDocument(text)));
 }
 
+function validDocument(text) {
+  if (text.trim() === "") return false;
+  try {
+    documentBytes(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function bytesHash(bytes) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
@@ -529,7 +962,9 @@ function render() {
   hash.textContent = state.compile.status === "compiled" ? `sha256:${state.compile.irHash}` : "";
   element("#compile-status").textContent = state.compile.status === "compiling"
     ? "Compiling in an isolated worker…"
-    : state.compile.status === "compiled" ? "Model compiled successfully." : "";
+    : state.compile.status === "compiled"
+      ? `Compiled. ${countLabel(state.compile.modelSchema.parameters.length, "parameter")}, ${countLabel(state.compile.modelSchema.data.length, "design slot")}, ${countLabel(state.compile.modelSchema.observed.length, "observed slot")}.`
+      : "";
   const compileError = element("#compile-error");
   compileError.hidden = state.compile.status !== "failed";
   compileError.textContent = state.compile.status === "failed" ? state.compile.error : "";
@@ -547,6 +982,7 @@ function render() {
   element("#posterior-source-hint").hidden = posteriorAvailable;
   if (posteriorSource.checked && posteriorSource.disabled) element("#param-source-fixed").checked = true;
 
+  renderAuthoring();
   renderGenerationSelection();
   const generatedAvailable = state.generation.selected !== null;
   const generatedSource = element("#dataset-source-generated");
@@ -556,21 +992,26 @@ function render() {
   const paramSource = selectedParamSource();
   const datasetSource = selectedDatasetSource();
   element("#fixed-values-field").hidden = paramSource !== "fixed";
+  const count = integerValue("#generation-count");
+  const countText = Number.isSafeInteger(count) && count >= 1 ? String(count) : "N";
+  const datasetWord = count === 1 ? "dataset" : "datasets";
   element("#generate-button").textContent = {
-    fixed: "Generate at fixed values",
-    prior: "Generate from model prior",
-    posterior: "Generate from posterior",
+    fixed: `Simulate ${countText} ${datasetWord} at fixed values`,
+    prior: `Simulate ${countText} ${datasetWord} from the model prior`,
+    posterior: `Simulate ${countText} ${datasetWord} from the posterior`,
   }[paramSource];
+  const selectedIndex = state.generation.selected?.index ?? 0;
   element("#fit-button").textContent = datasetSource === "generated"
-    ? "Fit generated dataset"
+    ? `Fit simulated pair ${selectedIndex}`
     : "Fit observed data";
+  element("#observed-data-field").hidden = datasetSource !== "observed";
 
   const unavailable = state.compile.status !== "compiled" || state.run.status === "running" ||
     state.generation.attempt.status === "running";
   element("#generate-button").disabled = unavailable || !validGenerationSeed() ||
     !validGenerationCount() ||
-    design.value.trim() === "" ||
-    (paramSource === "fixed" && truth.value.trim() === "") ||
+    !validDocument(design.value) ||
+    (paramSource === "fixed" && !validDocument(truth.value)) ||
     (paramSource === "posterior" && !posteriorAvailable);
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
     (datasetSource === "observed" && observed.value.trim() === "") ||
@@ -612,7 +1053,7 @@ function renderGenerationSelection() {
     selector.replaceChildren(...Array.from({ length: collection.parsed.count }, (_, index) => {
       const option = document.createElement("option");
       option.value = String(index);
-      option.textContent = `Dataset ${index + 1}`;
+      option.textContent = `draw ${index}`;
       return option;
     }));
   }
@@ -620,8 +1061,8 @@ function renderGenerationSelection() {
   selector.disabled = selected === null;
   if (selected !== null) selector.value = String(selected.index);
   summary.textContent = selected === null
-    ? "Select a generated parameter/dataset pair."
-    : `Selected dataset ${selected.index + 1} of ${collection.parsed.count} with its paired parameters.`;
+    ? "Select a simulated parameter/dataset pair."
+    : `Pair ${selected.index} of ${collection.parsed.count} selected. Paired parameters retained for recovery.`;
   container.hidden = false;
 }
 
@@ -715,6 +1156,7 @@ function selectedDatasetSource() {
 
 function integerValue(selector) { return Number(element(selector).value); }
 function numberValue(selector) { return Number(element(selector).value); }
+function countLabel(count, singular) { return `${count} ${singular}${count === 1 ? "" : "s"}`; }
 function element(selector) {
   const value = document.querySelector(selector);
   if (value === null) throw new Error(`Missing required element ${selector}`);
