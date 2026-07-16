@@ -75,6 +75,38 @@ function runtimePosteriorBytes() {
   ].map((document) => JSON.stringify(document)).join("\n") + "\n");
 }
 
+async function conditionWithCancelledFollowUp(command) {
+  const controller = new AbortController();
+  const executor = {
+    execute: async (request) => {
+      if (request.command === "sample") return { rawBytes: runtimePosteriorBytes() };
+      if (request.command === command) {
+        throw new EngineError("Cancelled", `${command} worker cancelled`);
+      }
+      return { rawBytes: bytes("{}") };
+    },
+  };
+  let error;
+  try {
+    await new BrowserRuntime(executor).run({
+      operation: "condition",
+      modelIr: bytes('{"bayeswire_ir":1}'),
+      data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+      settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      ...(command === "recover-check" ? {
+        pairedParameters: {
+          format: "bayescycle.data.json.v1",
+          variables: { theta: { dtype: "float64", shape: [], values: [0.5] } },
+        },
+      } : {}),
+    }, undefined, { signal: controller.signal });
+  } catch (reason) {
+    error = reason;
+  }
+  assert(!controller.signal.aborted, "outer signal unexpectedly aborted");
+  assert(error?.kind === "Cancelled", `${command} cancellation resolved: ${String(error)}`);
+}
+
 function generatedOutput(request) {
   const marker = {
     generated_datasets_format: "v0-provisional",
@@ -237,6 +269,39 @@ export default [
     },
   },
   {
+    name: "generation abort after engine output rejects before publication",
+    fn: async () => {
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const parameters = bytes(
+        '{"format":"bayescycle.data.json.v1","variables":' +
+        '{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n',
+      );
+      const controller = new AbortController();
+      let delivered = false;
+      const executor = {
+        execute: async (request) => {
+          delivered = true;
+          queueMicrotask(() => controller.abort());
+          return { rawBytes: generatedOutput(request) };
+        },
+      };
+      let error;
+      try {
+        await new BrowserRuntime(executor).run({
+          operation: "generate",
+          plan: generateDatasets(model, {
+            design, parameterSource: fixed(parameters), count: 1, seed: 0,
+          }),
+        }, undefined, { signal: controller.signal });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(delivered, "engine output was not delivered before abort");
+      assert(error?.kind === "Cancelled", `post-engine abort resolved: ${String(error)}`);
+    },
+  },
+  {
     name: "runtime rejects malformed successful generation output",
     fn: async () => {
       const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
@@ -314,6 +379,14 @@ export default [
       const report = JSON.parse(UTF8.decode(result.artifacts[0].bytes));
       assert(report.diagnostics_format === "v0-provisional", `unexpected report: ${report.diagnostics_format}`);
     },
+  },
+  {
+    name: "typed diagnostic cancellation rejects conditioning",
+    fn: async () => conditionWithCancelledFollowUp("diagnose"),
+  },
+  {
+    name: "typed recovery cancellation rejects conditioning",
+    fn: async () => conditionWithCancelledFollowUp("recover-check"),
   },
   {
     name: "runtime propagates abort signals to diagnostic and recovery verbs",

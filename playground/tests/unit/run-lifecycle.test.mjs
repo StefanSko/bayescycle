@@ -1,4 +1,7 @@
-import { RunControllers } from "/site/src/app/run-controllers.mjs";
+import {
+  cancellationEvents,
+  RunControllers,
+} from "/site/src/app/run-controllers.mjs";
 import { initialState, reduce } from "/site/src/app/state.mjs";
 import { WorkerEngine } from "/site/src/engine/executor.mjs";
 
@@ -100,6 +103,101 @@ export default [
         collection: { sourceKind: "fixed", model: "old" },
       });
       assert(state.generation.collection === null, "prior-model generation survived recompile");
+    },
+  },
+  {
+    name: "one cancellation ends every concurrently active attempt",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, {
+        type: "compile-started", requestId: "compile", revision: 0,
+      });
+      state = reduce(state, {
+        type: "generation-started", requestId: "generation", dependencyKey: "g-key",
+      });
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "conditioning",
+        dependencyKey: "c-key", datasetSource: "observed",
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "conditioning", revision: 0,
+        operation: "condition", datasetSource: "observed",
+      });
+      const controllers = new RunControllers();
+      const compile = controllers.begin("compile", "compile");
+      const generation = controllers.begin("generation", "generation");
+      const conditioning = controllers.begin("conditioning", "conditioning");
+      controllers.reconcile(state);
+
+      const events = cancellationEvents(state, "Cancelled once");
+      assert(events.map((event) => event.type).join(",") ===
+        "run-failed,conditioning-failed,generation-failed,compile-failed",
+      `unexpected cancellation events: ${events.map((event) => event.type)}`);
+      for (const event of events) {
+        state = reduce(state, event);
+        controllers.reconcile(state);
+      }
+      assert(state.compile.status === "failed", "compile attempt survived cancellation");
+      assert(state.generation.attempt.status === "failed", "generation attempt survived cancellation");
+      assert(state.conditioning.attempt.status === "failed", "conditioning attempt survived cancellation");
+      assert(state.run.status !== "running", "logical run survived cancellation");
+      assert(compile.signal.aborted, "compile signal survived cancellation");
+      assert(generation.signal.aborted, "generation signal survived cancellation");
+      assert(conditioning.signal.aborted, "conditioning signal survived cancellation");
+    },
+  },
+  {
+    name: "stale run-start rejection is followed by conditioning cleanup",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, {
+        type: "generation-started", requestId: "generation", dependencyKey: "g-key",
+      });
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "generation", dependencyKey: "g-key",
+        collection: { sourceKind: "fixed" },
+        selection: {
+          revision: 0, index: 0,
+          parametersBytes: new Uint8Array([1]), datasetBytes: new Uint8Array([2]),
+        },
+      });
+      state = reduce(state, {
+        type: "run-started", requestId: "old-fit", revision: 0,
+        operation: "condition", datasetSource: "generated",
+      });
+      state = reduce(state, {
+        type: "run-succeeded", requestId: "old-fit", revision: 0, artifacts: [],
+      });
+      const capturedProjectRevision = state.projectRevision;
+      state = reduce(state, {
+        type: "selection-edited", revision: 1, index: 0,
+        parametersBytes: new Uint8Array([3]), datasetBytes: new Uint8Array([4]),
+      });
+      state = reduce(state, {
+        type: "conditioning-started", requestId: "stale-start", dependencyKey: "c-key",
+        datasetSource: "observed",
+        guard: {
+          compileRevision: null,
+          settingsRevision: state.conditioning.settingsRevision,
+          datasetSource: "observed",
+          datasetSourceRevision: state.conditioning.datasetSourceRevision,
+          observed: state.documents.observed,
+          selectionRevision: 0,
+        },
+      });
+      assert(state.conditioning.attempt.status === "running", "conditioning start was not accepted");
+      state = reduce(state, {
+        type: "run-started", requestId: "stale-start",
+        revision: capturedProjectRevision,
+        operation: "condition", datasetSource: "observed",
+      });
+      assert(state.run.status !== "running", "stale run start was accepted");
+      state = reduce(state, {
+        type: "conditioning-failed", requestId: "stale-start",
+        dependencyKey: "c-key", error: "Conditioning request became stale before launch",
+      });
+      assert(state.conditioning.attempt.status === "failed", "nonexistent run retained an attempt");
+      assert(state.run.status !== "running", "cleanup invented a logical run");
     },
   },
   {

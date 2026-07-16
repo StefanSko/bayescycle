@@ -289,6 +289,35 @@ export default [
     },
   },
   {
+    name: "abort during post-response hashing rejects compilation",
+    fn: async () => {
+      const controller = new AbortController();
+      let worker;
+      const compiler = client({
+        workerFactory: () => {
+          worker = new FakeWorker((request, active) => {
+            queueMicrotask(() => {
+              active.emit("message", {
+                type: "compiled",
+                id: request.id,
+                irBytes: new TextEncoder().encode("{}").buffer,
+                modelSchema: MODEL_SCHEMA,
+              });
+              controller.abort();
+            });
+          });
+          queueMicrotask(() => worker.emit("message", { type: "ready", protocol: 1 }));
+          return worker;
+        },
+      });
+      await rejectedAfterTermination(
+        compiler.compile("source", { signal: controller.signal }),
+        worker,
+        "cancelled",
+      );
+    },
+  },
+  {
     name: "worker terminates on compile timeout and cancellation",
     fn: async () => {
       let timeoutWorker;

@@ -7,6 +7,8 @@ CASES = [
     "invalidating edit aborts a superseded run worker",
     "stale completion after abort cannot mutate state",
     "changed recompile lineage aborts and invalidates prior-model generation",
+    "one cancellation ends every concurrently active attempt",
+    "stale run-start rejection is followed by conditioning cleanup",
     "source edit aborts its in-flight compile controller",
 ]
 
