@@ -21,15 +21,11 @@ from bayescycle._workflow.generation_plan import (
     generation_invalidation_key,
     generation_plan_identity,
     parse_generation_plan_document,
-    resolve_generation_plan_document,
     serialize_generation_plan,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "playground/tests/fixtures/generation_plan.fixed.v0.json"
-DESIGN_SOURCE_FIXTURE = (
-    ROOT / "playground/tests/fixtures/generation_plan.fixed.design-source.v0.json"
-)
 MODEL_BYTES = b'{"bayeswire_ir":1,"model":{}}\n'
 OTHER_MODEL_BYTES = b'{"bayeswire_ir":1,"model":{"name":"other"}}\n'
 DESIGN_BYTES = (
@@ -88,49 +84,6 @@ def test_serialized_fixed_plan_matches_shared_versioned_fixture() -> None:
     assert document.invalidation_key == INVALIDATION_KEY
     assert generation_plan_identity(plan) == IDENTITY
     assert generation_invalidation_key(plan) == INVALIDATION_KEY
-
-
-def test_design_source_matches_shared_fixture_and_resolves_byte_identically() -> None:
-    source = {
-        "x": "linspace(-2, 2, 3)",
-        "stale_μ": "repeat([0], 3)",
-    }
-    plan = generate_datasets(
-        MODEL_BYTES,
-        design=DESIGN_BYTES,
-        design_source=source,
-        parameter_source=Fixed(FIXED_BYTES),
-        count=2,
-        seed=7,
-    )
-    source["x"] = "changed after construction"
-    fixture = DESIGN_SOURCE_FIXTURE.read_bytes()
-    assert serialize_generation_plan(plan) == fixture
-    assert parse_generation_plan_document(fixture).bytes == fixture
-
-    resolved = resolve_generation_plan_document(
-        fixture,
-        model_ir_bytes=MODEL_BYTES,
-        design_bytes=DESIGN_BYTES,
-        fixed_parameters_bytes=FIXED_BYTES,
-    )
-    assert resolved.design_source == {
-        "x": "linspace(-2, 2, 3)",
-        "stale_μ": "repeat([0], 3)",
-    }
-    assert serialize_generation_plan(resolved) == fixture
-
-
-@pytest.mark.parametrize(
-    "design_source",
-    [[], {"": "x"}, {"x": ""}, {"x": 1}, None],
-)
-def test_rejects_malformed_serialized_design_source(design_source: object) -> None:
-    document = json.loads(DESIGN_SOURCE_FIXTURE.read_bytes())
-    document["design_source"] = design_source
-    encoded = json.dumps(document, separators=(",", ":")).encode() + b"\n"
-    with pytest.raises(GenerationPlanError, match="design_source"):
-        parse_generation_plan_document(encoded)
 
 
 def test_serializes_all_exact_parameter_source_variants() -> None:

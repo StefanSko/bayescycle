@@ -31,8 +31,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-async function fixtureBytes(name = "generation_plan.fixed.v0.json") {
-  const response = await fetch(`/tests/fixtures/${name}`);
+async function fixtureBytes() {
+  const response = await fetch("/tests/fixtures/generation_plan.fixed.v0.json");
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -76,38 +76,15 @@ export default [
     },
   },
   {
-    name: "serializes design-source shared fixture and rejects malformed provenance",
+    name: "rejects designSource as a generation option",
     fn: async () => {
-      const designSource = {
-        x: "linspace(-2, 2, 3)",
-        "stale_μ": "repeat([0], 3)",
-      };
-      const plan = generateDatasets(MODEL_BYTES, {
+      await rejects(() => generateDatasets(MODEL_BYTES, {
         design: DESIGN_BYTES,
-        designSource,
+        designSource: { x: "linspace(-2, 2, 3)" },
         parameterSource: fixed(FIXED_BYTES),
         count: 2,
         seed: 7,
-      });
-      designSource.x = "changed after construction";
-      const fixture = await fixtureBytes("generation_plan.fixed.design-source.v0.json");
-      assert(TEXT.decode(await serializeGenerationPlan(plan)) === TEXT.decode(fixture), "design-source fixture bytes differ");
-      const parsed = await parseGenerationPlanDocument(fixture);
-      assert(TEXT.decode(parsed.bytes) === TEXT.decode(fixture), "design-source parsed bytes changed");
-
-      const document = JSON.parse(TEXT.decode(fixture));
-      for (const malformed of [[], { "": "x" }, { x: "" }, { x: 1 }]) {
-        document.design_source = malformed;
-        await rejects(
-          () => parseGenerationPlanDocument(UTF8.encode(`${JSON.stringify(document)}\n`)),
-          "design_source",
-        );
-      }
-      await rejects(() => generateDatasets(MODEL_BYTES, {
-        design: DESIGN_BYTES,
-        designSource: null,
-        parameterSource: fixed(FIXED_BYTES),
-      }), "design_source");
+      }), "unknown or missing fields");
     },
   },
   {

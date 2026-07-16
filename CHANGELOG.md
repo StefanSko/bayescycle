@@ -15,8 +15,6 @@ formats retain their own compatibility policies.
 - Rework the Playground's data-authoring workflow into a schema-driven
   **Simulate data** section with design expressions and previews, generated
   fixed-parameter forms, JSON escape hatches, and count-aware simulation controls.
-- Record form-authored design expressions as optional, non-normative
-  `design_source` provenance in portable generation plans.
 - Remove stale implementation logs, completed plans, generated walkthroughs,
   and duplicated documentation so maintained guidance has a clear owner.
 

@@ -772,7 +772,6 @@ async function generateCollection() {
   const settings = generationSettings();
   const plan = generateDatasets(modelBytes, {
     design: designBytes,
-    ...(designJsonMode ? {} : { designSource: { ...designExpressions } }),
     parameterSource,
     count: settings.count,
     seed: settings.seed,
