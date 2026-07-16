@@ -71,7 +71,8 @@ export class CompilerClient {
         dispose();
         resolve(value);
       };
-      const onAbort = () => fail(new Error("Model compilation was cancelled"));
+      const cancellationError = () => new Error("Model compilation was cancelled");
+      const onAbort = () => fail(cancellationError());
       const onError = (event) => fail(new Error(boundedMessage(event.message, "Compiler worker failed")));
       const onMessage = (event) => {
         const message = event.data;
@@ -107,9 +108,15 @@ export class CompilerClient {
           // Dispose the mutable interpreter before performing trusted hashing.
           dispose();
           void sha256(irBytes).then(
-            (irHash) => succeed({
-              ok: true, irBytes, irHash, modelSchema, executionContext: "worker",
-            }),
+            (irHash) => {
+              if (signal?.aborted === true) {
+                fail(cancellationError());
+                return;
+              }
+              succeed({
+                ok: true, irBytes, irHash, modelSchema, executionContext: "worker",
+              });
+            },
             fail,
           );
           return;

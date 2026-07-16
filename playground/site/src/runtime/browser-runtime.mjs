@@ -1,5 +1,6 @@
 import { CompilerClient } from "../compile/index.mjs";
 import {
+  EngineError,
   WorkerEngine,
   diagnose,
   generate,
@@ -203,8 +204,10 @@ export class BrowserRuntime {
       output.rawBytes,
     );
     if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime") {
+      requireNotCancelled(signal);
       return { artifacts: [generated] };
     }
+    requireNotCancelled(signal);
     const planBytes = await serializeGenerationPlan(plan);
     const published = [
       artifact("model.ir.json", "application/json", modelBytes),
@@ -232,8 +235,11 @@ export class BrowserRuntime {
       );
     }
     published.push(generated);
+    requireNotCancelled(signal);
     const runBytes = await generationRunBytes(published);
+    requireNotCancelled(signal);
     published.push(artifact("run.json", "application/json", runBytes));
+    requireNotCancelled(signal);
     return { artifacts: published };
   }
 
@@ -257,7 +263,7 @@ export class BrowserRuntime {
         "diagnostics.json", "application/json", diagnosed.rawBytes,
       ));
     } catch (error) {
-      if (signal?.aborted === true) throw error;
+      if (signal?.aborted === true || isCancelled(error)) throw error;
       warnings.push(`Posterior completed; diagnostics unavailable: ${error.message}`);
     }
     if (request.pairedParameters !== undefined) {
@@ -272,7 +278,7 @@ export class BrowserRuntime {
           "recovery_check.json", "application/json", recovery.rawBytes,
         ));
       } catch (error) {
-        if (signal?.aborted === true) throw error;
+        if (signal?.aborted === true || isCancelled(error)) throw error;
         warnings.push(`Posterior completed; recovery check unavailable: ${error.message}`);
       }
     }
@@ -465,6 +471,11 @@ function asObject(value, label) {
     throw new RuntimeError("InvalidRequest", `${label} must contain a JSON object`);
   }
   return parsed;
+}
+
+function isCancelled(error) {
+  return error instanceof EngineError && error.error === "Cancelled" ||
+    error instanceof RuntimeError && error.kind === "Cancelled";
 }
 
 function requireNotCancelled(signal) {

@@ -1,5 +1,42 @@
 const KINDS = ["compile", "generation", "conditioning"];
 
+export function cancellationEvents(state, error) {
+  const events = [];
+  if (state.run.status === "running") {
+    events.push({
+      type: "run-failed",
+      requestId: state.run.requestId,
+      revision: state.run.revision,
+      error,
+    });
+  }
+  if (state.conditioning.attempt.status === "running") {
+    events.push({
+      type: "conditioning-failed",
+      requestId: state.conditioning.attempt.requestId,
+      dependencyKey: state.conditioning.attempt.dependencyKey,
+      error,
+    });
+  }
+  if (state.generation.attempt.status === "running") {
+    events.push({
+      type: "generation-failed",
+      requestId: state.generation.attempt.requestId,
+      dependencyKey: state.generation.attempt.dependencyKey,
+      error,
+    });
+  }
+  if (state.compile.status === "compiling") {
+    events.push({
+      type: "compile-failed",
+      requestId: state.compile.requestId,
+      revision: state.compile.revision,
+      error,
+    });
+  }
+  return events;
+}
+
 // Physical worker ownership follows reducer state without changing reducer
 // semantics. When an accepted attempt is no longer current, its signal aborts.
 export class RunControllers {

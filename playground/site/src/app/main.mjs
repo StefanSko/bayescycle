@@ -22,7 +22,7 @@ import {
   supportsParameterForms,
 } from "./form-limits.mjs";
 import { renderRecoverySummary } from "./recovery.mjs";
-import { RunControllers } from "./run-controllers.mjs";
+import { cancellationEvents, RunControllers } from "./run-controllers.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { initialState, reduce } from "./state.mjs";
 
@@ -289,29 +289,7 @@ function launchRun(operation) {
 function cancelActiveRun() {
   const cancellationMessage = "Cancelled. You can start another run.";
   element("#progress").replaceChildren();
-  if (state.generation.attempt.status === "running") {
-    const { requestId, dependencyKey } = state.generation.attempt;
-    dispatch({
-      type: "generation-failed", requestId, dependencyKey,
-      error: cancellationMessage,
-    });
-    return;
-  }
-  if (state.run.status === "running") {
-    const { requestId, revision: runRevision } = state.run;
-    const attempt = state.conditioning.attempt;
-    dispatch({
-      type: "run-failed", requestId, revision: runRevision,
-      error: cancellationMessage,
-    });
-    if (attempt.status === "running" && attempt.requestId === requestId) {
-      dispatch({
-        type: "conditioning-failed", requestId,
-        dependencyKey: attempt.dependencyKey,
-        error: cancellationMessage,
-      });
-    }
-  }
+  for (const event of cancellationEvents(state, cancellationMessage)) dispatch(event);
 }
 
 function settingsEdited() {
@@ -1045,6 +1023,15 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     operation: "condition",
     datasetSource,
   });
+  if (state.run.status !== "running" || state.run.requestId !== requestId) {
+    dispatch({
+      type: "conditioning-failed",
+      requestId,
+      dependencyKey,
+      error: "Conditioning request became stale before launch",
+    });
+    return;
+  }
   const controller = runControllers.begin("conditioning", requestId);
   runControllers.reconcile(state);
   if (controller.signal.aborted) return;

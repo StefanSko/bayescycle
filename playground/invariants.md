@@ -97,10 +97,11 @@ input to a later compilation.
     descendants. Unknown or stale asynchronous completions cannot mutate
     current state.
 11. Each compile, generation, and fit attempt owns one cancellation signal.
-    User cancellation and reducer-decided invalidation terminate every engine
-    worker still owned by that attempt. The first failed sampling chain
-    terminates its in-flight siblings; cancellation never waits for sibling
-    chains to finish naturally.
+    One user cancellation ends every concurrently current attempt, and user
+    cancellation or reducer-decided invalidation terminates every engine worker
+    still owned by those attempts. The first failed sampling chain terminates
+    its in-flight siblings; cancellation never waits for sibling chains to
+    finish naturally or degrades into a partial-success warning.
 12. A failed or cancelled follow-up operation does not erase artifacts from an earlier
     successful run.
 13. Capability failures are visible and bounded. The frontend never drops
