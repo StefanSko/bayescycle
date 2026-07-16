@@ -101,12 +101,14 @@ export function parseStrictJson(text, label, options = {}) {
       if (text[index] !== ":") fail("has malformed object field");
       index += 1;
       const parsed = value(
-        key, key === "values" && integerTypedValues, unrestricted,
+        key, !unrestricted && key === "values" && integerTypedValues, unrestricted,
       );
-      if (key === "dtype") {
-        integerTypedValues = parsed.value === "int32" || parsed.value === "int64";
-      } else if (key === "values") {
-        valuesUseOnlyIntegerTokens = parsed.allIntegerTokens;
+      if (!unrestricted) {
+        if (key === "dtype") {
+          integerTypedValues = parsed.value === "int32" || parsed.value === "int64";
+        } else if (key === "values") {
+          valuesUseOnlyIntegerTokens = parsed.allIntegerTokens;
+        }
       }
       whitespace();
       if (text[index] === "}") { index += 1; finish(); return; }

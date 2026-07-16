@@ -161,6 +161,9 @@ export async function parseGenerationPlanDocument(input) {
   try {
     value = parseStrictJson(TEXT.decode(bytes), "generation plan", {
       integerKeys: ["count", "seed"],
+      // Provenance keys are user-named design slots; structural field rules
+      // (integer tokens, dtype/values coupling) must not apply inside it.
+      unrestrictedObjectKeys: ["design_source"],
       sortedObjectKeys: ["design_source"],
     });
   }
