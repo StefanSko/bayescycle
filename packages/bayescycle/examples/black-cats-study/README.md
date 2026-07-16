@@ -10,7 +10,7 @@ It starts at the `estimand` phase with three blocking human questions:
 Use from the repository root with a fresh agent invocation such as:
 
 ```text
-/skill:bayescycle-study examples/black-cats-study phase=estimand
+/skill:bayescycle-study packages/bayescycle/examples/black-cats-study phase=estimand
 ```
 
 The `runs/` directory is intentionally not committed. Raw Bayesite NDJSON and
