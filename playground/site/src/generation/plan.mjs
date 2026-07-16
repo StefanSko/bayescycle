@@ -76,16 +76,25 @@ export function jointPredict(parameters, outcomes) {
   return Object.freeze({ kind: "joint-predict", parameters, outcomes });
 }
 
-export function draw(distribution, count, seed) {
+export function draw(distribution, count, seed, designSource = undefined) {
   validateJointPredict(distribution);
   integer(count, "count", 1, MAX_GENERATION_COUNT);
   integer(seed, "seed", 0, MAX_SAFE_INTEGER);
-  return Object.freeze({ kind: "draw", count, seed, distribution });
+  if (designSource === undefined) {
+    return Object.freeze({ kind: "draw", count, seed, distribution });
+  }
+  return Object.freeze({
+    kind: "draw",
+    count,
+    seed,
+    designSource: designSourceValue(designSource),
+    distribution,
+  });
 }
 
 export function generateDatasets(modelIrBytes, options) {
   if (!isObject(options)) throw new GenerationPlanError("generation options must be an object");
-  const allowed = new Set(["design", "parameterSource", "count", "seed"]);
+  const allowed = new Set(["design", "designSource", "parameterSource", "count", "seed"]);
   const unknown = Object.keys(options).filter((key) => !allowed.has(key));
   if (unknown.length > 0 || !("design" in options) || !("parameterSource" in options)) {
     throw new GenerationPlanError(`generation options have unknown or missing fields: ${JSON.stringify(unknown)}`);
@@ -94,14 +103,23 @@ export function generateDatasets(modelIrBytes, options) {
     jointPredict(options.parameterSource, outcomesOf(modelIrBytes, options.design)),
     options.count ?? 100,
     options.seed ?? 0,
+    options.designSource,
   );
 }
 
 export function validateGenerationPlan(value) {
-  exactKeys(value, ["kind", "count", "seed", "distribution"], "draw plan");
+  const hasDesignSource = isObject(value) && Object.hasOwn(value, "designSource");
+  exactKeys(
+    value,
+    hasDesignSource
+      ? ["kind", "count", "seed", "designSource", "distribution"]
+      : ["kind", "count", "seed", "distribution"],
+    "draw plan",
+  );
   if (value.kind !== "draw") throw new GenerationPlanError("plan kind must be draw");
   integer(value.count, "count", 1, MAX_GENERATION_COUNT);
   integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
+  if (hasDesignSource) designSourceValue(value.designSource);
   validateJointPredict(value.distribution);
   return value;
 }
@@ -110,22 +128,25 @@ export async function serializeGenerationPlan(plan) {
   validateGenerationPlan(plan);
   const parameters = await sourceDocument(plan.distribution.parameters);
   const outcomes = plan.distribution.outcomes;
-  const document = {
+  const prefix = {
     generation_plan_format: "v0-provisional",
     kind: "draw",
     count: plan.count,
     seed: plan.seed,
-    distribution: {
-      kind: "joint-predict",
-      parameters,
-      outcomes: {
-        kind: "model-outcomes",
-        model_hash: await sha256(outcomes.modelIrBytes),
-        design_hash: await sha256(outcomes.designBytes),
-      },
+  };
+  const distribution = {
+    kind: "joint-predict",
+    parameters,
+    outcomes: {
+      kind: "model-outcomes",
+      model_hash: await sha256(outcomes.modelIrBytes),
+      design_hash: await sha256(outcomes.designBytes),
     },
   };
-  const bytes = UTF8.encode(`${JSON.stringify(document)}\n`);
+  const text = Object.hasOwn(plan, "designSource")
+    ? `${JSON.stringify(prefix).slice(0, -1)},"design_source":${serializeDesignSource(plan.designSource)},"distribution":${JSON.stringify(distribution)}}\n`
+    : `${JSON.stringify({ ...prefix, distribution })}\n`;
+  const bytes = UTF8.encode(text);
   if (bytes.byteLength > MAX_GENERATION_PLAN_BYTES) {
     throw new GenerationPlanError("serialized generation plan exceeds byte limit");
   }
@@ -140,16 +161,25 @@ export async function parseGenerationPlanDocument(input) {
   try {
     value = parseStrictJson(TEXT.decode(bytes), "generation plan", {
       integerKeys: ["count", "seed"],
+      sortedObjectKeys: ["design_source"],
     });
   }
   catch (error) { throw new GenerationPlanError(`generation plan is not valid JSON: ${String(error)}`); }
   if (!isObject(value) || value.generation_plan_format !== "v0-provisional") {
     throw new GenerationPlanError("generation plan format must be v0-provisional");
   }
-  exactKeys(value, ["generation_plan_format", "kind", "count", "seed", "distribution"], "generation plan");
+  const hasDesignSource = Object.hasOwn(value, "design_source");
+  exactKeys(
+    value,
+    hasDesignSource
+      ? ["generation_plan_format", "kind", "count", "seed", "design_source", "distribution"]
+      : ["generation_plan_format", "kind", "count", "seed", "distribution"],
+    "generation plan",
+  );
   if (value.kind !== "draw") throw new GenerationPlanError("generation plan kind must be draw");
   integer(value.count, "count", 1, MAX_GENERATION_COUNT);
   integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
+  if (hasDesignSource) designSourceValue(value.design_source);
   const distribution = value.distribution;
   exactKeys(distribution, ["kind", "parameters", "outcomes"], "distribution");
   if (distribution.kind !== "joint-predict") {
@@ -303,6 +333,50 @@ function authoredProvenanceValue(value) {
     claimedSourceModelHash: value.claimedSourceModelHash,
     claimedOutcomeModelHash: value.claimedOutcomeModelHash,
   });
+}
+
+function designSourceValue(value) {
+  if (!isObject(value)) throw new GenerationPlanError("design_source must be an object");
+  const entries = Object.entries(value);
+  for (const [name, expression] of entries) {
+    if (name.length === 0) {
+      throw new GenerationPlanError("design_source keys must be non-empty strings");
+    }
+    if (!name.isWellFormed()) {
+      throw new GenerationPlanError(
+        "design_source keys must be well-formed Unicode scalar-value strings",
+      );
+    }
+    if (typeof expression !== "string" || expression.length === 0) {
+      throw new GenerationPlanError("design_source values must be non-empty strings");
+    }
+    if (!expression.isWellFormed()) {
+      throw new GenerationPlanError(
+        "design_source values must be well-formed Unicode scalar-value strings",
+      );
+    }
+  }
+  return Object.freeze(Object.fromEntries(entries));
+}
+
+function serializeDesignSource(value) {
+  const entries = Object.entries(value).sort(
+    ([left], [right]) => compareCodePointStrings(left, right),
+  );
+  return `{${entries.map(([name, expression]) =>
+    `${JSON.stringify(name)}:${JSON.stringify(expression)}`).join(",")}}`;
+}
+
+function compareCodePointStrings(left, right) {
+  const leftPoints = Array.from(left, (character) => character.codePointAt(0));
+  const rightPoints = Array.from(right, (character) => character.codePointAt(0));
+  const length = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < length; index += 1) {
+    if (leftPoints[index] !== rightPoints[index]) {
+      return leftPoints[index] - rightPoints[index];
+    }
+  }
+  return leftPoints.length - rightPoints.length;
 }
 
 function copyBytes(value, label, maximum = MAX_GENERATION_INPUT_BYTES) {

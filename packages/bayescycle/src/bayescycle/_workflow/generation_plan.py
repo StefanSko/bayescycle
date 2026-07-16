@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import cast
 
 MAX_GENERATION_COUNT = 1000
@@ -147,12 +149,14 @@ class Draw:
     distribution: JointPredict
     count: int
     seed: int
+    design_source: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.distribution, JointPredict):
             raise GenerationPlanError("draw requires a joint-predict distribution")
         _integer(self.count, "count", minimum=1, maximum=MAX_GENERATION_COUNT)
         _integer(self.seed, "seed", minimum=0, maximum=_MAX_SAFE_INTEGER)
+        object.__setattr__(self, "design_source", _design_source(self.design_source))
 
 
 @dataclass(frozen=True)
@@ -172,6 +176,7 @@ def generate_datasets(
     parameter_source: ParameterSource,
     count: int = 100,
     seed: int = 0,
+    design_source: Mapping[str, str] | None = None,
 ) -> Draw:
     """Build the user-facing dataset generation plan."""
     return Draw(
@@ -181,11 +186,12 @@ def generate_datasets(
         ),
         count=count,
         seed=seed,
+        design_source=design_source,
     )
 
 
 def serialize_generation_plan(plan: Draw) -> bytes:
-    """Serialize hash-only versioned generation provenance."""
+    """Serialize versioned hash-resolved generation provenance."""
     if not isinstance(plan, Draw):
         raise GenerationPlanError("generation plan must be a Draw value")
     parameters = _source_document(plan.distribution.parameters)
@@ -195,24 +201,42 @@ def serialize_generation_plan(plan: Draw) -> bytes:
         "kind": "draw",
         "count": plan.count,
         "seed": plan.seed,
-        "distribution": {
-            "kind": "joint-predict",
-            "parameters": parameters,
-            "outcomes": {
-                "kind": "model-outcomes",
-                "model_hash": _sha256(outcomes.model_ir_bytes),
-                "design_hash": _sha256(outcomes.design_bytes),
-            },
+    }
+    if plan.design_source is not None:
+        document["design_source"] = {
+            name: expression
+            for name, expression in sorted(plan.design_source.items(), key=lambda item: item[0])
+        }
+    document["distribution"] = {
+        "kind": "joint-predict",
+        "parameters": parameters,
+        "outcomes": {
+            "kind": "model-outcomes",
+            "model_hash": _sha256(outcomes.model_ir_bytes),
+            "design_hash": _sha256(outcomes.design_bytes),
         },
     }
-    data = json.dumps(document, separators=(",", ":"), allow_nan=False).encode() + b"\n"
+    try:
+        data = (
+            json.dumps(
+                document,
+                separators=(",", ":"),
+                allow_nan=False,
+                ensure_ascii=False,
+            ).encode("utf-8")
+            + b"\n"
+        )
+    except UnicodeEncodeError as exc:
+        raise GenerationPlanError(
+            "generation plan strings must be well-formed Unicode scalar-value strings"
+        ) from exc
     if len(data) > MAX_GENERATION_PLAN_BYTES:
         raise GenerationPlanError("serialized generation plan exceeds byte limit")
     return data
 
 
 def parse_generation_plan_document(data: bytes) -> GenerationPlanDocument:
-    """Parse strict hash-only generation provenance."""
+    """Parse strict hash-resolved generation provenance."""
     source = _copy_bytes(data, "generation plan", maximum=MAX_GENERATION_PLAN_BYTES)
     if not source.endswith(b"\n"):
         raise GenerationPlanError("generation plan must end in one LF")
@@ -225,9 +249,17 @@ def parse_generation_plan_document(data: bytes) -> GenerationPlanDocument:
     except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKey) as exc:
         raise GenerationPlanError(f"generation plan is not valid JSON: {exc}") from exc
     document = _object(value, "generation plan")
+    has_design_source = "design_source" in document
     _exact_keys(
         document,
-        ("generation_plan_format", "kind", "count", "seed", "distribution"),
+        (
+            "generation_plan_format",
+            "kind",
+            "count",
+            "seed",
+            *(("design_source",) if has_design_source else ()),
+            "distribution",
+        ),
         "generation plan",
     )
     if document["generation_plan_format"] != "v0-provisional":
@@ -236,6 +268,8 @@ def parse_generation_plan_document(data: bytes) -> GenerationPlanDocument:
         raise GenerationPlanError("generation plan kind must be draw")
     _integer(document["count"], "count", minimum=1, maximum=MAX_GENERATION_COUNT)
     _integer(document["seed"], "seed", minimum=0, maximum=_MAX_SAFE_INTEGER)
+    if has_design_source:
+        _required_design_source(document["design_source"], require_sorted=True)
     distribution = _object(document["distribution"], "distribution")
     _exact_keys(distribution, ("kind", "parameters", "outcomes"), "distribution")
     if distribution["kind"] != "joint-predict":
@@ -266,7 +300,7 @@ def resolve_generation_plan_document(
     fit_data_bytes: bytes | None = None,
     posterior_bytes: bytes | None = None,
 ) -> Draw:
-    """Resolve a strict hash-only plan against co-travelling exact payload bytes."""
+    """Resolve a strict hash-resolved plan against co-travelling exact payload bytes."""
     source = parse_generation_plan_document(data).bytes
     document = cast(dict[str, JsonValue], json.loads(source.decode("utf-8")))
     distribution = cast(dict[str, JsonValue], document["distribution"])
@@ -302,12 +336,18 @@ def resolve_generation_plan_document(
         )
     else:
         raise GenerationPlanError(f"parameter source has unknown kind {kind!r}")
+    design_source = (
+        _required_design_source(document["design_source"], require_sorted=True)
+        if "design_source" in document
+        else None
+    )
     plan = generate_datasets(
         model_ir_bytes,
         design=design_bytes,
         parameter_source=parameter_source,
         count=cast(int, document["count"]),
         seed=cast(int, document["seed"]),
+        design_source=design_source,
     )
     if serialize_generation_plan(plan) != source:
         raise GenerationPlanError("generation plan payload hashes do not match resolved bytes")
@@ -391,6 +431,43 @@ def _parse_source_document(value: JsonValue) -> str | None:
             _hash(source[name], name)
         return _hash(source["fit_model_hash"], "fit_model_hash")
     raise GenerationPlanError(f"parameter source has unknown kind {kind!r}")
+
+
+def _design_source(value: Mapping[str, str] | None) -> Mapping[str, str] | None:
+    if value is None:
+        return None
+    return _required_design_source(value)
+
+
+def _required_design_source(value: object, *, require_sorted: bool = False) -> Mapping[str, str]:
+    if not isinstance(value, Mapping):
+        raise GenerationPlanError("design_source must be an object")
+    copied: dict[str, str] = {}
+    previous_name: str | None = None
+    for name, expression in value.items():
+        if not isinstance(name, str) or not name:
+            raise GenerationPlanError("design_source keys must be non-empty strings")
+        try:
+            name.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise GenerationPlanError(
+                "design_source keys must be well-formed Unicode scalar-value strings"
+            ) from exc
+        if require_sorted and previous_name is not None and previous_name >= name:
+            raise GenerationPlanError(
+                "design_source keys must be strictly ascending by code points"
+            )
+        if not isinstance(expression, str) or not expression:
+            raise GenerationPlanError("design_source values must be non-empty strings")
+        try:
+            expression.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise GenerationPlanError(
+                "design_source values must be well-formed Unicode scalar-value strings"
+            ) from exc
+        copied[name] = expression
+        previous_name = name
+    return MappingProxyType(copied)
 
 
 def _copy_bytes(value: object, label: str, *, maximum: int = MAX_GENERATION_INPUT_BYTES) -> bytes:
