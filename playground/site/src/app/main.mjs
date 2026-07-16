@@ -425,23 +425,6 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
   }
 }
 
-async function runSingle(request) {
-  if (state.compile.status !== "compiled" || state.run.status === "running") return;
-  const requestId = crypto.randomUUID();
-  const projectRevision = state.projectRevision;
-  element("#progress").replaceChildren();
-  dispatch({ type: "run-started", requestId, revision: projectRevision, operation: request.operation });
-  try {
-    const result = await runtime.run(
-      { type: "run", id: requestId, ...request },
-      (event) => renderActiveProgress(requestId, projectRevision, event),
-    );
-    dispatch({ type: "run-succeeded", requestId, revision: projectRevision, artifacts: result.artifacts });
-  } catch (error) {
-    dispatch({ type: "run-failed", requestId, revision: projectRevision, error: message(error) });
-  }
-}
-
 function compiledBytes() {
   if (state.compile.status !== "compiled") throw new Error("Compile the model first");
   return state.compile.irBytes;
@@ -650,9 +633,6 @@ function renderArtifacts(artifacts) {
     "data.json": "#artifact-data",
     "posterior.ndjson": "#artifact-posterior",
     "diagnostics.json": "#artifact-diagnostics",
-    "prior_predictive.ndjson": "#artifact-prior",
-    "posterior_predictive.ndjson": "#artifact-posterior-predictive",
-    "simulated_data.json": "#artifact-simulated",
     "recovery_check.json": "#artifact-recovery",
     "generated_datasets.ndjson": "#artifact-generated-datasets",
     "generation-plan.json": "#artifact-generation-plan",

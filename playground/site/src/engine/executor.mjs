@@ -165,12 +165,7 @@ function exactKeys(value, allowed) {
 
 /** @param {string} command */
 export function isStreamCommand(command) {
-  return (
-    command === "sample" ||
-    command === "generate" ||
-    command === "prior-predictive" ||
-    command === "posterior-predictive"
-  );
+  return command === "sample" || command === "generate";
 }
 
 /** @param {unknown} value @returns {import("./types.mjs").EngineMetadata} */

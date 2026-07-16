@@ -9,7 +9,7 @@ CASES = [
     "runtime rejects malformed successful generation output",
     "runtime generates paired datasets through the vendored wasm",
     "runtime returns named diagnostic artifacts",
-    "prior predictive ignores sampler-only settings",
+    "retired legacy operations are rejected",
     "runtime preserves exact model bytes and returns enveloped run inputs",
     "runtime serializes accepted object data into the sample artifact",
     "runtime conditions on one dataset through the workflow operation",

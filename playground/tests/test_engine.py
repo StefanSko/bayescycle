@@ -10,7 +10,7 @@ CASES = [
     "diagnose merges the two chain fits",
     "merged fits never retain first-chain diagnostics",
     "malformed IR returns a typed engine error",
-    "exports all ten verbs including native generation",
+    "exports the six retained verbs including native generation",
 ]
 
 

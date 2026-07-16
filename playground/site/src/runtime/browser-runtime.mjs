@@ -4,11 +4,8 @@ import {
   diagnose,
   generate,
   mergeChainFits,
-  posteriorPredictive,
-  priorPredictive,
   recoverCheck,
   sample,
-  simulate,
 } from "../engine/index.mjs";
 import { normalizeDocument, serializeDocument } from "../data/documents.mjs";
 import {
@@ -59,49 +56,6 @@ export class BrowserRuntime {
           requireOutput(await diagnose({ fits: [asText(request.fit, "fit")], executor: this.executor })),
         );
         break;
-      case "prior-predictive":
-        result = oneArtifact(
-          "prior_predictive.ndjson",
-          "application/x-ndjson",
-          requireOutput(await priorPredictive({
-            model: asIrBytes(request.modelIr),
-            data: asObject(request.data, "data"),
-            settings: predictiveSettings(request.settings),
-            seed: integerSetting(request.settings, "seed", 0),
-            executor: this.executor,
-          })),
-        );
-        break;
-      case "posterior-predictive":
-        result = oneArtifact(
-          "posterior_predictive.ndjson",
-          "application/x-ndjson",
-          requireOutput(await posteriorPredictive({
-            model: asIrBytes(request.modelIr),
-            data: asObject(request.data, "data"),
-            fit: asText(request.fit, "fit"),
-            seed: integerSetting(request.settings, "seed", 0),
-            executor: this.executor,
-          })),
-        );
-        break;
-      case "simulate": {
-        const output = requireOutput(await simulate({
-          model: asIrBytes(request.modelIr),
-          data: asObject(request.data, "data"),
-          truth: asObject(request.truth, "truth"),
-          seed: integerSetting(request.settings, "seed", 0),
-          executor: this.executor,
-        }));
-        result = {
-          artifacts: [artifact(
-            "simulated_data.json",
-            "application/json",
-            canonicalSimulatedBytes(output.rawBytes),
-          )],
-        };
-        break;
-      }
       case "recover-check":
         result = oneArtifact(
           "recovery_check.json",
@@ -350,16 +304,6 @@ export class RuntimeError extends Error {
   }
 }
 
-function canonicalSimulatedBytes(bytes) {
-  const parsed = JSON.parse(UTF8.decode(bytes));
-  let candidate = parsed;
-  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) &&
-      !Object.hasOwn(parsed, "format") && !Object.hasOwn(parsed, "variables")) {
-    candidate = { format: "bayescycle.data.json.v1", variables: parsed };
-  }
-  return ENCODE.encode(serializeDocument(normalizeDocument(candidate)));
-}
-
 function oneArtifact(name, mediaType, output) {
   return { artifacts: [artifact(name, mediaType, output.rawBytes)] };
 }
@@ -487,10 +431,6 @@ function integerSetting(settings, name, fallback) {
   const value = settings?.[name] ?? fallback;
   if (!Number.isInteger(value)) throw new RuntimeError("InvalidSettings", `${name} must be an integer`);
   return value;
-}
-
-function predictiveSettings(settings = {}) {
-  return { num_draws: integerSetting(settings, "num_draws", 200) };
 }
 
 function engineSettings(settings = {}) {

@@ -5,13 +5,6 @@ const FIT_DESCENDANT_ARTIFACTS = [
   "recovery_check.json",
   "posterior_predictive.ndjson",
 ];
-const GENERATION_DESCENDANT_ARTIFACTS = [
-  "prior_predictive.ndjson",
-  "simulated_data.json",
-  "posterior_predictive.ndjson",
-];
-const PRIOR_PREDICTIVE_ARTIFACTS = ["prior_predictive.ndjson"];
-
 export function initialState() {
   return Object.freeze({
     source: "",
@@ -77,38 +70,6 @@ export function reduce(state, event) {
         fitDatasetSource: null,
         notice: null,
       });
-    case "settings-edited":
-      return invalidateSettings(
-        state,
-        event,
-        FIT_DESCENDANT_ARTIFACTS,
-        state.run.status === "running" &&
-          ["simulate", "prior-predictive"].includes(state.run.operation),
-        null,
-      );
-    case "generation-settings-edited": {
-      const generatedLineage = state.fitDatasetSource === "generated";
-      return invalidateSettings(
-        state,
-        event,
-        generatedLineage
-          ? [...GENERATION_DESCENDANT_ARTIFACTS, ...FIT_DESCENDANT_ARTIFACTS]
-          : GENERATION_DESCENDANT_ARTIFACTS,
-        state.run.status === "running" &&
-          ["sample", "condition"].includes(state.run.operation) &&
-          state.run.datasetSource === "observed",
-        generatedLineage ? null : state.fitDatasetSource,
-      );
-    }
-    case "predictive-draws-edited":
-      return invalidateSettings(
-        state,
-        event,
-        PRIOR_PREDICTIVE_ARTIFACTS,
-        state.run.status === "running" &&
-          state.run.operation !== "prior-predictive",
-        state.fitDatasetSource,
-      );
     case "compile-started":
       if (event.revision !== state.sourceRevision) return state;
       return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
@@ -464,27 +425,6 @@ function selectedValue(event) {
     index: event.index,
     get parametersBytes() { return Uint8Array.from(parameters); },
     get datasetBytes() { return Uint8Array.from(dataset); },
-  });
-}
-
-function invalidateSettings(
-  state,
-  event,
-  invalidatedArtifacts,
-  preserveRun,
-  fitDatasetSource,
-) {
-  return freeze({
-    ...state,
-    ...(preserveRun ? {} : {
-      projectRevision: event.revision,
-      run: { status: "idle" },
-    }),
-    artifacts: state.artifacts.filter(
-      (artifact) => !invalidatedArtifacts.includes(artifact.name),
-    ),
-    fitDatasetSource,
-    notice: invalidatedArtifacts.includes("posterior.ndjson") ? null : state.notice,
   });
 }
 

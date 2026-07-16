@@ -217,22 +217,23 @@ export default [
     },
   },
   {
-    name: "exports all ten verbs including native generation",
+    name: "exports the six retained verbs including native generation",
     fn: async () => {
       await sharedExecutor();
       const verbs = [
         engine.sample,
         engine.diagnose,
         engine.generate,
-        engine.priorPredictive,
-        engine.posteriorPredictive,
-        engine.posteriorCheck,
-        engine.simulate,
         engine.recover,
         engine.recoverCheck,
         engine.sbc,
       ];
-      assert(verbs.every((verb) => typeof verb === "function"), "not all ten verbs are functions");
+      assert(verbs.every((verb) => typeof verb === "function"), "not all six verbs are functions");
+      const retired = ["priorPredictive", "posteriorPredictive", "posteriorCheck", "simulate"];
+      assert(
+        retired.every((verb) => engine[verb] === undefined),
+        "a retired legacy verb is still exported",
+      );
     },
   },
 ];
