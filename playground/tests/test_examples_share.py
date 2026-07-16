@@ -71,3 +71,37 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
         expect(old.locator("#truth-json-field")).to_be_visible()
     finally:
         old.close()
+
+
+def test_recipient_edits_before_compile_outrank_shared_form_state(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#examples-menu").select_option("linear-simulation")
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    page.locator("#design-json-toggle").click()
+    page.locator("#truth-json-toggle").click()
+    expect(page.locator("#design-slots")).to_be_visible()
+    page.locator("#share-button").click()
+    expect(page.locator("#share-url")).to_be_visible()
+    shared_url = page.locator("#share-url").input_value()
+
+    fresh = page.context.browser.new_page()
+    try:
+        fresh.goto(shared_url)
+        fresh.locator("#load-shared").click()
+        design = '{"x":[10,20]}'
+        truth = '{"alpha":9,"beta":8,"sigma":7}'
+        fresh.locator("#design-data").fill(design)
+        fresh.locator("#truth-data").fill(truth)
+        fresh.locator("#compile-button").click()
+        expect(fresh.locator("#ir-hash")).to_be_visible(timeout=120_000)
+        # The recipient's pre-compile edits stay authoritative over the
+        # sender's saved form state.
+        expect(fresh.locator("#design-json-field")).to_be_visible()
+        expect(fresh.locator("#truth-json-field")).to_be_visible()
+        expect(fresh.locator("#design-data")).to_have_value(design)
+        expect(fresh.locator("#truth-data")).to_have_value(truth)
+    finally:
+        fresh.close()

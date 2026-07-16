@@ -31,8 +31,8 @@ function canonicalString(value) {
 
 function equalLinearSchema(schema) {
   assert(
-    JSON.stringify(schema.data) === JSON.stringify([
-      { name: "x", dtype: "float64", kind: "vector" },
+    canonicalString(schema.data) === canonicalString([
+      { name: "x", dtype: "float64", kind: "vector", length: null },
     ]),
     `unexpected linear data schema: ${JSON.stringify(schema.data)}`,
   );
@@ -129,14 +129,17 @@ export default [
     name: "index vector design slots are marked integer",
     fn: async () => {
       const result = await compile(`from bayeswire import Data, Observed, Param, model
-from bayeswire.distributions import Normal
+from bayeswire.distributions import Binomial, Normal
 
 @model
 class IndexedGroups:
     theta = Param(Normal(0.0, 1.0), size=3)
     idx = Data.vector()
     x = Data.vector()
-    y = Observed(Normal(theta[idx] + x, 1.0))
+    w = Data.vector(3)
+    trials = Data.vector()
+    y = Observed(Normal(theta[idx] + x + w, 1.0))
+    k = Observed(Binomial(trials, 0.5))
 `);
       assert(result.ok, `indexed model compilation failed: ${result.message}`);
       const byName = Object.fromEntries(
@@ -144,6 +147,9 @@ class IndexedGroups:
       );
       assert(byName.idx.dtype === "int64", `index slot dtype: ${byName.idx.dtype}`);
       assert(byName.x.dtype === "float64", `value slot dtype: ${byName.x.dtype}`);
+      assert(byName.trials.dtype === "int64", `trial-count slot dtype: ${byName.trials.dtype}`);
+      assert(byName.w.length === 3, `exact-shape slot length: ${byName.w.length}`);
+      assert(byName.x.length === null, `unresolved slot length: ${byName.x.length}`);
     },
   },
   {

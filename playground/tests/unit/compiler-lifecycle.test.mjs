@@ -147,7 +147,7 @@ export default [
       try {
         compilerModule.validateModelSchema({
           ...MODEL_SCHEMA,
-          data: [{ name: "x", dtype: "float128", kind: "vector" }],
+          data: [{ name: "x", dtype: "float128", kind: "vector", length: null }],
         });
       } catch (error) {
         dtypeError = String(error);

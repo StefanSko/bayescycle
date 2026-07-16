@@ -67,6 +67,8 @@ export default [
       rejects("normal(0, 0, 2)", "scale must be greater");
       rejects("uniform(2, 1, 2)", "high must be greater");
       rejects("normal(0, 1, 2, seed=-1)", "seed must be an integer");
+      rejects("normal(0, 1, 2, seed=null)", "seed must be an integer");
+      rejects("uniform(0, 1, 2, seed=null)", "seed must be an integer");
       rejects("[1, true]", "finite numbers");
       rejects("linspace(0,,2)", "empty argument");
       rejects("linspace(-1e308, 1e308, 3)", "produced non-finite values");

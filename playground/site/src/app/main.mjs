@@ -269,6 +269,9 @@ function observedEdited() {
 
 function generationInputsEdited() {
   exampleLoadRevision += 1;
+  // A recipient edit before the first compile outranks a pending shared
+  // authoring restore; the edited documents become the source of truth.
+  if (authoringRestore.kind === "shared") authoringRestore = { kind: "documents" };
   element("#progress").replaceChildren();
   dispatch({
     type: "generation-input-edited",
@@ -278,6 +281,7 @@ function generationInputsEdited() {
 }
 
 function configureAuthoring(schema) {
+  const restoreKind = authoringRestore.kind;
   if (authoringRestore.kind === "shared") {
     const saved = authoringRestore.value;
     designJsonMode = saved.design.json;
@@ -319,7 +323,10 @@ function configureAuthoring(schema) {
   if (!supportsDesignForms(schema)) designJsonMode = true;
   authoringRestore = { kind: "preserve" };
   renderedSchema = null;
-  if (!designJsonMode || !truthJsonMode) {
+  // Shared documents keep their carried bytes: they were produced by the
+  // sender's evaluation, and re-evaluating seeded draws on another engine
+  // could change last-bit floats. Rewrites happen only on local edits.
+  if (restoreKind !== "shared" && (!designJsonMode || !truthJsonMode)) {
     if (!designJsonMode) writeDesignDocumentFromEntries(schema);
     if (!truthJsonMode) writeTruthDocumentFromEntries(schema);
     generationInputsEdited();
@@ -345,7 +352,16 @@ function defaultDesignExpressions(schema) {
 }
 
 function defaultExpression(slot) {
-  return slot.kind === "vector" ? "linspace(-2, 2, 25)" : "[]";
+  if (slot.kind !== "vector") return "[]";
+  return `linspace(-2, 2, ${slot.length ?? 25})`;
+}
+
+function evaluateSlotValues(slot, expression) {
+  const values = evaluateDesignExpression(expression);
+  if (slot.length !== null && values.length !== slot.length) {
+    throw new Error(`${slot.name} needs exactly ${slot.length} values, got ${values.length}`);
+  }
+  return values;
 }
 
 function defaultFixedValues(schema) {
@@ -450,7 +466,7 @@ function writeDesignDocumentFromEntries(schema) {
     const value = Object.fromEntries(
       schema.data.map((slot) => [
         slot.name,
-        evaluateDesignExpression(entryOr(designExpressions, slot.name, defaultExpression(slot))),
+        evaluateSlotValues(slot, entryOr(designExpressions, slot.name, defaultExpression(slot))),
       ]),
     );
     design.value = serializeDocument(parseDocument(JSON.stringify(value)));
@@ -647,7 +663,7 @@ function renderDesignPreviews(schema) {
     const preview = document.getElementById(`design-preview-${safeId(slot.name)}`);
     if (input === null || preview === null) continue;
     try {
-      const values = evaluateDesignExpression(input.value);
+      const values = evaluateSlotValues(slot, input.value);
       const shown = values.slice(0, 8).map((value) => Number(value).toFixed(2)).join(", ");
       input.classList.remove("invalid");
       preview.classList.remove("invalid");

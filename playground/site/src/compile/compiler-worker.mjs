@@ -234,7 +234,7 @@ def _data_ref_names(root, names):
         stack.extend(_walk_children(value))
 
 
-def _index_position_data_names(root, names):
+def _integer_position_data_names(root, names):
     seen = set()
     stack = [root]
     while stack:
@@ -248,6 +248,15 @@ def _index_position_data_names(root, names):
             for indexish in (value.length, value.observed_idx, value.missing_idx):
                 _data_ref_names(indexish, names)
             stack.extend([value.observed_values, value.missing_values])
+            continue
+        if is_dataclass(value) and not isinstance(value, type):
+            seen.add(id(value))
+            for field in fields(value):
+                child = getattr(value, field.name)
+                if field.name == "total_count":
+                    _data_ref_names(child, names)
+                else:
+                    stack.append(child)
             continue
         children = _walk_children(value)
         if children:
@@ -263,8 +272,18 @@ def _integer_data_names(meta):
     for parameter in meta.params.values():
         if isinstance(parameter.size, DataRef):
             names.add(parameter.size.name)
-    _index_position_data_names(meta, names)
+    _integer_position_data_names(meta, names)
     return names
+
+
+def _data_length(schema):
+    if (
+        isinstance(schema, ResolvedDataShapeSchema)
+        and len(schema.dims) == 1
+        and isinstance(schema.dims[0], int)
+    ):
+        return schema.dims[0]
+    return None
 
 
 def _model_schema(model):
@@ -288,6 +307,7 @@ def _model_schema(model):
                 "name": name,
                 "dtype": "int64" if name in integer_data else "float64",
                 "kind": _data_kind(data.schema),
+                "length": _data_length(data.schema),
             }
             for name, data in meta.data.items()
         ],

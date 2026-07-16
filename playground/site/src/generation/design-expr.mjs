@@ -4,6 +4,13 @@
  * xor-mix rounds below. Uniform draws divide the unsigned word by 2^32;
  * normal draws use Box-Muller without caching. Changing this algorithm would
  * change authored design documents, so its exact outputs are frozen in tests.
+ *
+ * Determinism boundary: uniform draws use only integer mixing and one exact
+ * binary division, so they are bit-stable everywhere. Box-Muller normal draws
+ * go through Math.log/sqrt/cos, whose last bits are implementation-defined;
+ * the serialized design DOCUMENT written at authoring time is therefore the
+ * authoritative artifact, and carried documents (share links, portable runs)
+ * are never re-derived from their expressions.
  */
 
 const CALL = /^([a-z]+)\((.*)\)$/s;
@@ -147,7 +154,7 @@ function randomValues(name, positional, named) {
   requireFinite(second, `${name} second argument`);
   if (!Number.isSafeInteger(count) || count < 1) throw new Error(`${name} n must be an integer ≥ 1`);
   requireBoundedCount(count, `${name} n`);
-  const seed = named.seed ?? 0;
+  const seed = Object.hasOwn(named, "seed") ? named.seed : 0;
   if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
     throw new Error(`${name} seed must be an integer in 0..4294967295`);
   }

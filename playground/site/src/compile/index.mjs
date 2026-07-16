@@ -187,13 +187,16 @@ export function validateModelSchema(value) {
   });
   const dataNames = new Set();
   const data = value.data.map((entry, index) => {
-    requireObjectKeys(entry, ["name", "dtype", "kind"], `data ${index}`);
+    requireObjectKeys(entry, ["name", "dtype", "kind", "length"], `data ${index}`);
     requireName(entry.name, dataNames, `data ${index}`);
     if (!["bool", "int32", "int64", "float32", "float64"].includes(entry.dtype)) {
       throw malformedSchema(`data ${index} dtype is unsupported`);
     }
     if (!["scalar", "vector", "matrix", "array"].includes(entry.kind)) {
       throw malformedSchema(`data ${index} kind is unsupported`);
+    }
+    if (entry.length !== null && (!Number.isSafeInteger(entry.length) || entry.length < 1)) {
+      throw malformedSchema(`data ${index} length must be a positive integer or null`);
     }
     return Object.freeze({ ...entry });
   });
