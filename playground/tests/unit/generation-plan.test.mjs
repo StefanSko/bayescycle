@@ -76,6 +76,18 @@ export default [
     },
   },
   {
+    name: "rejects designSource as a generation option",
+    fn: async () => {
+      await rejects(() => generateDatasets(MODEL_BYTES, {
+        design: DESIGN_BYTES,
+        designSource: { x: "linspace(-2, 2, 3)" },
+        parameterSource: fixed(FIXED_BYTES),
+        count: 2,
+        seed: 7,
+      }), "unknown or missing fields");
+    },
+  },
+  {
     name: "serializes design-source shared fixture and rejects malformed provenance",
     fn: async () => {
       const designSource = {

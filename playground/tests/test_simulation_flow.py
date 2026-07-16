@@ -51,21 +51,9 @@ class Generative:
     forms_plan = page.locator("#artifact-generation-plan a").evaluate(
         "async (link) => JSON.parse(await window.__artifactBlobs.get(link.href).text())"
     )
-    assert forms_plan["design_source"] == {"x": "linspace(-2, 2, 25)"}
-
-    page.locator("#design-json-toggle").click()
-    page.locator("#generate-button").click()
-    page.wait_for_function(
-        """async () => {
-            const link = document.querySelector("#artifact-generation-plan a");
-            if (link === null || link.href === "") return false;
-            const blob = window.__artifactBlobs.get(link.href);
-            if (blob === undefined) return false;
-            const plan = JSON.parse(await blob.text());
-            return !Object.hasOwn(plan, "design_source");
-        }""",
-        timeout=120_000,
-    )
+    # Authoring through forms adds no provenance: the published plan carries
+    # only authoritative fields, identical to direct-JSON authoring.
+    assert "design_source" not in forms_plan
     expect(page.locator("#dataset-source-generated")).to_be_enabled()
     page.locator("#dataset-source-generated").check()
     expect(page.locator("#fit-button")).to_be_enabled()
