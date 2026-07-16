@@ -7,6 +7,7 @@ CASES = [
     "all 11 corpus models match native hashes and golden IR",
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
+    "index vector design slots are marked integer",
     "selects the sole unreferenced composed root",
     "selects a with_prior result over its source and target",
     "rejects a dependency cycle for one local model",

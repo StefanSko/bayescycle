@@ -54,6 +54,7 @@ function seededRng(seed) {
 function literalArray(source) {
   const value = parseJson(source, "literal array");
   if (!Array.isArray(value)) throw new Error("literal design value must be an array");
+  requireBoundedCount(value.length, "literal array length");
   validateNumericArray(value, "literal array");
   return value;
 }

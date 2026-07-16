@@ -76,6 +76,7 @@ export default [
       rejects("repeat([1, 2], 60000)", "at most 100000");
       rejects("normal(0, 1, 1000000000)", "at most 100000");
       rejects("uniform(0, 1, 1000000000)", "at most 100000");
+      rejects(`[${"1, ".repeat(100000)}1]`, "at most 100000");
     },
   },
 ];

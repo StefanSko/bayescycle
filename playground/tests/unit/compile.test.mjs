@@ -126,6 +126,27 @@ export default [
     },
   },
   {
+    name: "index vector design slots are marked integer",
+    fn: async () => {
+      const result = await compile(`from bayeswire import Data, Observed, Param, model
+from bayeswire.distributions import Normal
+
+@model
+class IndexedGroups:
+    theta = Param(Normal(0.0, 1.0), size=3)
+    idx = Data.vector()
+    x = Data.vector()
+    y = Observed(Normal(theta[idx] + x, 1.0))
+`);
+      assert(result.ok, `indexed model compilation failed: ${result.message}`);
+      const byName = Object.fromEntries(
+        result.modelSchema.data.map((slot) => [slot.name, slot]),
+      );
+      assert(byName.idx.dtype === "int64", `index slot dtype: ${byName.idx.dtype}`);
+      assert(byName.x.dtype === "float64", `value slot dtype: ${byName.x.dtype}`);
+    },
+  },
+  {
     name: "selects the sole unreferenced composed root",
     fn: async () => {
       const result = await compile(`from bayeswire import Param, Submodel, model\nfrom bayeswire.distributions import Normal\n\n@model\nclass Component:\n    x = Param(Normal(0.0, 1.0))\n\n@model\nclass Root:\n    component = Submodel(Component)\n`);

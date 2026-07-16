@@ -504,7 +504,7 @@ function renderAuthoring() {
   const designFormsSupported = supportsDesignForms(schema);
   element("#design-json-toggle").disabled = !designFormsSupported;
   element("#design-json-toggle").textContent = !designFormsSupported
-    ? "JSON required for non-vector slots"
+    ? "JSON required for integer or non-vector slots"
     : designJsonMode ? "use design forms" : "edit as JSON";
   element("#truth-json-field").hidden = !truthJsonMode;
   element("#parameter-fields").hidden = truthJsonMode;
@@ -675,8 +675,11 @@ function renderPlanSummary() {
     `draw(count=${count}, seed=${seed})\n  parameters: ${parameterSource}\n  design: ${designSource || "{}"}`;
 }
 
+// Integer slots (dimension sizes, index vectors) have no safe synthesized
+// default, so any non-float64 or non-vector slot keeps the whole design in
+// the JSON escape hatch.
 function supportsDesignForms(schema) {
-  return schema.data.every((slot) => slot.kind === "vector");
+  return schema.data.every((slot) => slot.kind === "vector" && slot.dtype === "float64");
 }
 
 function entryOr(entries, name, fallback) {

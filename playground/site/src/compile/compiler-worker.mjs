@@ -119,7 +119,13 @@ from bayeswire.model import (
     model_dependencies,
     model_meta,
 )
-from bayeswire.model.expr import ConstNode, DataRef, ParamRef
+from bayeswire.model.expr import (
+    ConstNode,
+    DataRef,
+    ParamRef,
+    ScalarIndex,
+    VectorScatterOp,
+)
 
 
 SCHEMA_FORMAT = "bayescycle.playground.model-schema.v0"
@@ -209,6 +215,46 @@ def _data_kind(schema):
     return {0: "scalar", 1: "vector", 2: "matrix"}.get(rank, "array")
 
 
+def _walk_children(value):
+    if is_dataclass(value) and not isinstance(value, type):
+        return [getattr(value, field.name) for field in fields(value)]
+    if isinstance(value, dict):
+        return list(value.values())
+    if isinstance(value, list | tuple | set | frozenset):
+        return list(value)
+    return []
+
+
+def _data_ref_names(root, names):
+    stack = [root]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, DataRef):
+            names.add(value.name)
+        stack.extend(_walk_children(value))
+
+
+def _index_position_data_names(root, names):
+    seen = set()
+    stack = [root]
+    while stack:
+        value = stack.pop()
+        if id(value) in seen:
+            continue
+        if isinstance(value, ScalarIndex):
+            _data_ref_names(value.expr, names)
+            continue
+        if isinstance(value, VectorScatterOp):
+            for indexish in (value.length, value.observed_idx, value.missing_idx):
+                _data_ref_names(indexish, names)
+            stack.extend([value.observed_values, value.missing_values])
+            continue
+        children = _walk_children(value)
+        if children:
+            seen.add(id(value))
+            stack.extend(children)
+
+
 def _integer_data_names(meta):
     names = set()
     for data in meta.data.values():
@@ -217,6 +263,7 @@ def _integer_data_names(meta):
     for parameter in meta.params.values():
         if isinstance(parameter.size, DataRef):
             names.add(parameter.size.name)
+    _index_position_data_names(meta, names)
     return names
 
 
