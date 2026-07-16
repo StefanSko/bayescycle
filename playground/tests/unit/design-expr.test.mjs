@@ -72,6 +72,10 @@ export default [
       rejects("linspace(-1e308, 1e308, 3)", "produced non-finite values");
       rejects("uniform(-1e308, 1e308, 3, seed=1)", "produced non-finite values");
       rejects("normal(1e308, 1e308, 3, seed=1)", "produced non-finite values");
+      rejects("linspace(0, 1, 100001)", "at most 100000");
+      rejects("repeat([1, 2], 60000)", "at most 100000");
+      rejects("normal(0, 1, 1000000000)", "at most 100000");
+      rejects("uniform(0, 1, 1000000000)", "at most 100000");
     },
   },
 ];

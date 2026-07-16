@@ -362,17 +362,40 @@ function toggleDesignJson() {
   const schema = state.compile.modelSchema;
   if (state.compile.status !== "compiled" || schema === undefined ||
       !supportsDesignForms(schema)) return;
-  if (designJsonMode) hydrateDesignExpressions(schema);
-  designJsonMode = !designJsonMode;
+  if (designJsonMode) {
+    hydrateDesignExpressions(schema);
+    designJsonMode = false;
+    commitRewrittenDocument(design, () => writeDesignDocumentFromEntries(schema));
+    return;
+  }
+  designJsonMode = true;
   render();
 }
 
 function toggleTruthJson() {
   const schema = state.compile.modelSchema;
   if (state.compile.status !== "compiled" || schema === undefined) return;
-  if (truthJsonMode) hydrateFixedValues(schema);
-  truthJsonMode = !truthJsonMode;
+  if (truthJsonMode) {
+    hydrateFixedValues(schema);
+    truthJsonMode = false;
+    commitRewrittenDocument(truth, () => writeTruthDocumentFromEntries(schema));
+    return;
+  }
+  truthJsonMode = true;
   render();
+}
+
+// Entering a form mode makes the form the source of truth immediately: the
+// hidden document is rewritten from the entries so a later simulate cannot
+// send JSON the visible form no longer reflects.
+function commitRewrittenDocument(control, write) {
+  const previous = control.value;
+  write();
+  if (control.value === previous) {
+    render();
+    return;
+  }
+  generationInputsEdited();
 }
 
 function hydrateDesignExpressions(schema) {

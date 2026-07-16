@@ -8,6 +8,9 @@
 
 const CALL = /^([a-z]+)\((.*)\)$/s;
 const SAFE_FUNCTIONS = new Set(["linspace", "repeat", "normal", "uniform"]);
+// Previews evaluate on every keystroke; the cap keeps a stray count from
+// allocating an unbounded array before document-size limits can apply.
+export const MAX_ELEMENTS = 100000;
 
 export function evaluateDesignExpression(text) {
   if (typeof text !== "string") throw new TypeError("design expression must be text");
@@ -114,6 +117,7 @@ function linspace(positional, named) {
   if (!Number.isSafeInteger(count) || count < 2) {
     throw new Error("linspace(start, stop, n) needs 3 args, n ≥ 2");
   }
+  requireBoundedCount(count, "linspace n");
   return requireFiniteResults(Array.from(
     { length: count },
     (_, index) => start + (index * (stop - start)) / (count - 1),
@@ -127,6 +131,7 @@ function repeat(positional, named) {
     throw new Error("repeat([v, …], times) needs an array and times ≥ 1");
   }
   validateNumericArray(positional[0], "repeat levels");
+  requireBoundedCount(positional[0].length * positional[1], "repeat output length");
   return positional[0].flatMap((value) => Array(positional[1]).fill(value));
 }
 
@@ -140,6 +145,7 @@ function randomValues(name, positional, named) {
   requireFinite(first, `${name} first argument`);
   requireFinite(second, `${name} second argument`);
   if (!Number.isSafeInteger(count) || count < 1) throw new Error(`${name} n must be an integer ≥ 1`);
+  requireBoundedCount(count, `${name} n`);
   const seed = named.seed ?? 0;
   if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) {
     throw new Error(`${name} seed must be an integer in 0..4294967295`);
@@ -191,4 +197,8 @@ function requireFiniteResults(values, name) {
 
 function requireNoNamed(named, name) {
   if (Object.keys(named).length !== 0) throw new Error(`${name} does not accept named arguments`);
+}
+
+function requireBoundedCount(count, label) {
+  if (count > MAX_ELEMENTS) throw new Error(`${label} must be at most ${MAX_ELEMENTS}`);
 }
