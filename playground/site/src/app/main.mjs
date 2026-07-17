@@ -34,6 +34,7 @@ import {
 } from "./form-limits.mjs";
 import { renderRecoverySummary } from "./recovery.mjs";
 import { cancellationEvents, RunControllers } from "./run-controllers.mjs";
+import { assertScenarioCompatible, projectRecoveryTruth } from "./scenario.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { initialState, reduce } from "./state.mjs";
 
@@ -979,8 +980,9 @@ async function samplePosterior() {
 async function generateCollection() {
   if (state.compile.status !== "compiled" || state.run.status === "running" ||
       state.generation.attempt.status === "running") return;
+  const originalCompile = state.compile;
   const originalModelBytes = compiledBytes();
-  const originalModelHash = `sha256:${state.compile.irHash}`;
+  const originalModelHash = `sha256:${originalCompile.irHash}`;
   const mainSource = state.source;
   const currentPriorSource = priorSource.value;
   const designBytes = documentBytes(design.value);
@@ -1018,6 +1020,7 @@ async function generateCollection() {
       });
       if (!composed.ok) throw new Error(composed.traceback);
       if (state.generation.attempt.requestId !== requestId) return;
+      assertScenarioCompatible(originalCompile, composed);
       generationModelBytes = composed.irBytes;
       parameterSource = modelPrior(generationModelBytes, {
         claimedSourceModelHash: `sha256:${composed.irHash}`,
@@ -1101,11 +1104,17 @@ function selectGeneratedPair(index) {
 
 async function sampleGenerated() {
   const selected = state.generation.selected;
-  if (selected === null) return;
-  await sampleData(selected.datasetBytes, "generated", selected.parametersBytes);
+  if (selected === null || state.compile.status !== "compiled") return;
+  const recovery = projectRecoveryTruth(selected.parametersBytes, state.compile.modelSchema);
+  await sampleData(
+    selected.datasetBytes,
+    "generated",
+    recovery.bytes ?? undefined,
+    recovery.notice,
+  );
 }
 
-async function sampleData(dataBytes, datasetSource, recoveryTruth) {
+async function sampleData(dataBytes, datasetSource, recoveryTruth, recoveryNotice = null) {
   if (state.compile.status !== "compiled" || state.run.status === "running") return;
   if (state.conditioning.datasetSource !== datasetSource) {
     dispatch({ type: "dataset-source-edited", source: datasetSource, revision: ++revision });
@@ -1173,7 +1182,7 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
       dependencyKey,
       revision: projectRevision,
       artifacts,
-      notice: sampled.notice,
+      notice: [sampled.notice, recoveryNotice].filter((entry) => entry !== null).join("\n") || null,
       fit: {
         datasetSource,
         lineageKey,

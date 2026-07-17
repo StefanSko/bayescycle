@@ -127,8 +127,12 @@ export class CompilerClient {
           return;
         }
         if (message === null || typeof message !== "object" || message.id !== id) return;
-        if (validSuccess(message)) {
+        const expectsTarget = payload.mode === "with-prior";
+        if (validSuccess(message, expectsTarget)) {
           const irBytes = new Uint8Array(message.irBytes);
+          const targetIrBytes = expectsTarget
+            ? new Uint8Array(message.targetIrBytes)
+            : null;
           let modelSchema;
           let schemaBytes;
           try {
@@ -138,20 +142,26 @@ export class CompilerClient {
             fail(error);
             return;
           }
-          if (irBytes.byteLength > this.maxOutputBytes || schemaBytes.byteLength > this.maxOutputBytes) {
+          if (irBytes.byteLength > this.maxOutputBytes ||
+              schemaBytes.byteLength > this.maxOutputBytes ||
+              (targetIrBytes?.byteLength ?? 0) > this.maxOutputBytes) {
             fail(new Error(`Compiler output exceeds ${this.maxOutputBytes} bytes`));
             return;
           }
           // Dispose the mutable interpreter before performing trusted hashing.
           dispose();
-          void sha256(irBytes).then(
-            (irHash) => {
+          const hashes = targetIrBytes === null
+            ? Promise.all([sha256(irBytes)])
+            : Promise.all([sha256(irBytes), sha256(targetIrBytes)]);
+          void hashes.then(
+            ([irHash, targetIrHash]) => {
               if (signal?.aborted === true) {
                 fail(cancellationError());
                 return;
               }
               succeed({
                 ok: true, irBytes, irHash, modelSchema, executionContext: "worker",
+                ...(targetIrBytes === null ? {} : { targetIrBytes, targetIrHash }),
               });
             },
             fail,
@@ -205,12 +215,19 @@ function isReady(value) {
     value.protocol === PROTOCOL_VERSION;
 }
 
-function validSuccess(value) {
+function validSuccess(value, expectsTarget) {
   const keys = Object.keys(value);
+  const required = ["type", "id", "irBytes", "modelSchema"];
+  const allowed = [...required, "irHash"];
+  if (expectsTarget) {
+    required.push("targetIrBytes");
+    allowed.push("targetIrBytes");
+  }
   return value.type === "compiled" && value.irBytes instanceof ArrayBuffer &&
+    (!expectsTarget || value.targetIrBytes instanceof ArrayBuffer) &&
     value.modelSchema !== null && typeof value.modelSchema === "object" &&
-    ["type", "id", "irBytes", "modelSchema"].every((key) => keys.includes(key)) &&
-    keys.every((key) => ["type", "id", "irBytes", "modelSchema", "irHash"].includes(key));
+    required.every((key) => keys.includes(key)) &&
+    keys.every((key) => allowed.includes(key));
 }
 
 export function validateModelSchema(value, maxSchemaBytes = MAX_IR_BYTES) {

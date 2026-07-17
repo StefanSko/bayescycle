@@ -48,7 +48,10 @@ document conflicts with this file, resolve the conflict before changing code.
    cause its own compile to fail or emit unexpected bytes. Such mutation must
    not affect a later compile.
 9. The trusted browser client computes SHA-256 over the exact bytes received
-   from the worker. A worker-supplied digest is neither required nor trusted.
+   from the worker. For composed-prior scenarios it independently hashes both
+   the target and composed IR, and generation proceeds only when the
+   scenario-worker target hash equals the current compiled-model hash. A
+   worker-supplied digest is neither required nor trusted.
 10. Compiler responses are validated for request identity, message shape,
     byte type, and size before use. Malformed or stale responses are ignored or
     surfaced as bounded errors.
@@ -90,10 +93,14 @@ input to a later compilation.
    source is a point mass. An alternative prior is composed with the main model
    in a fresh compiler worker and generation draws from that ordinary closed
    model, while conditioning continues to use the original compiled model.
-   Generation never launches one Wasm worker per draw.
+   Prior-only snippets cannot add or change data or observed slots, and their
+   declared parameter dimensions and coordinates must pass Bayeswire's exact
+   compatibility checks. Generation never launches one Wasm worker per draw.
 7. Conditioning is a separate runtime transition over a selected canonical
-   dataset. A posterior source is available only while its exact model/data/fit
-   lineage survives.
+   dataset. Recovery truth from a composed model is projected to the original
+   model's parameter names without changing the retained generated pair; an
+   empty projection skips recovery with a visible notice. A posterior source is
+   available only while its exact model/data/fit lineage survives.
 8. The UI may parse artifacts through pure renderers. It does not inspect raw
    IR node tags to infer required data, defaults, dimensions, parameter truth,
    partial-observation behavior, or engine capabilities.
@@ -179,6 +186,10 @@ Tests must freeze these observable claims before implementation changes:
 - fixed, model-prior (including a separately authored composed prior), and
   posterior generation share one exact plan and redraw law while preserving
   parameter/dataset pairs;
+- scenario target divergence, prior-only data extension, incompatible authored
+  dimensions, and stale scenario completion fail before engine dispatch;
+- composed-pair recovery uses only original-model parameter truth while the
+  generated pair remains byte-exact;
 - malformed, oversized, unsupported, and lineage-mismatched generation fails
   without deleting earlier artifacts;
 - selection and setting edits invalidate only their documented descendants;

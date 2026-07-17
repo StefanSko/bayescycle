@@ -27,14 +27,19 @@ async function handleMessage(message) {
     const result = JSON.parse(serialized);
     if (result.ok === true) {
       const bytes = decodeBase64(result.ir_base64);
+      const targetBytes = result.target_ir_base64 === undefined
+        ? null
+        : decodeBase64(result.target_ir_base64);
+      const response = {
+        type: "compiled",
+        id: message.id,
+        irBytes: bytes.buffer,
+        modelSchema: result.model_schema,
+        ...(targetBytes === null ? {} : { targetIrBytes: targetBytes.buffer }),
+      };
       self.postMessage(
-        {
-          type: "compiled",
-          id: message.id,
-          irBytes: bytes.buffer,
-          modelSchema: result.model_schema,
-        },
-        [bytes.buffer],
+        response,
+        targetBytes === null ? [bytes.buffer] : [bytes.buffer, targetBytes.buffer],
       );
     } else {
       self.postMessage({
@@ -381,6 +386,31 @@ def _param_ref_names(root):
     return names
 
 
+def _coordinate_values_equal(left, right):
+    if left is None or right is None:
+        return left is None and right is None
+    return len(left) == len(right) and all(
+        type(left_value) is type(right_value) and left_value == right_value
+        for left_value, right_value in zip(left, right)
+    )
+
+
+def _parameter_dimensions_equal(target_dimensions, source_dimensions, name):
+    target_variable = target_dimensions.variables.get(name)
+    source_variable = source_dimensions.variables.get(name)
+    target_names = () if target_variable is None else target_variable.names
+    source_names = () if source_variable is None else source_variable.names
+    if target_names != source_names:
+        return False
+    return all(
+        _coordinate_values_equal(
+            target_dimensions.coords.get(dimension_name),
+            source_dimensions.coords.get(dimension_name),
+        )
+        for dimension_name in target_names
+    )
+
+
 def _completed_prior(target, authored_prior):
     """Complete an authored partial prior with untouched target declarations."""
     target_meta = model_meta(target)
@@ -388,6 +418,38 @@ def _completed_prior(target, authored_prior):
     target_names = set(target_meta.params)
     source_names = set(source_meta.params)
     replacements = target_names & source_names
+    target_dimensions = attached_model_dimensions(target)
+    source_dimensions = attached_model_dimensions(authored_prior)
+    for name in source_meta.params:
+        if name in replacements and not _parameter_dimensions_equal(
+            target_dimensions, source_dimensions, name
+        ):
+            raise ValueError(
+                f"prior parameter {name!r} must match the target dimensions exactly"
+            )
+    target_dimension_names = {
+        dimension_name
+        for variable_dims in target_dimensions.variables.values()
+        for dimension_name in variable_dims.names
+    }
+    for name in source_meta.params:
+        if name in target_names:
+            continue
+        variable_dims = source_dimensions.variables.get(name)
+        if variable_dims is None:
+            continue
+        for dimension_name in variable_dims.names:
+            if (
+                dimension_name in target_dimension_names
+                and not _coordinate_values_equal(
+                    target_dimensions.coords.get(dimension_name),
+                    source_dimensions.coords.get(dimension_name),
+                )
+            ):
+                raise ValueError(
+                    f"prior parameter {name!r} dimension {dimension_name!r} "
+                    "conflicts with target coordinates"
+                )
 
     supporting_names = set()
     pending = list(replacements)
@@ -450,15 +512,21 @@ def _completed_prior(target, authored_prior):
     if any(value is None for value in free_values.values()):
         raise ValueError("prior composition could not resolve every parameter free slot")
 
-    target_dimensions = attached_model_dimensions(target)
-    source_dimensions = attached_model_dimensions(authored_prior)
-    all_variables = {}
-    all_coords = {}
-    for dimensions in (target_dimensions, source_dimensions):
-        if dimensions is None:
-            continue
-        all_variables.update(dimensions.variables)
-        all_coords.update(dimensions.coords)
+    all_variables = {} if target_dimensions is None else dict(target_dimensions.variables)
+    all_coords = {} if target_dimensions is None else dict(target_dimensions.coords)
+    if source_dimensions is not None:
+        source_dimension_names = {
+            dimension_name
+            for name, variable_dims in source_dimensions.variables.items()
+            if name in source_names
+            for dimension_name in variable_dims.names
+        }
+        for name in source_names:
+            all_variables.pop(name, None)
+        for name in source_dimension_names:
+            all_coords.pop(name, None)
+        all_variables.update(source_dimensions.variables)
+        all_coords.update(source_dimensions.coords)
     declared_names = (
         set(params)
         | set(data)
@@ -492,8 +560,32 @@ def _completed_prior(target, authored_prior):
     return bayeswire.ir.bindable_from_meta(completed_meta, dimensions=dimensions)
 
 
+def _scenario_schema(model):
+    schema = _model_schema(model)
+    return schema["data"], schema["observed"]
+
+
+def _validate_scenario_schema(target, composed):
+    target_data, target_observed = _scenario_schema(target)
+    composed_data, composed_observed = _scenario_schema(composed)
+    if composed_data != target_data:
+        target_names = {entry["name"] for entry in target_data}
+        extra_names = [
+            entry["name"] for entry in composed_data
+            if entry["name"] not in target_names
+        ]
+        if extra_names:
+            raise ValueError(
+                "prior-only model must not declare data slots: " + ", ".join(extra_names)
+            )
+        raise ValueError("prior-only model must not change target data slots")
+    if composed_observed != target_observed:
+        raise ValueError("prior-only model must not change target observed slots")
+
+
 def _compile_scenario(source, prior_source):
     target, target_namespace = _compile_model(source)
+    target_ir_bytes = bayeswire.ir.canonical_bytes(model_meta(target))
     prior_namespace = dict(target_namespace)
     prior_namespace["__name__"] = "__playground_prior__"
     exec(compile(prior_source, "<playground-prior>", "exec"), prior_namespace)
@@ -507,20 +599,23 @@ def _compile_scenario(source, prior_source):
         # omitted target Params. Only Bayeswire's missing-target error is the
         # expected signal that partial completion is needed; every structural
         # source error remains verbatim.
-        return with_prior(target, prior=models[0])
+        composed = with_prior(target, prior=models[0])
     except ValueError as error:
         if not str(error).startswith("prior is missing target parameter "):
             raise
-    completed_prior = _completed_prior(target, models[0])
-    return with_prior(target, prior=completed_prior)
+        completed_prior = _completed_prior(target, models[0])
+        composed = with_prior(target, prior=completed_prior)
+    _validate_scenario_schema(target, composed)
+    return composed, target_ir_bytes
 
 
 def compile_editor_source(source, mode="model", prior_source=None):
     try:
+        target_ir_bytes = None
         if mode == "model":
             selected_model, _namespace = _compile_model(source)
         elif mode == "with-prior" and isinstance(prior_source, str):
-            selected_model = _compile_scenario(source, prior_source)
+            selected_model, target_ir_bytes = _compile_scenario(source, prior_source)
         else:
             raise ValueError("Unsupported playground compiler mode")
         ir_bytes = bayeswire.ir.canonical_bytes(model_meta(selected_model))
@@ -529,6 +624,8 @@ def compile_editor_source(source, mode="model", prior_source=None):
             "ir_base64": base64.b64encode(ir_bytes).decode("ascii"),
             "model_schema": _model_schema(selected_model),
         }
+        if target_ir_bytes is not None:
+            result["target_ir_base64"] = base64.b64encode(target_ir_bytes).decode("ascii")
     except BaseException as error:
         frames = traceback.extract_tb(error.__traceback__)
         frames = [
