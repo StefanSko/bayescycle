@@ -177,7 +177,7 @@ export function renderPrecis(data, truth) {
     `<line class="value-axis-tick" x1="${f(x(value))}" y1="${f(axisY)}" x2="${f(x(value))}" y2="${f(axisY + 5)}" stroke="${axis}"/><text class="value-axis-label" x="${f(x(value))}" y="${f(axisY + 18)}" fill="${muted}" text-anchor="middle">${axisLabel(value)}</text>`).join("");
   const legend = `<g class="precis-legend"><line x1="18.00" y1="${f(legendY)}" x2="38.00" y2="${f(legendY)}" stroke="${accent}" stroke-width="3"/><circle cx="28.00" cy="${f(legendY)}" r="3.00" fill="${accent}"/><text x="44.00" y="${f(legendY + 4)}" fill="${muted}">posterior 89% interval · mean</text>${hasTruth ? `<line x1="300.00" y1="${f(legendY - 7)}" x2="300.00" y2="${f(legendY + 7)}" stroke="${danger}" stroke-width="2"/><text x="310.00" y="${f(legendY + 4)}" fill="${muted}">true value</text>` : ""}</g>`;
   return svg(
-    540,
+    760,
     height,
     "Precis",
     `<text x="18.00" y="22.00" fill="${ink}">Precis · mean and 89% interval</text>${summaries.map((summary, index) => {
