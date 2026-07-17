@@ -20,7 +20,7 @@ CASES = [
     "runtime serializes accepted object data into the sample artifact",
     "runtime conditions on one dataset through the workflow operation",
     "runtime accepts sampling settings at documented boundaries",
-    "runtime accepts a posterior above the generation input limit end to end",
+    "runtime rejects 8 MiB plus one before decode and fit artifact publication",
     "runtime rejects aggregate posterior bytes before decode or artifact publication",
     "runtime rejects out-of-range sampling settings before executor dispatch",
     "first chain failure aborts every sibling execution",

@@ -1,6 +1,5 @@
 import {
   InProcessEngine,
-  MAX_POSTERIOR_RESPONSE_BYTES,
   diagnose,
   mergeChainFits,
   parseEngineMetadata,
@@ -8,6 +7,7 @@ import {
   sample,
 } from "/site/src/engine/index.mjs";
 import * as engine from "/site/src/engine/index.mjs";
+import { MAX_GENERATION_INPUT_BYTES } from "/site/src/generation/limits.mjs";
 
 const ENGINE_ROOT = "/site/vendor/bayesite/";
 const FIXTURE_ROOT = "/tests/fixtures/engine/";
@@ -175,9 +175,9 @@ export default [
       let executorCalls = 0;
       let result;
       try {
-        // Report an oversized encoded line without allocating a 64 MiB fixture.
+        // Report an oversized encoded line without allocating an 8 MiB fixture.
         TextEncoder.prototype.encode = function () {
-          return { byteLength: MAX_POSTERIOR_RESPONSE_BYTES + 1 };
+          return { byteLength: MAX_GENERATION_INPUT_BYTES + 1 };
         };
         result = await diagnose({
           fits: [fit(0), fit(1)],

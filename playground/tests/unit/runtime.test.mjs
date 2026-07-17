@@ -599,33 +599,33 @@ export default [
     },
   },
   {
-    name: "runtime accepts a posterior above the generation input limit end to end",
+    name: "runtime rejects 8 MiB plus one before decode and fit artifact publication",
     fn: async () => {
-      const posteriorByteLength = MAX_GENERATION_INPUT_BYTES + 1;
-      const posterior = posteriorBytesOfLength(posteriorByteLength);
+      const posterior = posteriorBytesOfLength(MAX_GENERATION_INPUT_BYTES + 1);
       const calls = [];
       const executor = {
         execute: async (request) => {
           calls.push(request.command);
-          return request.command === "sample"
-            ? { rawBytes: posterior }
-            : { rawBytes: bytes("{}") };
+          return { rawBytes: posterior };
         },
       };
-      const result = await new BrowserRuntime(executor).run({
-        operation: "condition",
-        modelIr: bytes('{"bayeswire_ir":1}'),
-        data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
-        settings: { chains: 1, num_warmup: 0, num_draws: 4 },
-      });
-      const published = result.artifacts.find((entry) => entry.name === "posterior.ndjson");
-      assert(published?.bytes.byteLength === posteriorByteLength,
-        `posterior publication changed: ${String(published?.bytes.byteLength)}`);
-      assert(result.fitArtifact.posteriorBytes.byteLength === posteriorByteLength,
-        "fit artifact retained the old generation-input ceiling");
-      assert(posteriorOf(result.fitArtifact).kind === "posterior",
-        "published fit could not become a posterior source");
-      assert(calls.join(",") === "sample,diagnose", `fit did not complete: ${calls.join(",")}`);
+      let result;
+      let error;
+      try {
+        result = await new BrowserRuntime(executor).run({
+          operation: "condition",
+          modelIr: bytes('{"bayeswire_ir":1}'),
+          data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+          settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+        });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.error === "PosteriorTooLarge", `oversized fit was not rejected early: ${String(error)}`);
+      assert(error.message === "Posterior exceeds the 8 MiB browser limit; reduce parameters or draws.",
+        `oversized fit was not actionable: ${error?.message}`);
+      assert(result === undefined, "oversized fit published artifacts");
+      assert(calls.join(",") === "sample", `oversized fit reached follow-up work: ${calls.join(",")}`);
     },
   },
   {
@@ -635,10 +635,10 @@ export default [
       const executor = {
         execute: async (request) => {
           calls.push(request.command);
-          return { rawBytes: new Uint8Array(600 * 1024) };
+          return { rawBytes: new Uint8Array(MAX_GENERATION_INPUT_BYTES / 2 + 1) };
         },
       };
-      const runtime = new BrowserRuntime(executor, undefined, 1024 * 1024);
+      const runtime = new BrowserRuntime(executor);
       let result;
       let error;
       try {
@@ -652,7 +652,7 @@ export default [
         error = reason;
       }
       assert(error?.error === "PosteriorTooLarge", `aggregate response was not typed: ${String(error)}`);
-      assert(error.message === "Posterior exceeds the 1 MiB browser limit; reduce parameters or draws.",
+      assert(error.message === "Posterior exceeds the 8 MiB browser limit; reduce parameters or draws.",
         `aggregate response was not actionable: ${error?.message}`);
       assert(result === undefined, "oversized conditioning published a partial result");
       assert(calls.join(",") === "sample,sample", `follow-up artifacts ran: ${calls.join(",")}`);
