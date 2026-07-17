@@ -123,6 +123,12 @@ def test_another_prior_simulates_composed_parameters_and_fits_original_model(
     page.locator("#fit-button").click()
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-recovery")).to_be_visible(timeout=120_000)
+    # Two model artifacts are visible; only the generation run's manifest
+    # references model.ir.json, so the fit model downloads under its own name.
+    expect(page.locator("#artifact-generation-model a")).to_have_attribute(
+        "download", "model.ir.json"
+    )
+    expect(page.locator("#artifact-model a")).to_have_attribute("download", "fit-model.ir.json")
     recovery = page.locator("#artifact-recovery a").evaluate(
         "async (link) => JSON.parse(await window.__artifactBlobs.get(link.href).text())"
     )
