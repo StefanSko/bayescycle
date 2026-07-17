@@ -131,6 +131,31 @@ export default [
     },
   },
   {
+    name: "compact eight schools sidecar preserves previous normalized values",
+    fn: async () => {
+      const compact = await fetch(
+        "/site/examples/eight_schools_non_centered.data.json",
+      ).then((response) => response.text());
+      const actual = parseDocument(compact);
+      equal(actual, {
+        format: "bayescycle.data.json.v1",
+        variables: {
+          n_schools: { dtype: "int64", shape: [], values: [8] },
+          sigma: {
+            dtype: "int64",
+            shape: [8],
+            values: [15, 10, 16, 11, 9, 11, 10, 18],
+          },
+          y: {
+            dtype: "int64",
+            shape: [8],
+            values: [28, 8, -3, 7, -1, 1, 18, 12],
+          },
+        },
+      }, "compact eight schools browser normalization differs");
+    },
+  },
+  {
     name: "representative normalization matches pinned canonical bytes",
     fn: async () => {
       const [input, expected] = await Promise.all([

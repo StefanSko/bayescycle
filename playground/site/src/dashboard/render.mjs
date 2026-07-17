@@ -163,22 +163,40 @@ export function renderPrecis(data, truth) {
     maximum(summaries.map((summary) => summary.high), 0),
   );
   const span = maximumValue - minimumValue || 1;
-  const x = (value) => 150 + ((value - minimumValue) / span) * 350;
-  const height = 55 + summaries.length * 28;
-  const zero = x(0);
+  const plotLeft = 150;
+  const plotRight = 500;
+  const x = (value) => plotLeft + ((value - minimumValue) / span) * (plotRight - plotLeft);
+  const axisY = 60 + summaries.length * 28;
+  const legendY = axisY + 38;
+  const height = legendY + 18;
+  const ticks = [minimumValue];
+  if (minimumValue < 0 && maximumValue > 0) ticks.push(0);
+  if (maximumValue !== minimumValue) ticks.push(maximumValue);
+  const hasTruth = truthValues.length > 0;
+  const tickMarkup = ticks.map((value) =>
+    `<line class="value-axis-tick" x1="${f(x(value))}" y1="${f(axisY)}" x2="${f(x(value))}" y2="${f(axisY + 5)}" stroke="${axis}"/><text class="value-axis-label" x="${f(x(value))}" y="${f(axisY + 18)}" fill="${muted}" text-anchor="middle">${axisLabel(value)}</text>`).join("");
+  const legend = `<g class="precis-legend"><line x1="18.00" y1="${f(legendY)}" x2="38.00" y2="${f(legendY)}" stroke="${accent}" stroke-width="3"/><circle cx="28.00" cy="${f(legendY)}" r="3.00" fill="${accent}"/><text x="44.00" y="${f(legendY + 4)}" fill="${muted}">posterior 89% interval · mean</text>${hasTruth ? `<line x1="300.00" y1="${f(legendY - 7)}" x2="300.00" y2="${f(legendY + 7)}" stroke="${danger}" stroke-width="2"/><text x="310.00" y="${f(legendY + 4)}" fill="${muted}">true value</text>` : ""}</g>`;
   return svg(
-    540,
+    760,
     height,
     "Precis",
-    `<text x="18.00" y="22.00" fill="${ink}">Precis · mean and 89% interval</text><line x1="${f(zero)}" y1="35.00" x2="${f(zero)}" y2="${f(height - 15)}" stroke="${axis}"/>${summaries.map((summary, index) => {
+    `<text x="18.00" y="22.00" fill="${ink}">Precis · mean and 89% interval</text>${summaries.map((summary, index) => {
       const y = 52 + index * 28;
-      const marker =
-        truth !== undefined && Object.hasOwn(truth, summary.label)
-          ? `<line class="truth-marker" data-parameter="${escape(summary.label)}" x1="${f(x(truth[summary.label]))}" y1="${f(y - 8)}" x2="${f(x(truth[summary.label]))}" y2="${f(y + 8)}" stroke="${danger}" stroke-width="2"/>`
-          : "";
-      return `<text x="18.00" y="${f(y + 4)}" fill="${ink}">${escape(summary.label)}</text><line x1="${f(x(summary.low))}" y1="${f(y)}" x2="${f(x(summary.high))}" y2="${f(y)}" stroke="${accent}" stroke-width="2"/><circle cx="${f(x(summary.mean))}" cy="${f(y)}" r="4.00" fill="${accent}"/><text x="${f(x(summary.high) + 5)}" y="${f(y + 4)}" fill="${muted}">${summary.mean.toPrecision(3)} [${summary.low.toPrecision(3)}, ${summary.high.toPrecision(3)}]</text>${marker}`;
-    }).join("")}`,
+      const hasParameterTruth = truth !== undefined && Object.hasOwn(truth, summary.label);
+      const marker = hasParameterTruth
+        ? `<line class="truth-marker" data-parameter="${escape(summary.label)}" x1="${f(x(truth[summary.label]))}" y1="${f(y - 8)}" x2="${f(x(truth[summary.label]))}" y2="${f(y + 8)}" stroke="${danger}" stroke-width="2"/>`
+        : "";
+      const annotation = hasParameterTruth
+        ? `<tspan fill="${danger}"> · true ${truth[summary.label].toPrecision(3)}</tspan>`
+        : "";
+      return `<text x="18.00" y="${f(y + 4)}" fill="${ink}">${escape(summary.label)}</text><line x1="${f(x(summary.low))}" y1="${f(y)}" x2="${f(x(summary.high))}" y2="${f(y)}" stroke="${accent}" stroke-width="2"/><circle cx="${f(x(summary.mean))}" cy="${f(y)}" r="4.00" fill="${accent}"/><text x="${f(x(summary.high) + 5)}" y="${f(y + 4)}" fill="${muted}">${summary.mean.toPrecision(3)} [${summary.low.toPrecision(3)}, ${summary.high.toPrecision(3)}]${annotation}</text>${marker}`;
+    }).join("")}<line class="value-axis" x1="${f(plotLeft)}" y1="${f(axisY)}" x2="${f(plotRight)}" y2="${f(axisY)}" stroke="${axis}"/>${tickMarkup}${legend}`,
   );
+}
+
+function axisLabel(value) {
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return String(Number(normalized.toPrecision(3)));
 }
 
 function svg(width, height, label, content) {

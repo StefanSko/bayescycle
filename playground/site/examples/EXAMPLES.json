@@ -1,5 +1,5 @@
 [
   {"id":"eight-schools","label":"Eight schools · observed","source":"eight_schools_non_centered.py","observed":"eight_schools_non_centered.data.json"},
-  {"id":"linear-simulation","label":"Linear regression · simulate","source":"linear_regression.py","design":"linear_regression.design.json","truth":"linear_regression.truth.json"},
+  {"id":"linear-simulation","label":"Linear regression · simulate","source":"linear_regression.py","truth":"linear_regression.truth.json"},
   {"id":"ordinal-simulation","label":"Ordinal regression · explicit ordered truth","source":"ordinal_regression.py","design":"ordinal_regression.design.json","truth":"ordinal_regression.truth.json"}
 ]

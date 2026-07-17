@@ -130,6 +130,10 @@ input to a later compilation.
 - The playground remains a static site with no Node/npm build toolchain.
 - Native HTML controls are preferred; JavaScript exists only for browser APIs,
   workers, artifact handling, state transitions, and rendering.
+- Empty design documents in fresh and bundled projects derive defaults only
+  from the validated compiler schema. Non-empty locally authored documents,
+  shared authoring state, and carried share documents remain authoritative and
+  are never replaced by a newly synthesized default.
 - Vendored runtime assets are pinned and hash-checked at staging or test time.
 - Shared projects never compile automatically.
 - User-visible failures are bounded and actionable; malformed JSON, invalid
@@ -146,6 +150,9 @@ input to a later compilation.
   most 512 characters.
   The UI renders parameter forms for at most 200 parameters and design cards
   for at most 50 data slots; larger accepted schemas stay in JSON mode.
+- Dashboard SVGs render only for posteriors with at most 200 expanded parameter
+  components. Design-form previews share a 100,000-scalar aggregate budget per
+  render pass; later previews are omitted once that budget is exhausted.
 - Sampling limits are enforced at the runtime boundary before worker dispatch,
   not only by the UI: 1–8 chains, 0–100,000 warmup iterations, 4–100,000 draws,
   and tree depth 1–20.
@@ -187,6 +194,9 @@ Tests must freeze these observable claims before implementation changes:
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
 - project edits and stale completions obey the revisioned state contract;
+- empty schema-derived design defaults, non-empty pre-compile documents, source
+  schema changes, and exact shared-authoring restores are separately covered
+  as observable browser behavior;
 - fixed, model-prior (including a separately authored composed prior), and
   posterior generation share one exact plan and redraw law while preserving
   parameter/dataset pairs;
@@ -197,6 +207,8 @@ Tests must freeze these observable claims before implementation changes:
 - malformed, oversized, unsupported, and lineage-mismatched generation fails
   without deleting earlier artifacts;
 - selection and setting edits invalidate only their documented descendants;
+- dashboard component limits, linear recovery-truth matching, and aggregate
+  design-preview limits bound rendering work before SVG or preview expansion;
 - application/UI source contains no private generation command names.
 
 Behavioral changes follow strict RED then GREEN commits. A RED commit freezes a

@@ -13,6 +13,7 @@ CASES = [
     "normalizes a near-cap document in one flat value pass",
     "canonical document round-trips at the scalar limit",
     "normalization preserves proto-named variables byte-exactly",
+    "compact eight schools sidecar preserves previous normalized values",
     "representative normalization matches pinned canonical bytes",
 ]
 
@@ -24,4 +25,6 @@ def test_document_contract(
 ) -> None:
     results = run_suite(page, base_url, "documents")
     assert [result["name"] for result in results] == CASES
-    assert all(result["ok"] for result in results), results
+    assert all(result["ok"] for result in results), [
+        result for result in results if not result["ok"]
+    ]

@@ -14,7 +14,11 @@ import {
   modelPrior,
   posteriorOf,
 } from "../generation/plan.mjs";
-import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
+import {
+  dashboardPlotLimit,
+  prepareDashboardPlots,
+  readDashboardData,
+} from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
 import {
   MAX_SAMPLE_CHAINS,
@@ -32,7 +36,7 @@ import {
   supportsDesignForms,
   supportsParameterForms,
 } from "./form-limits.mjs";
-import { renderRecoverySummary } from "./recovery.mjs";
+import { recoveryTruthMap, renderRecoverySummary } from "./recovery.mjs";
 import { cancellationEvents, RunControllers } from "./run-controllers.mjs";
 import { assertScenarioCompatible, projectRecoveryTruth } from "./scenario.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
@@ -51,6 +55,8 @@ let designExpressions = {};
 let fixedValueEntries = {};
 let authoringError = null;
 let authoringRestore = { kind: "fresh" };
+let designDocumentIsSchemaDefault = false;
+let truthDocumentIsSchemaDefault = false;
 const examples = new Map();
 const objectUrls = new Set();
 const EXAMPLES_ROOT = new URL("../../examples/", import.meta.url);
@@ -63,20 +69,36 @@ const priorSource = element("#prior-source");
 
 source.addEventListener("input", () => {
   exampleLoadRevision += 1;
-  // A pre-compile source edit invalidates pending shared form state: the
-  // sender's schema no longer describes the model being compiled.
-  if (authoringRestore.kind === "shared") authoringRestore = { kind: "documents" };
+  // The old schema no longer describes schema-generated forms or placeholders.
+  // Explicit JSON remains authoritative and is reconsidered after compilation.
+  if (designDocumentIsSchemaDefault) {
+    design.value = "";
+    designDocumentIsSchemaDefault = false;
+  }
+  if (truthDocumentIsSchemaDefault) {
+    truth.value = "";
+    truthDocumentIsSchemaDefault = false;
+  }
+  // A shared restore keeps its carried documents authoritative (JSON-first)
+  // even after a source tweak; only stale shared form state is dropped. Other
+  // contexts re-derive authoring mode from the new schema.
+  authoringRestore =
+    authoringRestore.kind === "shared" || authoringRestore.kind === "shared-documents"
+      ? { kind: "shared-documents" }
+      : { kind: "fresh" };
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
 observed.addEventListener("input", observedEdited);
 design.addEventListener("input", () => {
   designJsonMode = true;
+  designDocumentIsSchemaDefault = false;
   authoringError = null;
   generationInputsEdited();
 });
 truth.addEventListener("input", () => {
   truthJsonMode = true;
+  truthDocumentIsSchemaDefault = false;
   authoringError = null;
   generationInputsEdited();
 });
@@ -283,7 +305,7 @@ function loadSharedProject() {
     prior: String(pendingSharedProject.priorSource ?? ""),
   }, validAuthoringState(pendingSharedProject.authoring)
     ? { kind: "shared", value: pendingSharedProject.authoring }
-    : { kind: "documents" });
+    : { kind: "shared-documents" });
   applySamplerSettings(pendingSharedProject.sampler);
   applyGenerationSettings(pendingSharedProject.generation, pendingSharedProject.sampler);
   element("#share-review").hidden = true;
@@ -300,6 +322,8 @@ function setProject(project, restore = { kind: "documents" }) {
     control.value = value;
   }
   authoringRestore = restore;
+  designDocumentIsSchemaDefault = false;
+  truthDocumentIsSchemaDefault = false;
   designJsonMode = true;
   truthJsonMode = true;
   authoringError = null;
@@ -387,7 +411,7 @@ function generationInputsEdited() {
   exampleLoadRevision += 1;
   // A recipient edit before the first compile outranks a pending shared
   // authoring restore; the edited documents become the source of truth.
-  if (authoringRestore.kind === "shared") authoringRestore = { kind: "documents" };
+  if (authoringRestore.kind === "shared") authoringRestore = { kind: "shared-documents" };
   element("#progress").replaceChildren();
   dispatch({
     type: "generation-input-edited",
@@ -400,7 +424,8 @@ function generationInputsEdited() {
 
 function configureAuthoring(schema) {
   const restoreKind = authoringRestore.kind;
-  if (authoringRestore.kind === "shared") {
+  const designFormsSupported = supportsDesignForms(schema);
+  if (restoreKind === "shared") {
     const saved = authoringRestore.value;
     designJsonMode = saved.design.json;
     truthJsonMode = saved.truth.json;
@@ -415,16 +440,23 @@ function configureAuthoring(schema) {
         entryOr(saved.truth.values, parameter.name, defaultParameterEntry(parameter)),
       ]),
     );
-  } else if (authoringRestore.kind === "documents") {
+  } else if (restoreKind === "shared-documents") {
+    // A legacy share or a recipient edit carries authoritative documents but
+    // no current form state. Keep the PR-75 JSON-first restore behavior.
     designJsonMode = true;
     truthJsonMode = true;
     designExpressions = defaultDesignExpressions(schema);
     fixedValueEntries = defaultFixedValues(schema);
-  } else if (authoringRestore.kind === "fresh") {
-    designJsonMode = design.value.trim() !== "";
-    truthJsonMode = truth.value.trim() !== "";
+  } else if (restoreKind === "documents" || restoreKind === "fresh") {
+    const designDocumentIsEmpty = design.value.trim() === "";
+    designJsonMode = !designFormsSupported || !designDocumentIsEmpty;
+    truthJsonMode = restoreKind === "documents" || truth.value.trim() !== "";
     designExpressions = defaultDesignExpressions(schema);
     fixedValueEntries = defaultFixedValues(schema);
+    if (!designFormsSupported && designDocumentIsEmpty && canScaffoldDesign(schema)) {
+      design.value = defaultDesignDocument(schema);
+      designDocumentIsSchemaDefault = true;
+    }
   } else {
     designExpressions = Object.fromEntries(
       schema.data.map((slot) => [
@@ -438,16 +470,28 @@ function configureAuthoring(schema) {
       ]),
     );
   }
-  if (!supportsDesignForms(schema)) designJsonMode = true;
+  if (!designFormsSupported) designJsonMode = true;
   if (!supportsParameterForms(schema)) truthJsonMode = true;
   authoringRestore = { kind: "preserve" };
   renderedSchema = null;
   // Shared documents keep their carried bytes: they were produced by the
   // sender's evaluation, and re-evaluating seeded draws on another engine
   // could change last-bit floats. Rewrites happen only on local edits.
-  if (restoreKind !== "shared" && (!designJsonMode || !truthJsonMode)) {
-    if (!designJsonMode) writeDesignDocumentFromEntries(schema);
-    if (!truthJsonMode) writeTruthDocumentFromEntries(schema);
+  // Only an initial (fresh/example) materialization is the untouched schema
+  // default. The preserve path re-serializes the current form entries, which
+  // may be user-authored, so it must not re-flag them as defaults — that would
+  // let a later source edit drop them.
+  const materializesInitialDefault = restoreKind === "documents" || restoreKind === "fresh";
+  if (restoreKind !== "shared" && restoreKind !== "shared-documents" &&
+      (!designJsonMode || !truthJsonMode || design.value !== state.documents.design)) {
+    if (!designJsonMode) {
+      writeDesignDocumentFromEntries(schema);
+      if (materializesInitialDefault) designDocumentIsSchemaDefault = true;
+    }
+    if (!truthJsonMode) {
+      writeTruthDocumentFromEntries(schema);
+      if (materializesInitialDefault) truthDocumentIsSchemaDefault = true;
+    }
     generationInputsEdited();
   }
 }
@@ -470,17 +514,77 @@ function defaultDesignExpressions(schema) {
   return Object.fromEntries(schema.data.map((slot) => [slot.name, defaultExpression(slot)]));
 }
 
+const DEFAULT_DESIGN_RANGE_START = -2;
+const DEFAULT_DESIGN_RANGE_STOP = 2;
+
 function defaultExpression(slot) {
   if (slot.kind !== "vector") return "[]";
   // linspace needs n >= 2; exact lengths below that get a literal default.
   if (slot.length !== null && slot.length < 2) {
     return JSON.stringify(Array(slot.length).fill(0));
   }
-  return `linspace(-2, 2, ${slot.length ?? 25})`;
+  return `linspace(${DEFAULT_DESIGN_RANGE_START}, ${DEFAULT_DESIGN_RANGE_STOP}, ${slot.length ?? 25})`;
+}
+
+// A canonical document carries explicit dtype and shape, so a non-eligible
+// model's placeholder honors each slot's real length and type — a plain-JSON
+// placeholder cannot (JSON.parse collapses 0.0 to 0, inferring int64) and an
+// empty array for a fixed-length vector would pass validation yet be
+// shape-invalid.
+function defaultDesignDocument(schema) {
+  const variables = {};
+  for (const slot of schema.data) {
+    defineOwn(variables, slot.name, placeholderVariable(slot));
+  }
+  return JSON.stringify({ format: "bayescycle.data.json.v1", variables });
+}
+
+// A schema-shaped placeholder needs each slot's exact shape. Only scalars and
+// statically-fixed-length vectors qualify; a matrix/higher-rank slot or a
+// dimension-linked/unsized vector (no known length) has no scaffoldable shape,
+// so no runnable placeholder is emitted and the design stays empty until the
+// user authors it — an empty [] would otherwise run generation with zero rows.
+// The total scaffolded scalar count is bounded by the document budget so a
+// user-declared huge static length (e.g. Data.vector(1e9)) cannot allocate a
+// giant placeholder during compile.
+function canScaffoldDesign(schema) {
+  let scalarCount = 0;
+  for (const slot of schema.data) {
+    if (slot.kind === "scalar") {
+      scalarCount += 1;
+    } else if (slot.kind === "vector" && slot.length !== null) {
+      scalarCount += slot.length;
+    } else {
+      return false;
+    }
+    if (scalarCount > MAX_DOCUMENT_SCALARS) return false;
+  }
+  return true;
+}
+
+function placeholderVariable(slot) {
+  // canScaffoldDesign gates defaultDesignDocument, so only scalars and
+  // known-length vectors reach here; reject anything else rather than
+  // fabricate a rank-1 or zero-length shape.
+  const fill = slot.dtype === "bool" ? false : 0;
+  if (slot.kind === "scalar") {
+    return { dtype: slot.dtype, shape: [], values: [fill] };
+  }
+  if (slot.kind !== "vector" || slot.length === null) {
+    throw new Error(`Cannot scaffold a ${slot.kind} design slot without a known length`);
+  }
+  return {
+    dtype: slot.dtype,
+    shape: [slot.length],
+    values: Array.from({ length: slot.length }, () => fill),
+  };
 }
 
 function evaluateSlotValues(slot, expression) {
-  const values = evaluateDesignExpression(expression);
+  return requireSlotLength(slot, evaluateDesignExpression(expression));
+}
+
+function requireSlotLength(slot, values) {
   if (slot.length !== null && values.length !== slot.length) {
     throw new Error(`${slot.name} needs exactly ${slot.length} values, got ${values.length}`);
   }
@@ -873,6 +977,9 @@ function updateAuthoringControls(schema) {
 function syncDesignForms() {
   const schema = state.compile.modelSchema;
   if (state.compile.status !== "compiled" || schema === undefined) return;
+  // A form edit makes the design user-authored, so a later source edit must
+  // preserve it rather than discard it as the untouched schema default.
+  designDocumentIsSchemaDefault = false;
   writeDesignDocumentFromEntries(schema);
   renderDesignPreviews(schema);
   generationInputsEdited();
@@ -881,17 +988,37 @@ function syncDesignForms() {
 function syncTruthForm() {
   const schema = state.compile.modelSchema;
   if (state.compile.status !== "compiled" || schema === undefined) return;
+  // A form edit makes the fixed values user-authored, so a later source edit
+  // preserves them rather than discarding them as the schema default.
+  truthDocumentIsSchemaDefault = false;
   writeTruthDocumentFromEntries(schema);
   generationInputsEdited();
 }
 
 function renderDesignPreviews(schema) {
+  let previewScalarCount = 0;
+  let previewBudgetExceeded = false;
   for (const slot of schema.data) {
     const input = document.getElementById(`design-expr-${safeId(slot.name)}`);
     const preview = document.getElementById(`design-preview-${safeId(slot.name)}`);
     if (input === null || preview === null) continue;
+    if (previewBudgetExceeded) {
+      input.classList.remove("invalid");
+      preview.classList.remove("invalid");
+      preview.textContent = "preview omitted (too large)";
+      continue;
+    }
     try {
-      const values = evaluateSlotValues(slot, input.value);
+      const values = evaluateDesignExpression(input.value);
+      previewScalarCount += values.length;
+      if (previewScalarCount > MAX_DOCUMENT_SCALARS) {
+        previewBudgetExceeded = true;
+        input.classList.remove("invalid");
+        preview.classList.remove("invalid");
+        preview.textContent = "preview omitted (too large)";
+        continue;
+      }
+      requireSlotLength(slot, values);
       const shown = values.slice(0, 8).map((value) => Number(value).toFixed(2)).join(", ");
       input.classList.remove("invalid");
       preview.classList.remove("invalid");
@@ -1219,6 +1346,55 @@ function validDocument(text) {
   }
 }
 
+function observedDocumentBindsSchema(text, schema) {
+  if (text.trim() === "") return false;
+  try {
+    const document = parseDocument(text);
+    const slots = [...schema.data, ...schema.observed];
+    const expected = new Set(slots.map((slot) => slot.name));
+    // An unexpected variable is rejected at binding, so the cue must not claim
+    // readiness for a document whose names do not match the schema exactly.
+    for (const name of Object.keys(document.variables)) {
+      if (!expected.has(name)) return false;
+    }
+    for (const slot of slots) {
+      if (!Object.hasOwn(document.variables, slot.name)) return false;
+      const variable = document.variables[slot.name];
+      if (!observedShapeMatchesSlot(variable.shape, slot)) return false;
+      if (!observedDtypeMatchesSlot(variable.dtype, slot)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Validate the shape constraints the schema actually knows — scalars and
+// statically-fixed-length vectors. Dimension-linked vectors, observed slots,
+// and higher-rank slots carry no concrete shape here; the engine validates
+// those during binding.
+function observedShapeMatchesSlot(shape, slot) {
+  if (slot.kind === "scalar") return shape.length === 0;
+  if (slot.kind === "vector" && slot.length !== null) {
+    return shape.length === 1 && shape[0] === slot.length;
+  }
+  return true;
+}
+
+const INTEGER_DTYPES = ["int32", "int64"];
+const FLOAT_DTYPES = ["float32", "float64"];
+
+// A data slot's schema dtype constrains what binds: an integer slot rejects
+// float observed values, a float slot accepts integer or float (the engine
+// coerces integers up), and bool requires bool. Observed slots carry no dtype
+// in the schema, so they are left to the engine.
+function observedDtypeMatchesSlot(observedDtype, slot) {
+  if (slot.dtype === undefined) return true;
+  if (slot.dtype === "bool") return observedDtype === "bool";
+  if (INTEGER_DTYPES.includes(slot.dtype)) return INTEGER_DTYPES.includes(observedDtype);
+  return INTEGER_DTYPES.includes(observedDtype) || FLOAT_DTYPES.includes(observedDtype);
+}
+
 function rawGenerationDocumentError(paramSource) {
   if (state.compile.status !== "compiled") return null;
   for (const [label, enabled, text] of [
@@ -1402,6 +1578,10 @@ function render() {
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
     (datasetSource === "observed" && observed.value.trim() === "") ||
     (datasetSource === "generated" && !generatedAvailable);
+  element("#observed-ready-hint").hidden = state.compile.status !== "compiled" ||
+    datasetSource !== "observed" || !validSampleSettings() ||
+    !observedDocumentBindsSchema(observed.value, state.compile.modelSchema) ||
+    state.run.status === "running" || state.generation.attempt.status === "running";
   const visibleAuthoringError = authoringError ?? rawGenerationDocumentError(paramSource);
   const authoringErrorElement = element("#authoring-error");
   authoringErrorElement.hidden = visibleAuthoringError === null;
@@ -1528,26 +1708,51 @@ function renderPlots(artifacts) {
   const diagnostics = artifacts.find((artifact) => artifact.name === "diagnostics.json");
   const plots = element("#plots");
   const plotGrid = element("#plot-grid");
+  const truncatedNotice = element("#plots-truncated-notice");
+  truncatedNotice.hidden = true;
   if (posterior === undefined || diagnostics === undefined) {
     plotGrid.hidden = true;
     plots.hidden = !artifacts.some((artifact) => artifact.name === "recovery_check.json");
-    for (const selector of ["#plot-trank", "#plot-ess-rhat", "#plot-precis"]) {
-      element(selector).replaceChildren();
-    }
+    clearDashboardPlots();
     return;
   }
   try {
     const data = readDashboardData({ fits: [posterior.bytes], diagnose: diagnostics.bytes });
-    element("#plot-trank").innerHTML = renderTrank(data);
-    element("#plot-ess-rhat").innerHTML = renderEssRhat(data);
-    element("#plot-precis").innerHTML = renderPrecis(data);
+    const plotLimit = dashboardPlotLimit(data);
+    if (plotLimit.kind === "omitted") {
+      clearDashboardPlots();
+      truncatedNotice.textContent = plotLimit.notice;
+      truncatedNotice.hidden = false;
+      plotGrid.hidden = true;
+      plots.hidden = false;
+      return;
+    }
+    const recovery = artifacts.find((artifact) => artifact.name === "recovery_check.json");
+    const truth = recovery === undefined
+      ? undefined
+      : recoveryTruthMap(
+          JSON.parse(new TextDecoder().decode(recovery.bytes)),
+          data.parameters.map((parameter) => parameter.label),
+        );
+    const rendered = prepareDashboardPlots(data, truth);
+    if (rendered.kind !== "rendered") throw new Error("Dashboard plot limit changed");
+    element("#plot-trank").innerHTML = rendered.trank;
+    element("#plot-ess-rhat").innerHTML = rendered.essRhat;
+    element("#plot-precis").innerHTML = rendered.precis;
     plotGrid.hidden = false;
     plots.hidden = false;
   } catch (error) {
+    clearDashboardPlots();
     plotGrid.hidden = true;
     plots.hidden = !artifacts.some((artifact) => artifact.name === "recovery_check.json");
     element("#run-error").hidden = false;
     element("#run-error").textContent = `Artifacts downloaded, but plots could not render: ${message(error)}`;
+  }
+}
+
+function clearDashboardPlots() {
+  for (const selector of ["#plot-trank", "#plot-ess-rhat", "#plot-precis"]) {
+    element(selector).replaceChildren();
   }
 }
 

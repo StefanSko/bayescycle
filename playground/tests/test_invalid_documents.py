@@ -18,6 +18,7 @@ def test_invalid_generation_json_is_a_visible_authoring_error(page: Page, base_u
     page.locator("#compile-button").click()
     expect(page.locator("#generate-button")).to_be_enabled(timeout=120_000)
 
+    page.locator("#design-json-toggle").click()
     page.locator("#design-data").fill("{")
     expect(page.locator("#authoring-error")).to_contain_text("Design JSON: invalid JSON")
     page.locator("#design-data").fill('{"x":[-1,0,1]}')

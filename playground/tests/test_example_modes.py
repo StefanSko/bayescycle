@@ -1,19 +1,182 @@
+import re
+
 from playwright.sync_api import Page, expect
 
 
-def test_examples_load_raw_documents_in_json_escape_hatches(page: Page, base_url: str) -> None:
+def test_form_eligible_example_derives_design_forms_from_compiled_schema(
+    page: Page, base_url: str
+) -> None:
     page.goto(f"{base_url}/site/")
     menu = page.locator("#examples-menu")
     expect(menu.locator("option")).to_have_count(4)
     menu.select_option("eight-schools")
     expect(page.locator("#design-data")).to_have_value("")
     menu.select_option("linear-simulation")
-    expect(page.locator("#design-data")).not_to_have_value("")
+    expect(page.locator("#design-data")).to_have_value("")
     expect(page.locator("#truth-data")).not_to_have_value("")
     page.locator("#compile-button").click()
-    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-slots")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-field")).to_be_hidden()
+    expect(page.locator("#design-expr-x")).to_have_value("linspace(-2, 2, 25)")
     expect(page.locator("#truth-json-field")).to_be_visible()
+
+
+def test_pasted_form_eligible_model_with_empty_design_prefills_each_actual_slot(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class TwoDesigns:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    time = Data.vector()\n"
+        "    dose = Data.vector(6)\n"
+        "    y = Observed(Normal(beta * time + dose, 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-slots .slot-card")).to_have_count(2, timeout=120_000)
+    expect(page.locator("#design-expr-time")).to_have_value("linspace(-2, 2, 25)")
+    expect(page.locator("#design-expr-dose")).to_have_value("linspace(-2, 2, 6)")
+    assert '"time"' in page.locator("#design-data").input_value()
+    assert '"dose"' in page.locator("#design-data").input_value()
+    assert '"x"' not in page.locator("#design-data").input_value()
+
+
+def test_pasted_form_eligible_model_preserves_precompile_design_json(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class ExplicitDesign:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(beta * x, 1.0))\n"
+    )
+    explicit = '{"x":[100.0,200.0,300.0]}'
+    page.locator("#design-data").fill(explicit)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
     expect(page.locator("#design-slots")).to_be_hidden()
+    expect(page.locator("#design-data")).to_have_value(explicit)
+
+
+def test_source_edit_rederives_forms_after_schema_forced_json_mode(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    non_eligible = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class FirstOrdinal:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector()\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    eligible = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class ThenLinear:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    time = Data.vector()\n"
+        "    y = Observed(Normal(beta * time, 1.0))\n"
+    )
+    page.locator("#model-source").fill(non_eligible)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-toggle")).to_be_disabled()
+
+    page.locator("#model-source").fill(eligible)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-slots")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-field")).to_be_hidden()
+    expect(page.locator("#design-expr-time")).to_have_value("linspace(-2, 2, 25)")
+    assert '"n_cutpoints"' not in page.locator("#design-data").input_value()
+
+
+def test_unknown_length_design_slots_get_no_runnable_placeholder(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    # A dimension-linked / unsized design vector has no static length, so it
+    # cannot be scaffolded to a real shape; leaving [] would run generation
+    # with zero rows. The design stays empty and generation disabled.
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class PastedOrdinal:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector()\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    # Wait for the compile to actually finish (#ir-hash appears) before checking
+    # the post-compile design; an empty #design-data matches trivially in the
+    # pre-compile state.
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-field")).to_be_visible()
+    expect(page.locator("#design-json-toggle")).to_be_disabled()
+    expect(page.locator("#design-data")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
+
+
+def test_non_eligible_placeholder_honors_exact_vector_lengths(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class FixedLenOrdinal:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector(3)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    # The exact-length x slot gets a length-3 float64 placeholder, not [] —
+    # a shape-invalid design must not look runnable.
+    expect(page.locator("#design-data")).to_have_value(
+        '{"format":"bayescycle.data.json.v1","variables":{'
+        '"n_cutpoints":{"dtype":"int64","shape":[],"values":[0]},'
+        '"x":{"dtype":"float64","shape":[3],"values":[0,0,0]}}}'
+    )
+
+
+def test_unsupported_rank_design_slot_gets_no_runnable_placeholder(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class MatrixDesign:\n"
+        "    x = Data.matrix()\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(beta * x[0, 0], 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    # Wait for compile before asserting the empty design (empty matches the
+    # pre-compile state trivially).
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # A matrix slot has no schema-known shape, so no rank-1 placeholder is
+    # emitted; the design stays empty and generation stays disabled.
+    expect(page.locator("#design-data")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
 
 
 def test_scalar_design_slots_remain_in_the_json_escape_hatch(page: Page, base_url: str) -> None:
@@ -100,7 +263,9 @@ def test_zero_product_canonical_shape_stays_in_json_mode(page: Page, base_url: s
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#compile-button").click()
-    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-slots")).to_be_visible(timeout=120_000)
+    page.locator("#design-json-toggle").click()
+    expect(page.locator("#design-json-field")).to_be_visible()
     page.locator("#design-data").fill(
         '{"format":"bayescycle.data.json.v1","variables":'
         '{"x":{"dtype":"float64","shape":[1000000000,0],"values":[]}}}'
@@ -152,6 +317,34 @@ def test_form_aggregate_scalar_cap_surfaces_before_materialization(
     expect(page.locator("#generate-button")).to_be_disabled()
 
 
+def test_design_previews_omit_remaining_slots_after_aggregate_budget(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class PreviewBudget:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    a = Data.vector()\n"
+        "    b = Data.vector()\n"
+        "    c = Data.vector()\n"
+        "    y = Observed(Normal(beta * (a + b + c), 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-c")).to_be_visible(timeout=120_000)
+    page.locator("#design-expr-c").fill("range(1, 3)")
+    expect(page.locator("#design-preview-c")).to_contain_text("unknown function")
+
+    page.locator("#design-expr-a").fill("linspace(0, 1, 60000)")
+    page.locator("#design-expr-b").fill("linspace(0, 1, 60000)")
+    expect(page.locator("#design-preview-a")).to_contain_text("shape [60000]")
+    expect(page.locator("#design-preview-b")).to_have_text("preview omitted (too large)")
+    expect(page.locator("#design-preview-c")).to_have_text("preview omitted (too large)")
+    expect(page.locator("#design-expr-c")).not_to_have_class("invalid")
+
+
 def test_exact_length_design_slots_enforce_their_shape(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
     page.locator("#model-source").fill(
@@ -183,3 +376,98 @@ def test_exact_length_design_slots_enforce_their_shape(page: Page, base_url: str
     expect(page.locator("#generate-button")).to_be_disabled()
     page.locator("#generation-seed").fill("0")
     expect(page.locator("#generate-button")).to_be_enabled()
+
+
+def test_oversized_static_design_length_is_not_scaffolded(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    # A known but over-budget static length must not allocate a giant
+    # placeholder during compile; the design stays empty instead.
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class OversizedDesign:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector(100001)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-data")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
+
+
+def test_form_edited_design_survives_a_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    model = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class Lin:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + x, 1.0))\n"
+    )
+    page.locator("#model-source").fill(model)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-x")).to_be_visible(timeout=120_000)
+    page.locator("#design-expr-x").fill("[1.5, 2.5]")
+    # A form-authored design must survive a later source edit + recompile
+    # instead of being discarded as the untouched schema default.
+    page.locator("#model-source").fill(model + "# tweak\n")
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # Assert on the textarea's value (its DOM text content is empty).
+    expect(page.locator("#design-data")).to_have_value(re.compile(r"1\.5.*2\.5"))
+
+
+def test_form_default_truth_is_rederived_after_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    original = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class A:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + beta * x, 1.0))\n"
+    )
+    page.locator("#model-source").fill(original)
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # Rename a parameter and recompile; the auto-written fixed-parameter
+    # default must re-derive for the new schema, not preserve stale bytes.
+    page.locator("#model-source").fill(original.replace("beta", "gamma"))
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#truth-data")).to_have_value(re.compile("gamma"))
+    expect(page.locator("#truth-data")).not_to_have_value(re.compile("beta"))
+
+
+def test_form_edited_design_survives_recompile_then_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    model = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class Lin:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + x, 1.0))\n"
+    )
+    page.locator("#model-source").fill(model)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-x")).to_be_visible(timeout=120_000)
+    page.locator("#design-expr-x").fill("[1.5, 2.5]")
+    # Recompile between the form edit and the source edit must not re-flag the
+    # user-authored design as a schema default.
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    page.locator("#model-source").fill(model + "# tweak\n")
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-data")).to_have_value(re.compile(r"1\.5.*2\.5"))

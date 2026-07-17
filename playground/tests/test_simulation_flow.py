@@ -61,6 +61,8 @@ class Generative:
     page.locator("#fit-button").click()
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-recovery")).to_be_visible(timeout=120_000)
+    expect(page.locator("#plot-precis .truth-marker")).not_to_have_count(0)
+    expect(page.locator("#plot-precis")).to_contain_text("true")
     expect(page.locator("#artifact-generated-datasets")).to_be_visible()
 
 
@@ -192,6 +194,7 @@ def test_failing_composed_generate_surfaces_engine_error_and_remains_actionable(
     page.locator("#prior-source").fill(
         "@model\nclass AlternativePrior:\n    beta = Param(Normal(3.0, 0.25))\n"
     )
+    page.locator("#design-json-toggle").click()
     page.locator("#design-data").fill("{}")
     page.locator("#generation-count").fill("1")
     page.locator("#generate-button").click()
