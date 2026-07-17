@@ -411,6 +411,27 @@ def _parameter_dimensions_equal(target_dimensions, source_dimensions, name):
     )
 
 
+def _reject_unused_prior_parameters(target_meta, source_meta):
+    target_names = set(target_meta.params)
+    source_names = set(source_meta.params)
+    supporting_names = set()
+    pending = list(target_names & source_names)
+    while pending:
+        name = pending.pop()
+        parameter = source_meta.params[name]
+        for dependency in _param_ref_names(parameter.distribution):
+            if dependency in source_names and dependency not in supporting_names:
+                supporting_names.add(dependency)
+                pending.append(dependency)
+    unused = source_names - target_names - supporting_names
+    if unused:
+        name = next(name for name in source_meta.params if name in unused)
+        raise ValueError(
+            f"prior parameter {name!r} does not exist in the target or support a "
+            "hierarchical replacement"
+        )
+
+
 def _completed_prior(target, authored_prior):
     """Complete an authored partial prior with untouched target declarations."""
     target_meta = model_meta(target)
@@ -450,23 +471,6 @@ def _completed_prior(target, authored_prior):
                     f"prior parameter {name!r} dimension {dimension_name!r} "
                     "conflicts with target coordinates"
                 )
-
-    supporting_names = set()
-    pending = list(replacements)
-    while pending:
-        name = pending.pop()
-        parameter = source_meta.params[name]
-        for dependency in _param_ref_names(parameter.distribution):
-            if dependency in source_names and dependency not in supporting_names:
-                supporting_names.add(dependency)
-                pending.append(dependency)
-    unused = source_names - target_names - supporting_names
-    if unused:
-        name = next(name for name in source_meta.params if name in unused)
-        raise ValueError(
-            f"prior parameter {name!r} does not exist in the target or support a "
-            "hierarchical replacement"
-        )
 
     selected_params = {}
     for name, parameter in target_meta.params.items():
@@ -594,6 +598,7 @@ def _compile_scenario(source, prior_source):
         raise ValueError(
             f"Expected exactly one @model class in prior-only source, found {len(models)}"
         )
+    _reject_unused_prior_parameters(model_meta(target), model_meta(models[0]))
     try:
         # Validate the authored source before completing its intentionally
         # omitted target Params. Only Bayeswire's missing-target error is the
