@@ -519,12 +519,22 @@ function defaultDesignDocument(schema) {
 // dimension-linked/unsized vector (no known length) has no scaffoldable shape,
 // so no runnable placeholder is emitted and the design stays empty until the
 // user authors it — an empty [] would otherwise run generation with zero rows.
+// The total scaffolded scalar count is bounded by the document budget so a
+// user-declared huge static length (e.g. Data.vector(1e9)) cannot allocate a
+// giant placeholder during compile.
 function canScaffoldDesign(schema) {
-  return schema.data.every(
-    (slot) =>
-      slot.kind === "scalar" ||
-      (slot.kind === "vector" && slot.length !== null),
-  );
+  let scalarCount = 0;
+  for (const slot of schema.data) {
+    if (slot.kind === "scalar") {
+      scalarCount += 1;
+    } else if (slot.kind === "vector" && slot.length !== null) {
+      scalarCount += slot.length;
+    } else {
+      return false;
+    }
+    if (scalarCount > MAX_DOCUMENT_SCALARS) return false;
+  }
+  return true;
 }
 
 function placeholderVariable(slot) {
@@ -939,6 +949,9 @@ function updateAuthoringControls(schema) {
 function syncDesignForms() {
   const schema = state.compile.modelSchema;
   if (state.compile.status !== "compiled" || schema === undefined) return;
+  // A form edit makes the design user-authored, so a later source edit must
+  // preserve it rather than discard it as the untouched schema default.
+  designDocumentIsSchemaDefault = false;
   writeDesignDocumentFromEntries(schema);
   renderDesignPreviews(schema);
   generationInputsEdited();
