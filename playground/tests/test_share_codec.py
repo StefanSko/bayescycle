@@ -5,6 +5,7 @@ from playwright.sync_api import Page
 
 CASES = [
     "round-trips projects byte-equal",
+    "round-trips the prior snippet additively while old links remain valid",
     "rejects garbage",
     "rejects compressed payloads above the character cap",
     "encoder never emits a payload above decoder limits",

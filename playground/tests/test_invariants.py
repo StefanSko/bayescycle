@@ -50,6 +50,8 @@ def test_native_document_surfaces_are_present() -> None:
         "observed-data",
         "design-data",
         "truth-data",
+        "prior-source",
+        "param-source-other-prior",
         "design-slots",
         "design-json-toggle",
         "parameter-fields",
@@ -59,6 +61,7 @@ def test_native_document_surfaces_are_present() -> None:
         "authoring-error",
         "cancel-run",
         "artifact-generated-datasets",
+        "artifact-generation-model",
         "generated-dataset-index",
         "selected-pair-summary",
         "artifact-generation-plan",
@@ -75,6 +78,7 @@ def test_application_reaches_workers_only_through_runtime() -> None:
     assert 'from "../compile/' not in application_source
     assert 'from "../engine/' not in application_source
     assert "runtime.compile(" in application_source
+    assert "runtime.compileScenario(" in application_source
     assert "runtime.run(" in application_source
 
 

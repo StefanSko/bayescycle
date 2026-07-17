@@ -64,6 +64,7 @@ const projects = [
   {
     v: 1,
     source: "μ ~ 正规(0,1) 🎲",
+    priorSource: "@model\nclass AnotherPrior:\n    μ = Param(Normal(3.0, 0.25))\n",
     dataMode: "design",
     sampler: sampler({ chains: 2 }),
   },
@@ -125,6 +126,22 @@ export default [
         assertDeepEqual(decoded, project, `project ${index} deep equality differs`);
         assert(JSON.stringify(decoded) === JSON.stringify(project), `project ${index} JSON bytes differ`);
       }
+    },
+  },
+  {
+    name: "round-trips the prior snippet additively while old links remain valid",
+    fn: async () => {
+      const withPrior = {
+        v: 1, source: "main", priorSource: "prior-only", sampler: sampler(),
+      };
+      assertDeepEqual(
+        await decodeProject(await encodeProject(withPrior)),
+        withPrior,
+        "prior snippet did not round-trip",
+      );
+      const old = { v: 1, source: "main", sampler: sampler() };
+      const decodedOld = await decodeProject(await encodeProject(old));
+      assert(!Object.hasOwn(decodedOld, "priorSource"), "old link gained a required prior field");
     },
   },
   {

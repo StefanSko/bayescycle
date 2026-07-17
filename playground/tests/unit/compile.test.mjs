@@ -1,4 +1,4 @@
-import { compile } from "/site/src/compile/index.mjs";
+import { compile, compileScenario } from "/site/src/compile/index.mjs";
 
 const FIXTURE_ROOT = "/tests/fixtures/corpus/";
 const UTF8 = new TextDecoder();
@@ -85,6 +85,168 @@ export default [
         const golden = canonicalString(JSON.parse(goldenText));
         assert(actual === golden, `${name} IR differs from its golden document`);
       }
+    },
+  },
+  {
+    name: "scenario compile composes one partial prior with the current model",
+    fn: async () => {
+      const source = `from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Normal, Truncated
+
+@model
+class LinearRegression:
+    alpha = Param(Normal(0.0, 1.0))
+    beta = Param(Normal(0.0, 1.0))
+    sigma = Param(Truncated(Normal(0.0, 1.0), lower=0.0), constraint=Positive())
+    x = Data.vector()
+    y = Observed(Normal(alpha + beta * x, sigma))
+`;
+      const result = await compileScenario(source, `@model
+class SteepSlopes:
+    beta = Param(Normal(3.0, 0.25))
+`);
+      assert(result.ok, `scenario compilation failed: ${result.traceback}`);
+      const document = JSON.parse(UTF8.decode(result.irBytes));
+      const serialized = JSON.stringify(document);
+      assert(serialized.includes('"name":"y"'), "composed IR lost the target outcome");
+      assert(serialized.includes('"value":3'), "composed IR lost the alternative beta prior");
+      assert(
+        result.modelSchema.parameters.map((parameter) => parameter.name).join(",") ===
+          "alpha,beta,sigma",
+        `composed schema changed parameters: ${JSON.stringify(result.modelSchema.parameters)}`,
+      );
+    },
+  },
+  {
+    name: "scenario compile accepts hierarchical support parameters",
+    fn: async () => {
+      const source = `from bayeswire import Observed, Param, model
+from bayeswire.distributions import Normal
+@model
+class Target:
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta, 1.0))
+`;
+      const result = await compileScenario(source, `@model
+class Hierarchical:
+    location = Param(Normal(2.0, 0.5))
+    theta = Param(Normal(location, 0.1))
+`);
+      assert(result.ok, `hierarchical scenario failed: ${result.traceback}`);
+      const names = result.modelSchema.parameters.map((parameter) => parameter.name);
+      assert(names.indexOf("location") < names.indexOf("theta"),
+        `hierarchical parameter order is not ancestral: ${names}`);
+    },
+  },
+  {
+    name: "scenario compile reports prior-only model counts and unknown names",
+    fn: async () => {
+      const source = `from bayeswire import Param, model
+from bayeswire.distributions import Normal
+@model
+class Target:
+    theta = Param(Normal(0.0, 1.0))
+`;
+      for (const [snippet, count] of [
+        ["answer = 42\n", 0],
+        ["@model\nclass First:\n    theta = Param(Normal(1.0, 1.0))\n\n@model\nclass Second:\n    theta = Param(Normal(2.0, 1.0))\n", 2],
+      ]) {
+        const result = await compileScenario(source, snippet);
+        assert(!result.ok, `prior-only source with ${count} models succeeded`);
+        assert(
+          result.message === `Expected exactly one @model class in prior-only source, found ${count}`,
+          `unexpected model-count error: ${result.message}`,
+        );
+      }
+      const unknown = await compileScenario(source, `@model
+class Typo:
+    theeta = Param(Normal(2.0, 1.0))
+`);
+      assert(!unknown.ok, "unknown prior parameter succeeded");
+      assert(
+        unknown.message.includes("theeta") && unknown.message.includes("does not exist"),
+        `unknown prior parameter error was unclear: ${unknown.message}`,
+      );
+    },
+  },
+  {
+    name: "scenario compile retains target outcome dimensions",
+    fn: async () => {
+      const source = `from bayeswire import Dim, Observed, Param, model
+from bayeswire.distributions import Normal
+observation = Dim("observation")
+@model
+class DimensionedTarget:
+    theta = Param(Normal(0.0, 1.0))
+    y = Observed(Normal(theta, 1.0), dims=(observation,))
+`;
+      const result = await compileScenario(source, `@model
+class Shifted:
+    theta = Param(Normal(2.0, 0.5))
+`);
+      assert(result.ok, `dimensioned target composition failed: ${result.traceback}`);
+      assert(result.modelSchema.observed.some((entry) => entry.name === "y"),
+        "composed schema lost the dimensioned target outcome");
+    },
+  },
+  {
+    name: "scenario compile rejects forbidden prior-only factors verbatim",
+    fn: async () => {
+      const source = `from bayeswire import Param, model
+from bayeswire.distributions import Normal
+@model
+class Target:
+    theta = Param(Normal(0.0, 1.0))
+`;
+      const result = await compileScenario(source, `from bayeswire import Data, PartiallyObserved
+@model
+class InvalidPrior:
+    theta = Param(Normal(2.0, 0.5))
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed = Data.vector(n_obs)
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    value = PartiallyObserved.vector(
+        Normal(0.0, 1.0), length=n, observed=observed,
+        observed_idx=observed_idx, missing_idx=missing_idx,
+    )
+`);
+      assert(!result.ok, "forbidden prior PartiallyObserved value was stripped");
+      assert(result.message.includes("prior") && result.message.includes("PartiallyObserved"),
+        `Bayeswire source-prior error was not preserved: ${result.message}`);
+    },
+  },
+  {
+    name: "scenario compile retains target non-parameter free values",
+    fn: async () => {
+      const source = `from bayeswire import Data, Param, PartiallyObserved, model
+from bayeswire.distributions import Normal
+
+@model
+class PartialTarget:
+    theta = Param(Normal(0.0, 1.0))
+    n = Data.scalar()
+    n_obs = Data.scalar()
+    n_mis = Data.scalar()
+    observed_idx = Data.vector(n_obs)
+    missing_idx = Data.vector(n_mis)
+    observed_values = Data.vector(n_obs)
+    y = PartiallyObserved.vector(
+        Normal(theta, 1.0), length=n, observed=observed_values,
+        observed_idx=observed_idx, missing_idx=missing_idx,
+    )
+`;
+      const result = await compileScenario(source, `@model
+class Shifted:
+    theta = Param(Normal(2.0, 0.5))
+`);
+      assert(result.ok, `partial target composition failed: ${result.traceback}`);
+      const document = JSON.parse(UTF8.decode(result.irBytes));
+      assert(JSON.stringify(document).includes("VectorScatterOp"),
+        "composed IR lost the target partially observed value");
     },
   },
   {

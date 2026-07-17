@@ -5,6 +5,12 @@ from playwright.sync_api import Page
 
 CASES = [
     "all 11 corpus models match native hashes and golden IR",
+    "scenario compile composes one partial prior with the current model",
+    "scenario compile accepts hierarchical support parameters",
+    "scenario compile reports prior-only model counts and unknown names",
+    "scenario compile retains target outcome dimensions",
+    "scenario compile rejects forbidden prior-only factors verbatim",
+    "scenario compile retains target non-parameter free values",
     "surfaces bayeswire declaration errors verbatim",
     "requires exactly one model class",
     "index vector design slots are marked integer",

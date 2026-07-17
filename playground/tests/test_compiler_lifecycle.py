@@ -6,6 +6,7 @@ from playwright.sync_api import Page
 CASES = [
     "runtime owns the compiler adapter",
     "each compile owns a fresh source-only worker request",
+    "each scenario compile owns a fresh bounded worker request",
     "worker terminates before success and declaration failure settle",
     "worker terminates on startup failure malformed response and worker error",
     "oversized compiler output is bounded before use",

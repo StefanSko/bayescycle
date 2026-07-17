@@ -8,6 +8,7 @@ CASES = [
     "serialized fixed plan matches shared versioned fixture and identities",
     "rejects designSource as a generation option",
     "serializes exact model-prior and posterior source variants",
+    "composed-prior provenance claims composed source and original outcome hashes",
     "plans own bytes and reject functions DOM and backend-like values",
     "rejects plan bounds unknown fields and mutable executable shapes",
 ]

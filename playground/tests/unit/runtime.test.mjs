@@ -133,7 +133,7 @@ function generatedOutput(request) {
       ? {
           kind: "model-prior",
           model_hash: request.identities.generation_model_hash,
-          authored_provenance: null,
+          authored_provenance: request.parameter_source.authored_provenance,
         }
       : {
           kind: "posterior",
@@ -231,6 +231,41 @@ export default [
       assert(requests[0].identities.parameters_hash === await hash(parameters), "fixed identity changed");
       assert(requests[1].parameter_source.kind === "model-prior", "model-prior source changed");
       assert(requests[1].parameter_source.authored_provenance === null, "model-prior provenance changed");
+    },
+  },
+  {
+    name: "runtime publishes and verifies composed-prior authored provenance",
+    fn: async () => {
+      const original = bytes('{"bayeswire_ir":1,"model":{"name":"original"}}\n');
+      const composed = bytes('{"bayeswire_ir":1,"model":{"name":"composed"}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const provenance = {
+        claimedSourceModelHash: await hash(composed),
+        claimedOutcomeModelHash: await hash(original),
+      };
+      let request;
+      const runtime = new BrowserRuntime({
+        execute: async (value) => {
+          request = value;
+          return { rawBytes: generatedOutput(value) };
+        },
+      });
+      const result = await runtime.run({
+        operation: "generate",
+        plan: generateDatasets(composed, {
+          design,
+          parameterSource: modelPrior(composed, provenance),
+          count: 1,
+          seed: 0,
+        }),
+      });
+      assert(JSON.stringify(request.parameter_source.authored_provenance) === JSON.stringify({
+        claimed_source_model_hash: provenance.claimedSourceModelHash,
+        claimed_outcome_model_hash: provenance.claimedOutcomeModelHash,
+      }), "runtime lowered composed provenance incorrectly");
+      const model = result.artifacts.find((artifact) => artifact.name === "model.ir.json");
+      assert(model !== undefined && UTF8.decode(model.bytes) === UTF8.decode(composed),
+        "portable generation published the original rather than composed model");
     },
   },
   {
