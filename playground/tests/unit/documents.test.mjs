@@ -133,30 +133,26 @@ export default [
   {
     name: "compact eight schools sidecar preserves previous normalized values",
     fn: async () => {
-      const [compact, previousEnvelope] = await Promise.all([
-        fetch("/site/examples/eight_schools_non_centered.data.json").then(
-          (response) => response.text(),
-        ),
-        fetch("/tests/fixtures/engine/eight_schools_non_centered/data.json").then(
-          (response) => response.text(),
-        ),
-      ]);
+      const compact = await fetch(
+        "/site/examples/eight_schools_non_centered.data.json",
+      ).then((response) => response.text());
       const actual = parseDocument(compact);
-      const expected = parseDocument(previousEnvelope);
-      assert(
-        JSON.stringify(Object.keys(actual.variables)) ===
-          JSON.stringify(Object.keys(expected.variables)),
-        "eight schools variable order changed",
-      );
-      for (const name of Object.keys(expected.variables)) {
-        assert(
-          JSON.stringify(actual.variables[name].shape) ===
-            JSON.stringify(expected.variables[name].shape) &&
-            JSON.stringify(actual.variables[name].values) ===
-              JSON.stringify(expected.variables[name].values),
-          `eight schools ${name} shape or values changed`,
-        );
-      }
+      equal(actual, {
+        format: "bayescycle.data.json.v1",
+        variables: {
+          n_schools: { dtype: "int64", shape: [], values: [8] },
+          sigma: {
+            dtype: "int64",
+            shape: [8],
+            values: [15, 10, 16, 11, 9, 11, 10, 18],
+          },
+          y: {
+            dtype: "int64",
+            shape: [8],
+            values: [28, 8, -3, 7, -1, 1, 18, 12],
+          },
+        },
+      }, "compact eight schools browser normalization differs");
     },
   },
   {

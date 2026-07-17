@@ -19,7 +19,7 @@ def test_form_eligible_example_derives_design_forms_from_compiled_schema(
     expect(page.locator("#truth-json-field")).to_be_visible()
 
 
-def test_pasted_form_eligible_model_prefills_each_actual_design_slot(
+def test_pasted_form_eligible_model_with_empty_design_prefills_each_actual_slot(
     page: Page, base_url: str
 ) -> None:
     page.goto(f"{base_url}/site/")
@@ -40,6 +40,65 @@ def test_pasted_form_eligible_model_prefills_each_actual_design_slot(
     assert '"time"' in page.locator("#design-data").input_value()
     assert '"dose"' in page.locator("#design-data").input_value()
     assert '"x"' not in page.locator("#design-data").input_value()
+
+
+def test_pasted_form_eligible_model_preserves_precompile_design_json(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class ExplicitDesign:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(beta * x, 1.0))\n"
+    )
+    explicit = '{"x":[100.0,200.0,300.0]}'
+    page.locator("#design-data").fill(explicit)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-slots")).to_be_hidden()
+    expect(page.locator("#design-data")).to_have_value(explicit)
+
+
+def test_source_edit_rederives_forms_after_schema_forced_json_mode(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    non_eligible = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class FirstOrdinal:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector()\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    eligible = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class ThenLinear:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    time = Data.vector()\n"
+        "    y = Observed(Normal(beta * time, 1.0))\n"
+    )
+    page.locator("#model-source").fill(non_eligible)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-toggle")).to_be_disabled()
+
+    page.locator("#model-source").fill(eligible)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-slots")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-field")).to_be_hidden()
+    expect(page.locator("#design-expr-time")).to_have_value("linspace(-2, 2, 25)")
+    assert '"n_cutpoints"' not in page.locator("#design-data").input_value()
 
 
 def test_pasted_non_form_eligible_model_gets_schema_shaped_json_placeholder(
@@ -91,6 +150,27 @@ def test_non_eligible_placeholder_honors_exact_vector_lengths(page: Page, base_u
         '"n_cutpoints":{"dtype":"int64","shape":[],"values":[0]},'
         '"x":{"dtype":"float64","shape":[3],"values":[0,0,0]}}}'
     )
+
+
+def test_unsupported_rank_design_slot_gets_no_runnable_placeholder(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class MatrixDesign:\n"
+        "    x = Data.matrix()\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(beta * x[0, 0], 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    # A matrix slot has no schema-known shape, so no rank-1 placeholder is
+    # emitted; the design stays empty and generation stays disabled.
+    expect(page.locator("#design-data")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
 
 
 def test_scalar_design_slots_remain_in_the_json_escape_hatch(page: Page, base_url: str) -> None:

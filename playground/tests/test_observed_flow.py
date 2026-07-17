@@ -5,7 +5,7 @@ from playwright.sync_api import Page, expect
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_observed_example_uses_compact_prefill_and_ready_to_fit_hint(
+def test_observed_ready_hint_requires_valid_settings_and_required_variables(
     page: Page, base_url: str
 ) -> None:
     page.goto(f"{base_url}/site/")
@@ -23,10 +23,21 @@ def test_observed_example_uses_compact_prefill_and_ready_to_fit_hint(
     expect(page.locator("#observed-ready-hint")).to_have_text(
         "Ready to fit — no simulate run needed."
     )
-    page.locator("#observed-data").fill("{")
+
+    page.locator("#chains").fill("0")
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+    page.locator("#chains").fill("4")
+    expect(page.locator("#observed-ready-hint")).to_be_visible()
+
+    page.locator("#observed-data").fill("{}")
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+    page.locator("#observed-data").fill('{"n_schools":8,"sigma":[15,10,16,11,9,11,10,18]}')
     expect(page.locator("#observed-ready-hint")).to_be_hidden()
     page.locator("#observed-data").fill(compact)
     expect(page.locator("#observed-ready-hint")).to_be_visible()
+
+    page.locator("#observed-data").fill("{")
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
 
 
 def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
