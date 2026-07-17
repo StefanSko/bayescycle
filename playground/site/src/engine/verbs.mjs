@@ -6,6 +6,7 @@ import {
 } from "../sampling-limits.mjs";
 import {
   EngineError,
+  MAX_POSTERIOR_RESPONSE_BYTES,
   requirePosteriorResponseWithinLimit,
 } from "./types.mjs";
 
@@ -144,7 +145,10 @@ export async function sbc(inputs) {
 }
 
 /** @param {string[]} fits @param {number} [maximumBytes] */
-export function mergeChainFits(fits, maximumBytes) {
+export function mergeChainFits(
+  fits,
+  maximumBytes = MAX_POSTERIOR_RESPONSE_BYTES,
+) {
   const parsed = fits.map((fit, fitIndex) => {
     const lines = fit.trimEnd().split("\n");
     if (lines.length < 3) {
@@ -205,10 +209,8 @@ export function mergeChainFits(fits, maximumBytes) {
   let outputBytes = 0;
   const lines = [header, ...draws, { trailer }].map((value) => {
     const line = `${JSON.stringify(value)}\n`;
-    if (maximumBytes !== undefined) {
-      outputBytes += ENCODE.encode(line).byteLength;
-      requirePosteriorResponseWithinLimit(outputBytes, maximumBytes);
-    }
+    outputBytes += ENCODE.encode(line).byteLength;
+    requirePosteriorResponseWithinLimit(outputBytes, maximumBytes);
     return line;
   });
   return lines.join("");

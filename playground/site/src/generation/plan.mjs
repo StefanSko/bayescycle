@@ -1,3 +1,4 @@
+import { MAX_POSTERIOR_RESPONSE_BYTES } from "../engine/types.mjs";
 import { parseStrictJson } from "./strict-json.mjs";
 
 export const MAX_GENERATION_COUNT = 1000;
@@ -38,7 +39,11 @@ export function modelPrior(modelIrBytes, authoredProvenance = null) {
 export function fitArtifact(modelIrBytes, dataBytes, posteriorBytes, association) {
   const model = copyBytes(modelIrBytes, "fit model IR");
   const data = copyBytes(dataBytes, "fit data");
-  const posterior = copyBytes(posteriorBytes, "fit posterior");
+  const posterior = copyBytes(
+    posteriorBytes,
+    "fit posterior",
+    MAX_POSTERIOR_RESPONSE_BYTES,
+  );
   if (association !== "runtime" && association !== "portable") {
     throw new GenerationPlanError("fit association must be runtime or portable");
   }
@@ -216,7 +221,11 @@ function validateFitArtifact(value) {
   if (value.kind !== "fit-artifact") throw new GenerationPlanError("fit artifact kind is invalid");
   copyBytes(value.modelIrBytes, "fit model IR");
   copyBytes(value.dataBytes, "fit data");
-  copyBytes(value.posteriorBytes, "fit posterior");
+  copyBytes(
+    value.posteriorBytes,
+    "fit posterior",
+    MAX_POSTERIOR_RESPONSE_BYTES,
+  );
   if (value.association !== "runtime" && value.association !== "portable") {
     throw new GenerationPlanError("fit association must be runtime or portable");
   }

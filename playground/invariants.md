@@ -129,7 +129,9 @@ input to a later compilation.
     before transfer and again at the worker-message boundary; aggregate chain
     bytes are checked before main-thread decode or merge. Rejection fails the
     fit without publishing partial posterior, diagnostics, or recovery
-    artifacts.
+    artifacts. This ceiling is scoped to the production `WorkerEngine` sample
+    path; aggregate handling by the test-only `InProcessEngine` and generation
+    output bounding remain follow-up work under the engine and artifact limits.
 
 ## Browser application constraints
 
@@ -200,8 +202,9 @@ Tests must freeze these observable claims before implementation changes:
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
 - oversized chain and aggregate posterior output fails before main-thread
-  decode, merge, follow-up diagnostics, or artifact publication, while an
-  exactly 64 MiB chain response remains accepted;
+  decode, merge, follow-up diagnostics, or artifact publication; the worker
+  boundary accepts an exactly 64 MiB chain, and a fit above the separate 8 MiB
+  generation-input limit remains valid through posterior publication;
 - project edits and stale completions obey the revisioned state contract;
 - empty schema-derived design defaults, non-empty pre-compile documents, source
   schema changes, and exact shared-authoring restores are separately covered
