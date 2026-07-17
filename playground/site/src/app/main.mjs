@@ -32,7 +32,7 @@ import {
   supportsDesignForms,
   supportsParameterForms,
 } from "./form-limits.mjs";
-import { renderRecoverySummary } from "./recovery.mjs";
+import { recoveryTruthMap, renderRecoverySummary } from "./recovery.mjs";
 import { cancellationEvents, RunControllers } from "./run-controllers.mjs";
 import { assertScenarioCompatible, projectRecoveryTruth } from "./scenario.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
@@ -65,7 +65,7 @@ source.addEventListener("input", () => {
   exampleLoadRevision += 1;
   // A pre-compile source edit invalidates pending shared form state: the
   // sender's schema no longer describes the model being compiled.
-  if (authoringRestore.kind === "shared") authoringRestore = { kind: "documents" };
+  if (authoringRestore.kind === "shared") authoringRestore = { kind: "shared-documents" };
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
@@ -283,7 +283,7 @@ function loadSharedProject() {
     prior: String(pendingSharedProject.priorSource ?? ""),
   }, validAuthoringState(pendingSharedProject.authoring)
     ? { kind: "shared", value: pendingSharedProject.authoring }
-    : { kind: "documents" });
+    : { kind: "shared-documents" });
   applySamplerSettings(pendingSharedProject.sampler);
   applyGenerationSettings(pendingSharedProject.generation, pendingSharedProject.sampler);
   element("#share-review").hidden = true;
@@ -387,7 +387,7 @@ function generationInputsEdited() {
   exampleLoadRevision += 1;
   // A recipient edit before the first compile outranks a pending shared
   // authoring restore; the edited documents become the source of truth.
-  if (authoringRestore.kind === "shared") authoringRestore = { kind: "documents" };
+  if (authoringRestore.kind === "shared") authoringRestore = { kind: "shared-documents" };
   element("#progress").replaceChildren();
   dispatch({
     type: "generation-input-edited",
@@ -400,7 +400,8 @@ function generationInputsEdited() {
 
 function configureAuthoring(schema) {
   const restoreKind = authoringRestore.kind;
-  if (authoringRestore.kind === "shared") {
+  const designFormsSupported = supportsDesignForms(schema);
+  if (restoreKind === "shared") {
     const saved = authoringRestore.value;
     designJsonMode = saved.design.json;
     truthJsonMode = saved.truth.json;
@@ -415,16 +416,21 @@ function configureAuthoring(schema) {
         entryOr(saved.truth.values, parameter.name, defaultParameterEntry(parameter)),
       ]),
     );
-  } else if (authoringRestore.kind === "documents") {
+  } else if (restoreKind === "shared-documents") {
+    // A legacy share or a recipient edit carries authoritative documents but
+    // no current form state. Keep the PR-75 JSON-first restore behavior.
     designJsonMode = true;
     truthJsonMode = true;
     designExpressions = defaultDesignExpressions(schema);
     fixedValueEntries = defaultFixedValues(schema);
-  } else if (authoringRestore.kind === "fresh") {
-    designJsonMode = design.value.trim() !== "";
-    truthJsonMode = truth.value.trim() !== "";
+  } else if (restoreKind === "documents" || restoreKind === "fresh") {
+    designJsonMode = !designFormsSupported;
+    truthJsonMode = restoreKind === "documents" || truth.value.trim() !== "";
     designExpressions = defaultDesignExpressions(schema);
     fixedValueEntries = defaultFixedValues(schema);
+    if (!designFormsSupported && design.value.trim() === "") {
+      design.value = defaultDesignDocument(schema);
+    }
   } else {
     designExpressions = Object.fromEntries(
       schema.data.map((slot) => [
@@ -438,14 +444,15 @@ function configureAuthoring(schema) {
       ]),
     );
   }
-  if (!supportsDesignForms(schema)) designJsonMode = true;
+  if (!designFormsSupported) designJsonMode = true;
   if (!supportsParameterForms(schema)) truthJsonMode = true;
   authoringRestore = { kind: "preserve" };
   renderedSchema = null;
   // Shared documents keep their carried bytes: they were produced by the
   // sender's evaluation, and re-evaluating seeded draws on another engine
   // could change last-bit floats. Rewrites happen only on local edits.
-  if (restoreKind !== "shared" && (!designJsonMode || !truthJsonMode)) {
+  if (restoreKind !== "shared" && restoreKind !== "shared-documents" &&
+      (!designJsonMode || !truthJsonMode || design.value !== state.documents.design)) {
     if (!designJsonMode) writeDesignDocumentFromEntries(schema);
     if (!truthJsonMode) writeTruthDocumentFromEntries(schema);
     generationInputsEdited();
@@ -470,13 +477,27 @@ function defaultDesignExpressions(schema) {
   return Object.fromEntries(schema.data.map((slot) => [slot.name, defaultExpression(slot)]));
 }
 
+const DEFAULT_DESIGN_RANGE_START = -2;
+const DEFAULT_DESIGN_RANGE_STOP = 2;
+
 function defaultExpression(slot) {
   if (slot.kind !== "vector") return "[]";
   // linspace needs n >= 2; exact lengths below that get a literal default.
   if (slot.length !== null && slot.length < 2) {
     return JSON.stringify(Array(slot.length).fill(0));
   }
-  return `linspace(-2, 2, ${slot.length ?? 25})`;
+  return `linspace(${DEFAULT_DESIGN_RANGE_START}, ${DEFAULT_DESIGN_RANGE_STOP}, ${slot.length ?? 25})`;
+}
+
+function defaultDesignDocument(schema) {
+  const value = {};
+  for (const slot of schema.data) {
+    const placeholder = slot.kind === "scalar"
+      ? slot.dtype === "bool" ? false : 0
+      : [];
+    defineOwn(value, slot.name, placeholder);
+  }
+  return JSON.stringify(value);
 }
 
 function evaluateSlotValues(slot, expression) {
@@ -1402,6 +1423,9 @@ function render() {
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
     (datasetSource === "observed" && observed.value.trim() === "") ||
     (datasetSource === "generated" && !generatedAvailable);
+  element("#observed-ready-hint").hidden = state.compile.status !== "compiled" ||
+    datasetSource !== "observed" || !validDocument(observed.value) ||
+    state.run.status === "running" || state.generation.attempt.status === "running";
   const visibleAuthoringError = authoringError ?? rawGenerationDocumentError(paramSource);
   const authoringErrorElement = element("#authoring-error");
   authoringErrorElement.hidden = visibleAuthoringError === null;
@@ -1538,9 +1562,16 @@ function renderPlots(artifacts) {
   }
   try {
     const data = readDashboardData({ fits: [posterior.bytes], diagnose: diagnostics.bytes });
+    const recovery = artifacts.find((artifact) => artifact.name === "recovery_check.json");
+    const truth = recovery === undefined
+      ? undefined
+      : recoveryTruthMap(
+          JSON.parse(new TextDecoder().decode(recovery.bytes)),
+          data.parameters.map((parameter) => parameter.label),
+        );
     element("#plot-trank").innerHTML = renderTrank(data);
     element("#plot-ess-rhat").innerHTML = renderEssRhat(data);
-    element("#plot-precis").innerHTML = renderPrecis(data);
+    element("#plot-precis").innerHTML = renderPrecis(data, truth);
     plotGrid.hidden = false;
     plots.hidden = false;
   } catch (error) {

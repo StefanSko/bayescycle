@@ -52,6 +52,8 @@ label.radio-option { display: inline-flex; align-items: center; gap: .4rem; marg
 .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 .75rem; }
 .hash { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; color: var(--green); font: .72rem ui-monospace, monospace; }
 .status, .progress { display: block; margin-top: .75rem; color: #52625b; font-size: .82rem; }
+.observed-ready-hint { display: inline-block; margin: .55rem 0 0; padding: .3rem .5rem; border: 1px solid var(--green); border-radius: .4rem; background: #eef5ef; color: var(--green); font-size: .78rem; font-weight: 650; }
+.observed-ready-hint[hidden] { display: none; }
 .error { overflow: auto; padding: .65rem; border-left: 3px solid var(--error); background: #fff1ee; color: var(--error); white-space: pre-wrap; }
 .hint, details, #artifacts { color: #52625b; font-size: .86rem; }
 details { margin-top: 1rem; }

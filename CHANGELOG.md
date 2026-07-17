@@ -24,8 +24,12 @@ formats retain their own compatibility policies.
 ### Changed
 
 - Rework the Playground's data-authoring workflow into a schema-driven
-  **Simulate data** section with design expressions and previews, generated
-  fixed-parameter forms, JSON escape hatches, and count-aware simulation controls.
+  **Simulate data** section with model-derived design prefills, design expressions
+  and previews, generated fixed-parameter forms, JSON escape hatches, and
+  count-aware simulation controls.
+- Make observed-data fitting and simulated-pair recovery clearer in the Playground
+  with compact bundled data, a ready-to-fit cue, and a labelled precis axis with
+  true-value markers and legend.
 - Remove stale implementation logs, completed plans, generated walkthroughs,
   and duplicated documentation so maintained guidance has a clear owner.
 - Bound Playground model source, example sidecars, share decompression, JSON
