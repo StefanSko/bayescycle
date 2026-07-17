@@ -471,15 +471,20 @@ function configureAuthoring(schema) {
   // Shared documents keep their carried bytes: they were produced by the
   // sender's evaluation, and re-evaluating seeded draws on another engine
   // could change last-bit floats. Rewrites happen only on local edits.
+  // Only an initial (fresh/example) materialization is the untouched schema
+  // default. The preserve path re-serializes the current form entries, which
+  // may be user-authored, so it must not re-flag them as defaults — that would
+  // let a later source edit drop them.
+  const materializesInitialDefault = restoreKind === "documents" || restoreKind === "fresh";
   if (restoreKind !== "shared" && restoreKind !== "shared-documents" &&
       (!designJsonMode || !truthJsonMode || design.value !== state.documents.design)) {
     if (!designJsonMode) {
       writeDesignDocumentFromEntries(schema);
-      designDocumentIsSchemaDefault = true;
+      if (materializesInitialDefault) designDocumentIsSchemaDefault = true;
     }
     if (!truthJsonMode) {
       writeTruthDocumentFromEntries(schema);
-      truthDocumentIsSchemaDefault = true;
+      if (materializesInitialDefault) truthDocumentIsSchemaDefault = true;
     }
     generationInputsEdited();
   }
