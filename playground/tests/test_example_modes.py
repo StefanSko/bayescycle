@@ -101,10 +101,11 @@ def test_source_edit_rederives_forms_after_schema_forced_json_mode(
     assert '"n_cutpoints"' not in page.locator("#design-data").input_value()
 
 
-def test_pasted_non_form_eligible_model_gets_schema_shaped_json_placeholder(
-    page: Page, base_url: str
-) -> None:
+def test_unknown_length_design_slots_get_no_runnable_placeholder(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
+    # A dimension-linked / unsized design vector has no static length, so it
+    # cannot be scaffolded to a real shape; leaving [] would run generation
+    # with zero rows. The design stays empty and generation disabled.
     page.locator("#model-source").fill(
         "from bayeswire import Data, Observed, Param, model\n"
         "from bayeswire.constraints import Ordered\n"
@@ -118,13 +119,14 @@ def test_pasted_non_form_eligible_model_gets_schema_shaped_json_placeholder(
         "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
     )
     page.locator("#compile-button").click()
-    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    # Wait for the compile to actually finish (#ir-hash appears) before checking
+    # the post-compile design; an empty #design-data matches trivially in the
+    # pre-compile state.
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-field")).to_be_visible()
     expect(page.locator("#design-json-toggle")).to_be_disabled()
-    expect(page.locator("#design-data")).to_have_value(
-        '{"format":"bayescycle.data.json.v1","variables":{'
-        '"n_cutpoints":{"dtype":"int64","shape":[],"values":[0]},'
-        '"x":{"dtype":"float64","shape":[0],"values":[]}}}'
-    )
+    expect(page.locator("#design-data")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
 
 
 def test_non_eligible_placeholder_honors_exact_vector_lengths(page: Page, base_url: str) -> None:
@@ -166,7 +168,9 @@ def test_unsupported_rank_design_slot_gets_no_runnable_placeholder(
         "    y = Observed(Normal(beta * x[0, 0], 1.0))\n"
     )
     page.locator("#compile-button").click()
-    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    # Wait for compile before asserting the empty design (empty matches the
+    # pre-compile state trivially).
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
     # A matrix slot has no schema-known shape, so no rank-1 placeholder is
     # emitted; the design stays empty and generation stays disabled.
     expect(page.locator("#design-data")).to_have_value("")
