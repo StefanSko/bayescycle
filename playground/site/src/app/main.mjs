@@ -514,29 +514,34 @@ function defaultDesignDocument(schema) {
   return JSON.stringify({ format: "bayescycle.data.json.v1", variables });
 }
 
-// A schema-shaped placeholder needs each slot's exact shape. The schema
-// carries a single length per slot, enough for scalars and vectors; a
-// matrix or higher-rank slot has no known shape, so no runnable placeholder
-// is emitted and the design stays empty until the user authors it.
+// A schema-shaped placeholder needs each slot's exact shape. Only scalars and
+// statically-fixed-length vectors qualify; a matrix/higher-rank slot or a
+// dimension-linked/unsized vector (no known length) has no scaffoldable shape,
+// so no runnable placeholder is emitted and the design stays empty until the
+// user authors it — an empty [] would otherwise run generation with zero rows.
 function canScaffoldDesign(schema) {
-  return schema.data.every((slot) => slot.kind === "scalar" || slot.kind === "vector");
+  return schema.data.every(
+    (slot) =>
+      slot.kind === "scalar" ||
+      (slot.kind === "vector" && slot.length !== null),
+  );
 }
 
 function placeholderVariable(slot) {
-  // canScaffoldDesign gates defaultDesignDocument, so only scalars and vectors
-  // reach here; reject anything else rather than fabricate a rank-1 shape.
-  if (slot.kind !== "scalar" && slot.kind !== "vector") {
-    throw new Error(`Cannot scaffold a ${slot.kind} design slot`);
-  }
+  // canScaffoldDesign gates defaultDesignDocument, so only scalars and
+  // known-length vectors reach here; reject anything else rather than
+  // fabricate a rank-1 or zero-length shape.
   const fill = slot.dtype === "bool" ? false : 0;
   if (slot.kind === "scalar") {
     return { dtype: slot.dtype, shape: [], values: [fill] };
   }
-  const length = slot.length ?? 0;
+  if (slot.kind !== "vector" || slot.length === null) {
+    throw new Error(`Cannot scaffold a ${slot.kind} design slot without a known length`);
+  }
   return {
     dtype: slot.dtype,
-    shape: [length],
-    values: Array.from({ length }, () => fill),
+    shape: [slot.length],
+    values: Array.from({ length: slot.length }, () => fill),
   };
 }
 
