@@ -28,8 +28,11 @@ formats retain their own compatibility policies.
   and previews, generated fixed-parameter forms, JSON escape hatches, and
   count-aware simulation controls.
 - Make observed-data fitting and simulated-pair recovery clearer in the Playground
-  with compact bundled data, a ready-to-fit cue, and a labelled precis axis with
-  true-value markers and legend.
+  with compact bundled data, a schema-aware ready-to-fit cue, and a labelled precis
+  axis with true-value markers and legend.
+- Preserve explicit pre-compile Playground design JSON while deriving form defaults
+  only for empty documents, and re-derive automatic authoring defaults after model
+  source changes.
 - Remove stale implementation logs, completed plans, generated walkthroughs,
   and duplicated documentation so maintained guidance has a clear owner.
 - Bound Playground model source, example sidecars, share decompression, JSON

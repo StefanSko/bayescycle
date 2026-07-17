@@ -130,9 +130,10 @@ input to a later compilation.
 - The playground remains a static site with no Node/npm build toolchain.
 - Native HTML controls are preferred; JavaScript exists only for browser APIs,
   workers, artifact handling, state transitions, and rendering.
-- Fresh and bundled projects derive design defaults only from the validated
-  compiler schema. Shared authoring state and carried share documents remain
-  authoritative and are never replaced by a newly synthesized default.
+- Empty design documents in fresh and bundled projects derive defaults only
+  from the validated compiler schema. Non-empty locally authored documents,
+  shared authoring state, and carried share documents remain authoritative and
+  are never replaced by a newly synthesized default.
 - Vendored runtime assets are pinned and hash-checked at staging or test time.
 - Shared projects never compile automatically.
 - User-visible failures are bounded and actionable; malformed JSON, invalid
@@ -190,8 +191,9 @@ Tests must freeze these observable claims before implementation changes:
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
 - project edits and stale completions obey the revisioned state contract;
-- fresh schema-derived design defaults and exact shared-authoring restores are
-  separately covered as observable browser behavior;
+- empty schema-derived design defaults, non-empty pre-compile documents, source
+  schema changes, and exact shared-authoring restores are separately covered
+  as observable browser behavior;
 - fixed, model-prior (including a separately authored composed prior), and
   posterior generation share one exact plan and redraw law while preserving
   parameter/dataset pairs;

@@ -111,7 +111,7 @@
       <div id="observed-data-field">
         <label for="observed-data">Observed data JSON</label>
         <textarea id="observed-data" rows="8" spellcheck="false" placeholder='{"x": [1, 2], "y": [3, 4]}'></textarea>
-        <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact.</p>
+        <p class="hint">Plain JSON is normalized to the canonical Bayescycle data artifact. Integral observed values, including <code>15.0</code>, normalize to <code>int64</code>; the engine accepts them for compatible model inputs.</p>
       </div>
       <h3 class="subheading">Inference settings</h3>
       <div class="settings">

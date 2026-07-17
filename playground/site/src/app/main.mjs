@@ -51,6 +51,7 @@ let designExpressions = {};
 let fixedValueEntries = {};
 let authoringError = null;
 let authoringRestore = { kind: "fresh" };
+let designDocumentIsSchemaDefault = false;
 const examples = new Map();
 const objectUrls = new Set();
 const EXAMPLES_ROOT = new URL("../../examples/", import.meta.url);
@@ -63,15 +64,20 @@ const priorSource = element("#prior-source");
 
 source.addEventListener("input", () => {
   exampleLoadRevision += 1;
-  // A pre-compile source edit invalidates pending shared form state: the
-  // sender's schema no longer describes the model being compiled.
-  if (authoringRestore.kind === "shared") authoringRestore = { kind: "shared-documents" };
+  // The old schema no longer describes schema-generated forms or placeholders.
+  // Explicit JSON remains authoritative and is reconsidered after compilation.
+  if (designDocumentIsSchemaDefault) {
+    design.value = "";
+    designDocumentIsSchemaDefault = false;
+  }
+  authoringRestore = { kind: "fresh" };
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
 observed.addEventListener("input", observedEdited);
 design.addEventListener("input", () => {
   designJsonMode = true;
+  designDocumentIsSchemaDefault = false;
   authoringError = null;
   generationInputsEdited();
 });
@@ -300,6 +306,7 @@ function setProject(project, restore = { kind: "documents" }) {
     control.value = value;
   }
   authoringRestore = restore;
+  designDocumentIsSchemaDefault = false;
   designJsonMode = true;
   truthJsonMode = true;
   authoringError = null;
@@ -424,12 +431,14 @@ function configureAuthoring(schema) {
     designExpressions = defaultDesignExpressions(schema);
     fixedValueEntries = defaultFixedValues(schema);
   } else if (restoreKind === "documents" || restoreKind === "fresh") {
-    designJsonMode = !designFormsSupported;
+    const designDocumentIsEmpty = design.value.trim() === "";
+    designJsonMode = !designFormsSupported || !designDocumentIsEmpty;
     truthJsonMode = restoreKind === "documents" || truth.value.trim() !== "";
     designExpressions = defaultDesignExpressions(schema);
     fixedValueEntries = defaultFixedValues(schema);
-    if (!designFormsSupported && design.value.trim() === "") {
+    if (!designFormsSupported && designDocumentIsEmpty && canScaffoldDesign(schema)) {
       design.value = defaultDesignDocument(schema);
+      designDocumentIsSchemaDefault = true;
     }
   } else {
     designExpressions = Object.fromEntries(
@@ -453,7 +462,10 @@ function configureAuthoring(schema) {
   // could change last-bit floats. Rewrites happen only on local edits.
   if (restoreKind !== "shared" && restoreKind !== "shared-documents" &&
       (!designJsonMode || !truthJsonMode || design.value !== state.documents.design)) {
-    if (!designJsonMode) writeDesignDocumentFromEntries(schema);
+    if (!designJsonMode) {
+      writeDesignDocumentFromEntries(schema);
+      designDocumentIsSchemaDefault = true;
+    }
     if (!truthJsonMode) writeTruthDocumentFromEntries(schema);
     generationInputsEdited();
   }
@@ -500,6 +512,14 @@ function defaultDesignDocument(schema) {
     defineOwn(variables, slot.name, placeholderVariable(slot));
   }
   return JSON.stringify({ format: "bayescycle.data.json.v1", variables });
+}
+
+// A schema-shaped placeholder needs each slot's exact shape. The schema
+// carries a single length per slot, enough for scalars and vectors; a
+// matrix or higher-rank slot has no known shape, so no runnable placeholder
+// is emitted and the design stays empty until the user authors it.
+function canScaffoldDesign(schema) {
+  return schema.data.every((slot) => slot.kind === "scalar" || slot.kind === "vector");
 }
 
 function placeholderVariable(slot) {
@@ -1255,6 +1275,18 @@ function validDocument(text) {
   }
 }
 
+function observedDocumentBindsSchema(text, schema) {
+  if (text.trim() === "") return false;
+  try {
+    const document = parseDocument(text);
+    return [...schema.data, ...schema.observed].every(
+      (slot) => Object.hasOwn(document.variables, slot.name),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function rawGenerationDocumentError(paramSource) {
   if (state.compile.status !== "compiled") return null;
   for (const [label, enabled, text] of [
@@ -1439,7 +1471,8 @@ function render() {
     (datasetSource === "observed" && observed.value.trim() === "") ||
     (datasetSource === "generated" && !generatedAvailable);
   element("#observed-ready-hint").hidden = state.compile.status !== "compiled" ||
-    datasetSource !== "observed" || !validDocument(observed.value) ||
+    datasetSource !== "observed" || !validSampleSettings() ||
+    !observedDocumentBindsSchema(observed.value, state.compile.modelSchema) ||
     state.run.status === "running" || state.generation.attempt.status === "running";
   const visibleAuthoringError = authoringError ?? rawGenerationDocumentError(paramSource);
   const authoringErrorElement = element("#authoring-error");
