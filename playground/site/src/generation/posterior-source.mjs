@@ -1,7 +1,7 @@
-import { MAX_POSTERIOR_RESPONSE_BYTES } from "../engine/types.mjs";
+import { MAX_GENERATION_INPUT_BYTES } from "./limits.mjs";
 import { parseStrictJson } from "./strict-json.mjs";
 
-const MAX_BYTES = MAX_POSTERIOR_RESPONSE_BYTES;
+const MAX_BYTES = MAX_GENERATION_INPUT_BYTES;
 const MAX_DEPTH = 64;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 const SAMPLE_WORKFLOW_PHASES = Object.freeze([

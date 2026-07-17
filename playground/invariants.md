@@ -125,13 +125,15 @@ input to a later compilation.
     score factors or claims that every scoreable model is ancestrally
     sampleable.
 14. Each sampling-chain posterior response and the merged `posterior.ndjson`
-    are bounded to 64 MiB. An oversized chain is rejected in its engine worker
-    before transfer and again at the worker-message boundary; aggregate chain
-    bytes are checked before main-thread decode or merge. Rejection fails the
-    fit without publishing partial posterior, diagnostics, or recovery
-    artifacts. This ceiling is scoped to the production `WorkerEngine` sample
-    path; aggregate handling by the test-only `InProcessEngine` and generation
-    output bounding remain follow-up work under the engine and artifact limits.
+    share the existing 8 MiB generation-input ceiling. An oversized chain is
+    rejected in its engine worker before transfer and again at the
+    worker-message boundary; aggregate chain bytes are checked before
+    main-thread decode or merge, rather than rejecting only after building the
+    merged fit. Rejection fails the fit without publishing partial posterior,
+    diagnostics, or recovery artifacts. This early ceiling is scoped to the
+    production `WorkerEngine` sample path; aggregate handling by the test-only
+    `InProcessEngine` and generation output bounding remain follow-up work under
+    the engine and artifact limits.
 
 ## Browser application constraints
 
@@ -201,10 +203,10 @@ Tests must freeze these observable claims before implementation changes:
 - external-origin compiler requests are blocked in a real browser;
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
-- oversized chain and aggregate posterior output fails before main-thread
-  decode, merge, follow-up diagnostics, or artifact publication; the worker
-  boundary accepts an exactly 64 MiB chain, and a fit above the separate 8 MiB
-  generation-input limit remains valid through posterior publication;
+- posterior output shares the 8 MiB generation-input limit: the worker
+  boundary accepts an exactly 8 MiB chain, while oversized chain and aggregate
+  output fails before main-thread decode, merge, follow-up diagnostics, or
+  artifact publication;
 - project edits and stale completions obey the revisioned state contract;
 - empty schema-derived design defaults, non-empty pre-compile documents, source
   schema changes, and exact shared-authoring restores are separately covered

@@ -1,7 +1,6 @@
 import { CompilerClient } from "../compile/index.mjs";
 import {
   EngineError,
-  MAX_POSTERIOR_RESPONSE_BYTES,
   WorkerEngine,
   diagnose,
   generate,
@@ -19,6 +18,7 @@ import {
   parseGeneratedDatasets,
   verifyGeneratedDatasets,
 } from "../generation/artifact.mjs";
+import { MAX_GENERATION_INPUT_BYTES } from "../generation/limits.mjs";
 import {
   GenerationPlanError,
   fitArtifact,
@@ -47,16 +47,16 @@ export class BrowserRuntime {
   constructor(
     executor = new WorkerEngine(),
     compiler = new CompilerClient(),
-    maxPosteriorResponseBytes = MAX_POSTERIOR_RESPONSE_BYTES,
+    maxPosteriorResponseBytes = MAX_GENERATION_INPUT_BYTES,
   ) {
     if (
       !Number.isSafeInteger(maxPosteriorResponseBytes) ||
       maxPosteriorResponseBytes <= 0 ||
-      maxPosteriorResponseBytes > MAX_POSTERIOR_RESPONSE_BYTES
+      maxPosteriorResponseBytes > MAX_GENERATION_INPUT_BYTES
     ) {
       throw new RuntimeError(
         "InvalidPosteriorLimit",
-        `posterior limit must be an integer in 1..${String(MAX_POSTERIOR_RESPONSE_BYTES)}`,
+        `posterior limit must be an integer in 1..${String(MAX_GENERATION_INPUT_BYTES)}`,
       );
     }
     this.executor = executor;

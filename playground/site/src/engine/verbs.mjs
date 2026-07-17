@@ -1,12 +1,12 @@
 // Source: src/engine/verbs.ts, bayesledger @ 7346d71.
 
+import { MAX_GENERATION_INPUT_BYTES } from "../generation/limits.mjs";
 import {
   MAX_SAMPLE_CHAINS,
   MIN_SAMPLE_CHAINS,
 } from "../sampling-limits.mjs";
 import {
   EngineError,
-  MAX_POSTERIOR_RESPONSE_BYTES,
   requirePosteriorResponseWithinLimit,
 } from "./types.mjs";
 
@@ -147,7 +147,7 @@ export async function sbc(inputs) {
 /** @param {string[]} fits @param {number} [maximumBytes] */
 export function mergeChainFits(
   fits,
-  maximumBytes = MAX_POSTERIOR_RESPONSE_BYTES,
+  maximumBytes = MAX_GENERATION_INPUT_BYTES,
 ) {
   const parsed = fits.map((fit, fitIndex) => {
     const lines = fit.trimEnd().split("\n");
