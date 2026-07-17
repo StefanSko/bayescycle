@@ -5,6 +5,7 @@ from playwright.sync_api import Page
 
 CASES = [
     "scoped starts reject dependencies changed during preflight",
+    "prior snippet edits invalidate generation and stale scenario starts",
     "conditioning commit installs fit and artifacts atomically",
     "generation success installs collection selection atomically",
     "scoped attempts preserve successful ancestors on failure",

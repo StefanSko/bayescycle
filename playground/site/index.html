@@ -13,6 +13,10 @@
     <h2 id="share-review-heading">Review shared model</h2>
     <p>This link contains Python model source. Nothing has run yet. Review it before loading, then compile explicitly.</p>
     <pre id="share-source"></pre>
+    <div id="share-prior-review" hidden>
+      <h3>Prior-only model</h3>
+      <pre id="share-prior-source"></pre>
+    </div>
     <button id="load-shared" class="primary" type="button">Load reviewed project</button>
   </aside>
   <header class="page-header">
@@ -57,11 +61,17 @@
         <legend>Parameter source</legend>
         <label class="radio-option" for="param-source-fixed"><input id="param-source-fixed" type="radio" name="param-source" value="fixed" checked> Fixed values</label>
         <label class="radio-option" for="param-source-prior"><input id="param-source-prior" type="radio" name="param-source" value="prior"> Model prior</label>
+        <label class="radio-option" for="param-source-other-prior"><input id="param-source-other-prior" type="radio" name="param-source" value="other-prior" disabled> Another prior</label>
         <div class="radio-with-hint">
           <label class="radio-option" for="param-source-posterior"><input id="param-source-posterior" type="radio" name="param-source" value="posterior" disabled> Posterior from fit</label>
           <span id="posterior-source-hint" class="inline-hint">requires a completed fit</span>
         </div>
       </fieldset>
+      <div id="other-prior-field" hidden>
+        <label for="prior-source">Prior-only model</label>
+        <textarea id="prior-source" rows="4" spellcheck="false" placeholder="@model&#10;class SteepSlopes:&#10;    beta = Param(Normal(3.0, 0.25))"></textarea>
+        <p class="hint">Compiled in a fresh disposable worker and composed as <code>with_prior(MainModel, prior=PriorModel)</code>. The playground writes the composition boilerplate; priors not named in the snippet are kept. Condition still fits the original model.</p>
+      </div>
       <div id="fixed-values-field">
         <div id="parameter-fields"><p class="hint">Compile a model to author fixed parameter values.</p></div>
         <div class="field-actions"><button id="truth-json-toggle" class="linklike" type="button">use parameter form</button></div>
@@ -126,6 +136,7 @@
           <li id="artifact-posterior" hidden><a download="posterior.ndjson">posterior.ndjson</a></li>
           <li id="artifact-diagnostics" hidden><a download="diagnostics.json">diagnostics.json</a></li>
           <li id="artifact-generated-datasets" hidden><a download="generated_datasets.ndjson">generated_datasets.ndjson</a></li>
+          <li id="artifact-generation-model" hidden><a download="model.ir.json">generation model.ir.json</a></li>
           <li id="artifact-generation-plan" hidden><a download="generation-plan.json">generation-plan.json</a></li>
           <li id="artifact-generation-run" hidden><a download="run.json">run.json</a></li>
           <li id="artifact-generation-design" hidden><a download="design.json">design.json</a></li>

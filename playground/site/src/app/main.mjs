@@ -34,6 +34,7 @@ import {
 } from "./form-limits.mjs";
 import { renderRecoverySummary } from "./recovery.mjs";
 import { cancellationEvents, RunControllers } from "./run-controllers.mjs";
+import { assertScenarioCompatible, projectRecoveryTruth } from "./scenario.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { initialState, reduce } from "./state.mjs";
 
@@ -58,6 +59,7 @@ const source = element("#model-source");
 const observed = element("#observed-data");
 const design = element("#design-data");
 const truth = element("#truth-data");
+const priorSource = element("#prior-source");
 
 source.addEventListener("input", () => {
   exampleLoadRevision += 1;
@@ -75,6 +77,10 @@ design.addEventListener("input", () => {
 });
 truth.addEventListener("input", () => {
   truthJsonMode = true;
+  authoringError = null;
+  generationInputsEdited();
+});
+priorSource.addEventListener("input", () => {
   authoringError = null;
   generationInputsEdited();
 });
@@ -222,6 +228,7 @@ async function shareProject() {
     observed: observed.value,
     design: design.value,
     truth: truth.value,
+    priorSource: priorSource.value,
     sampler: samplerSettings(),
     generation: {
       seed: integerValue("#generation-seed"),
@@ -255,6 +262,9 @@ async function initializeSharedProject() {
   try {
     pendingSharedProject = await decodeProject(window.location.hash.slice(9));
     element("#share-source").textContent = String(pendingSharedProject.source ?? "");
+    const sharedPriorSource = String(pendingSharedProject.priorSource ?? "");
+    element("#share-prior-source").textContent = sharedPriorSource;
+    element("#share-prior-review").hidden = sharedPriorSource === "";
     element("#share-review").hidden = false;
   } catch (error) {
     element("#share-review").hidden = false;
@@ -270,6 +280,7 @@ function loadSharedProject() {
     observed: String(pendingSharedProject.observed ?? ""),
     design: String(pendingSharedProject.design ?? ""),
     truth: String(pendingSharedProject.truth ?? ""),
+    prior: String(pendingSharedProject.priorSource ?? ""),
   }, validAuthoringState(pendingSharedProject.authoring)
     ? { kind: "shared", value: pendingSharedProject.authoring }
     : { kind: "documents" });
@@ -281,7 +292,10 @@ function loadSharedProject() {
 function setProject(project, restore = { kind: "documents" }) {
   exampleLoadRevision += 1;
   element("#progress").replaceChildren();
-  for (const [control, value] of [[source, project.source], [observed, project.observed], [design, project.design], [truth, project.truth]]) {
+  for (const [control, value] of [
+    [source, project.source], [observed, project.observed], [design, project.design],
+    [truth, project.truth], [priorSource, project.prior ?? ""],
+  ]) {
     control.textContent = value;
     control.value = value;
   }
@@ -291,7 +305,14 @@ function setProject(project, restore = { kind: "documents" }) {
   authoringError = null;
   renderedSchema = null;
   dispatch({ type: "source-edited", source: project.source, revision: ++revision });
-  dispatch({ type: "documents-edited", documents: { observed: project.observed, design: project.design, truth: project.truth }, revision: ++revision });
+  dispatch({
+    type: "documents-edited",
+    documents: {
+      observed: project.observed, design: project.design, truth: project.truth,
+      prior: project.prior ?? "",
+    },
+    revision: ++revision,
+  });
   element("#share-output").hidden = true;
 }
 
@@ -370,7 +391,9 @@ function generationInputsEdited() {
   element("#progress").replaceChildren();
   dispatch({
     type: "generation-input-edited",
-    documents: { ...state.documents, design: design.value, truth: truth.value },
+    documents: {
+      ...state.documents, design: design.value, truth: truth.value, prior: priorSource.value,
+    },
     revision: ++revision,
   });
 }
@@ -887,6 +910,7 @@ function renderPlanSummary() {
   const parameterSource = {
     fixed: "fixed values",
     prior: "model prior",
+    "other-prior": "another prior composed with the model",
     posterior: "posterior from fit",
   }[selectedParamSource()];
   const designSource = designJsonMode
@@ -956,42 +980,85 @@ async function samplePosterior() {
 async function generateCollection() {
   if (state.compile.status !== "compiled" || state.run.status === "running" ||
       state.generation.attempt.status === "running") return;
-  const modelBytes = compiledBytes();
+  const originalCompile = state.compile;
+  const originalModelBytes = compiledBytes();
+  const originalModelHash = `sha256:${originalCompile.irHash}`;
+  const mainSource = state.source;
+  const currentPriorSource = priorSource.value;
   const designBytes = documentBytes(design.value);
   const sourceKind = selectedParamSource();
+  const settings = generationSettings();
+  let generationModelBytes = originalModelBytes;
   let parameterSource;
-  let fixedParametersBytes;
   let sourceFitLineageKey;
-  if (sourceKind === "fixed") {
-    fixedParametersBytes = documentBytes(truth.value);
-    parameterSource = fixed(fixedParametersBytes);
+  const guardSourceKind = ["prior", "other-prior"].includes(sourceKind)
+    ? "model-prior"
+    : sourceKind;
+  const guard = {
+    compileRevision: state.compile.revision,
+    inputRevision: state.generation.inputRevision,
+    settingsRevision: state.generation.settingsRevision,
+    sourceKind: guardSourceKind,
+    fitLineageKey: null,
+    priorSource: currentPriorSource,
+  };
+
+  let requestId;
+  let dependencyKey;
+  let controller;
+  if (sourceKind === "other-prior") {
+    requestId = crypto.randomUUID();
+    // The disposable scenario compile is owned by the generation attempt.
+    // Its request identity is sufficient until the immutable plan exists.
+    dependencyKey = `scenario:${requestId}`;
+    dispatch({ type: "generation-started", requestId, dependencyKey, guard });
+    if (state.generation.attempt.requestId !== requestId) return;
+    controller = runControllers.begin("generation", requestId);
+    try {
+      const composed = await runtime.compileScenario(mainSource, currentPriorSource, {
+        signal: controller.signal,
+      });
+      if (!composed.ok) throw new Error(composed.traceback);
+      if (state.generation.attempt.requestId !== requestId) return;
+      assertScenarioCompatible(originalCompile, composed);
+      generationModelBytes = composed.irBytes;
+      parameterSource = modelPrior(generationModelBytes, {
+        claimedSourceModelHash: `sha256:${composed.irHash}`,
+        claimedOutcomeModelHash: originalModelHash,
+      });
+    } catch (error) {
+      dispatch({
+        type: "generation-failed", requestId, dependencyKey, error: message(error),
+      });
+      runControllers.finish("generation", requestId);
+      return;
+    }
+  } else if (sourceKind === "fixed") {
+    parameterSource = fixed(documentBytes(truth.value));
   } else if (sourceKind === "prior") {
-    parameterSource = modelPrior(modelBytes);
+    parameterSource = modelPrior(originalModelBytes);
   } else {
     const fit = state.conditioning.fit;
     if (fit === null || fit.fitArtifact === undefined) return;
     parameterSource = posteriorOf(fit.fitArtifact);
     sourceFitLineageKey = fit.lineageKey;
+    guard.fitLineageKey = sourceFitLineageKey;
   }
-  const settings = generationSettings();
-  const plan = generateDatasets(modelBytes, {
+
+  const plan = generateDatasets(generationModelBytes, {
     design: designBytes,
     parameterSource,
     count: settings.count,
     seed: settings.seed,
   });
-  const guard = {
-    compileRevision: state.compile.revision,
-    inputRevision: state.generation.inputRevision,
-    settingsRevision: state.generation.settingsRevision,
-    sourceKind: sourceKind === "prior" ? "model-prior" : sourceKind,
-    fitLineageKey: sourceFitLineageKey ?? null,
-  };
-  const dependencyKey = await generationInvalidationKey(plan);
-  const requestId = crypto.randomUUID();
-  dispatch({ type: "generation-started", requestId, dependencyKey, guard });
-  if (state.generation.attempt.requestId !== requestId) return;
-  const controller = runControllers.begin("generation", requestId);
+  if (requestId === undefined) {
+    dependencyKey = await generationInvalidationKey(plan);
+    requestId = crypto.randomUUID();
+    dispatch({ type: "generation-started", requestId, dependencyKey, guard });
+    if (state.generation.attempt.requestId !== requestId) return;
+    controller = runControllers.begin("generation", requestId);
+  }
+
   try {
     const result = await runtime.run({
       type: "run", id: requestId, operation: "generate", plan,
@@ -1005,7 +1072,7 @@ async function generateCollection() {
     dispatch({
       type: "generation-succeeded", requestId, dependencyKey,
       collection: {
-        sourceKind: sourceKind === "prior" ? "model-prior" : sourceKind,
+        sourceKind: guardSourceKind,
         ...(sourceFitLineageKey === undefined ? {} : { sourceFitLineageKey }),
         plan, artifact, artifacts: result.artifacts, parsed,
       },
@@ -1037,11 +1104,17 @@ function selectGeneratedPair(index) {
 
 async function sampleGenerated() {
   const selected = state.generation.selected;
-  if (selected === null) return;
-  await sampleData(selected.datasetBytes, "generated", selected.parametersBytes);
+  if (selected === null || state.compile.status !== "compiled") return;
+  const recovery = projectRecoveryTruth(selected.parametersBytes, state.compile.modelSchema);
+  await sampleData(
+    selected.datasetBytes,
+    "generated",
+    recovery.bytes ?? undefined,
+    recovery.notice,
+  );
 }
 
-async function sampleData(dataBytes, datasetSource, recoveryTruth) {
+async function sampleData(dataBytes, datasetSource, recoveryTruth, recoveryNotice = null) {
   if (state.compile.status !== "compiled" || state.run.status === "running") return;
   if (state.conditioning.datasetSource !== datasetSource) {
     dispatch({ type: "dataset-source-edited", source: datasetSource, revision: ++revision });
@@ -1109,7 +1182,7 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
       dependencyKey,
       revision: projectRevision,
       artifacts,
-      notice: sampled.notice,
+      notice: [sampled.notice, recoveryNotice].filter((entry) => entry !== null).join("\n") || null,
       fit: {
         datasetSource,
         lineageKey,
@@ -1273,18 +1346,24 @@ function render() {
   compileError.hidden = state.compile.status !== "failed";
   compileError.textContent = state.compile.status === "failed" ? state.compile.error : "";
   element("#compile-button").disabled = state.compile.status === "compiling" ||
-    state.run.status === "running" || state.source.trim() === "";
+    state.run.status === "running" || state.generation.attempt.status === "running" ||
+    state.source.trim() === "";
   element("#share-button").disabled = state.source.trim() === "";
   const visibleArtifacts = [
+    ...generationDisplayArtifacts(state.generation.collection?.artifacts ?? []),
     ...state.artifacts,
-    ...(state.generation.collection?.artifacts ?? []),
   ];
   const hasArtifact = (name) => visibleArtifacts.some((artifact) => artifact.name === name);
   const posteriorAvailable = hasArtifact("posterior.ndjson") && hasArtifact("data.json");
   const posteriorSource = element("#param-source-posterior");
   posteriorSource.disabled = !posteriorAvailable;
   element("#posterior-source-hint").hidden = posteriorAvailable;
-  if (posteriorSource.checked && posteriorSource.disabled) element("#param-source-fixed").checked = true;
+  const otherPriorSource = element("#param-source-other-prior");
+  otherPriorSource.disabled = state.compile.status !== "compiled";
+  if ((posteriorSource.checked && posteriorSource.disabled) ||
+      (otherPriorSource.checked && otherPriorSource.disabled)) {
+    element("#param-source-fixed").checked = true;
+  }
 
   renderAuthoring();
   renderGenerationSelection();
@@ -1296,12 +1375,14 @@ function render() {
   const paramSource = selectedParamSource();
   const datasetSource = selectedDatasetSource();
   element("#fixed-values-field").hidden = paramSource !== "fixed";
+  element("#other-prior-field").hidden = paramSource !== "other-prior";
   const count = integerValue("#generation-count");
   const countText = Number.isSafeInteger(count) && count >= 1 ? String(count) : "N";
   const datasetWord = count === 1 ? "dataset" : "datasets";
   element("#generate-button").textContent = {
     fixed: `Simulate ${countText} ${datasetWord} at fixed values`,
     prior: `Simulate ${countText} ${datasetWord} from the model prior`,
+    "other-prior": `Simulate ${countText} ${datasetWord} from the composed prior`,
     posterior: `Simulate ${countText} ${datasetWord} from the posterior`,
   }[paramSource];
   const selectedIndex = state.generation.selected?.index ?? 0;
@@ -1316,6 +1397,7 @@ function render() {
     !validGenerationCount() ||
     !validDocument(design.value) ||
     (paramSource === "fixed" && !validDocument(truth.value)) ||
+    (paramSource === "other-prior" && priorSource.value.trim() === "") ||
     (paramSource === "posterior" && !posteriorAvailable);
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
     (datasetSource === "observed" && observed.value.trim() === "") ||
@@ -1328,7 +1410,10 @@ function render() {
     state.generation.attempt.status === "running" || state.run.status === "running";
   element("#cancel-run").hidden = !activeRun;
   element("#run-status").textContent = state.generation.attempt.status === "running"
-    ? "Generating paired datasets is running…"
+    ? state.generation.attempt.sourceKind === "model-prior" &&
+        selectedParamSource() === "other-prior"
+      ? "Compiling the composed prior and generating paired datasets…"
+      : "Generating paired datasets is running…"
     : state.run.status === "running" ? `${operationLabel(state.run.operation)} is running…` : "";
 
   const runError = element("#run-error");
@@ -1377,6 +1462,12 @@ function renderGenerationSelection() {
   container.hidden = false;
 }
 
+function generationDisplayArtifacts(artifacts) {
+  return artifacts.map((artifact) => artifact.name === "model.ir.json"
+    ? { ...artifact, name: "generation:model.ir.json" }
+    : artifact);
+}
+
 function renderArtifacts(artifacts) {
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls.clear();
@@ -1387,6 +1478,7 @@ function renderArtifacts(artifacts) {
     "diagnostics.json": "#artifact-diagnostics",
     "recovery_check.json": "#artifact-recovery",
     "generated_datasets.ndjson": "#artifact-generated-datasets",
+    "generation:model.ir.json": "#artifact-generation-model",
     "generation-plan.json": "#artifact-generation-plan",
     "run.json": "#artifact-generation-run",
     "design.json": "#artifact-generation-design",
@@ -1404,6 +1496,15 @@ function renderArtifacts(artifacts) {
     item.querySelector("a").href = url;
     item.hidden = false;
   }
+  // The generation run's manifest references model.ir.json; when both model
+  // artifacts are visible the fit model downloads under its own name so a
+  // flat downloads directory cannot shadow the manifested bytes.
+  const fitModelLink = element("#artifact-model a");
+  const fitDownloadName = element("#artifact-generation-model").hidden
+    ? "model.ir.json"
+    : "fit-model.ir.json";
+  fitModelLink.download = fitDownloadName;
+  fitModelLink.textContent = fitDownloadName;
   element("#artifacts").hidden = artifacts.length === 0;
   renderRecovery(artifacts);
   renderPlots(artifacts);

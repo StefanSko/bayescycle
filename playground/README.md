@@ -8,6 +8,7 @@ The UI talks to one runtime boundary:
 
 ```text
 runtime.compile(source, { signal })
+runtime.compileScenario(source, priorSource, { signal })
 runtime.run(request, onProgress, { signal })
 ```
 

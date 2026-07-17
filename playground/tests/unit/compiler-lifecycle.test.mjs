@@ -1,4 +1,5 @@
 import * as compilerModule from "/site/src/compile/index.mjs";
+import { assertScenarioCompatible } from "/site/src/app/scenario.mjs";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -57,6 +58,11 @@ function readyThen(response) {
   };
 }
 
+async function hash(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function rejectedAfterTermination(promise, worker, expected) {
   let error;
   try {
@@ -81,6 +87,21 @@ export default [
       const result = await runtime.compile("model source", { timeoutMs: 7 });
       assert(result.message === "declined", "runtime did not return compiler result");
       assert(calls.length === 1 && calls[0].source === "model source", "runtime did not delegate compilation");
+
+      const scenarioCalls = [];
+      const scenarioRuntime = new runtimeModule.BrowserRuntime({ execute() {} }, {
+        compileScenario: async (source, priorSource, options) => {
+          scenarioCalls.push({ source, priorSource, options });
+          return { ok: false, message: "scenario declined" };
+        },
+      });
+      const scenario = await scenarioRuntime.compileScenario("main", "prior", { timeoutMs: 9 });
+      assert(scenario.message === "scenario declined", "runtime lost scenario result");
+      assert(
+        scenarioCalls.length === 1 && scenarioCalls[0].source === "main" &&
+          scenarioCalls[0].priorSource === "prior",
+        "runtime did not delegate scenario compilation",
+      );
     },
   },
   {
@@ -97,6 +118,103 @@ export default [
         const request = worker.messages[0];
         assert(JSON.stringify(Object.keys(request).sort()) === JSON.stringify(["id", "protocol", "source", "type"]), `request ${index} was not source-only: ${Object.keys(request)}`);
       }
+    },
+  },
+  {
+    name: "each scenario compile owns a fresh bounded worker request",
+    fn: async () => {
+      const workers = [];
+      const factory = readyThen((request) => ({
+        type: "compile-error", id: request.id, exceptionType: "ValueError",
+        message: "no", traceback: "no",
+      }));
+      const compiler = client({
+        workerFactory: () => {
+          const worker = factory();
+          workers.push(worker);
+          return worker;
+        },
+      });
+      await compiler.compileScenario("main one", "prior one");
+      await compiler.compileScenario("main two", "prior two");
+      assert(workers.length === 2 && workers.every((worker) => worker.terminated),
+        "scenario compiles reused or retained a worker");
+      for (const [index, worker] of workers.entries()) {
+        const request = worker.messages[0];
+        assert(request.mode === "with-prior", `scenario ${index} lost its mode`);
+        assert(request.source === `main ${index === 0 ? "one" : "two"}`,
+          `scenario ${index} lost main source`);
+        assert(request.priorSource === `prior ${index === 0 ? "one" : "two"}`,
+          `scenario ${index} lost prior source`);
+        assert(!("design" in request) && !("truth" in request),
+          `scenario ${index} leaked project data`);
+      }
+
+      let constructions = 0;
+      const bounded = client({ workerFactory: () => { constructions += 1; return new FakeWorker(); } });
+      let snippetMessage = "";
+      try {
+        await bounded.compileScenario("main", "é".repeat(
+          Math.floor(compilerModule.MAX_MODEL_SOURCE_BYTES / 2) + 1,
+        ));
+      } catch (error) { snippetMessage = String(error); }
+      assert(snippetMessage.includes("Prior-only source"), `snippet cap was unclear: ${snippetMessage}`);
+      let combinedMessage = "";
+      try {
+        await bounded.compileScenario(
+          "m".repeat(compilerModule.MAX_MODEL_SOURCE_BYTES / 2 + 1),
+          "p".repeat(compilerModule.MAX_MODEL_SOURCE_BYTES / 2),
+        );
+      } catch (error) { combinedMessage = String(error); }
+      assert(combinedMessage.includes("together"), `combined cap was unclear: ${combinedMessage}`);
+      assert(constructions === 0, "oversized scenario constructed a worker");
+    },
+  },
+  {
+    name: "scenario target bytes are independently bounded hashed and checked",
+    fn: async () => {
+      const composedBytes = new TextEncoder().encode('{"composed":true}');
+      const targetBytes = new TextEncoder().encode('{"target":"scenario"}');
+      const originalBytes = new TextEncoder().encode('{"target":"original"}');
+      let worker;
+      const compiler = client({
+        workerFactory: () => {
+          worker = readyThen((request) => ({
+            type: "compiled",
+            id: request.id,
+            irBytes: composedBytes.buffer.slice(0),
+            targetIrBytes: targetBytes.buffer.slice(0),
+            modelSchema: MODEL_SCHEMA,
+          }))();
+          return worker;
+        },
+      });
+      const result = await compiler.compileScenario("main", "prior");
+      assert(worker.terminated, "scenario result settled before worker termination");
+      assert(result.irHash === await hash(composedBytes), "composed bytes were not hashed");
+      assert(result.targetIrHash === await hash(targetBytes), "target bytes were not hashed");
+      assert(new TextDecoder().decode(result.targetIrBytes) === '{"target":"scenario"}',
+        "scenario target bytes changed");
+      let message = "";
+      try {
+        assertScenarioCompatible(
+          { irHash: await hash(originalBytes), modelSchema: MODEL_SCHEMA },
+          result,
+        );
+      } catch (error) { message = error.message; }
+      assert(message.includes("Recompile the model"), `divergent target was accepted: ${message}`);
+
+      let malformedWorker;
+      const malformed = client({ workerFactory: () => {
+        malformedWorker = readyThen((request) => ({
+          type: "compiled", id: request.id,
+          irBytes: composedBytes.buffer.slice(0), modelSchema: MODEL_SCHEMA,
+        }))();
+        return malformedWorker;
+      } });
+      await rejectedAfterTermination(
+        malformed.compileScenario("main", "prior"), malformedWorker, "malformed",
+      );
     },
   },
   {
@@ -353,6 +471,19 @@ export default [
       const pending = cancelled.compile("source", { signal: controller.signal });
       controller.abort();
       await rejectedAfterTermination(pending, cancelledWorker, "cancelled");
+
+      let scenarioWorker;
+      const scenarioCompiler = client({ workerFactory: () => {
+        scenarioWorker = new FakeWorker();
+        queueMicrotask(() => scenarioWorker.emit("message", { type: "ready", protocol: 1 }));
+        return scenarioWorker;
+      } });
+      const scenarioController = new AbortController();
+      const scenarioPending = scenarioCompiler.compileScenario(
+        "main", "prior", { signal: scenarioController.signal },
+      );
+      scenarioController.abort();
+      await rejectedAfterTermination(scenarioPending, scenarioWorker, "cancelled");
     },
   },
 ];

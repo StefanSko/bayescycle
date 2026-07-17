@@ -94,6 +94,52 @@ export default [
     },
   },
   {
+    name: "prior snippet edits invalidate generation and stale scenario starts",
+    fn: () => {
+      let state = initialState();
+      const staleGuard = {
+        compileRevision: null,
+        inputRevision: state.generation.inputRevision,
+        settingsRevision: state.generation.settingsRevision,
+        sourceKind: "model-prior",
+        fitLineageKey: null,
+        priorSource: "@model\nclass OldPrior:\n    pass\n",
+      };
+      state = reduce(state, {
+        type: "generation-input-edited",
+        documents: { ...state.documents, prior: "@model\nclass NewPrior:\n    pass\n" },
+        revision: 1,
+      });
+      state = reduce(state, {
+        type: "generation-started", requestId: "stale-scenario", dependencyKey: "scenario",
+        guard: staleGuard,
+      });
+      assert(state.generation.attempt.status === "idle", "stale scenario compile start was accepted");
+
+      state = reduce(state, {
+        type: "generation-started", requestId: "current-scenario", dependencyKey: "scenario-current",
+        guard: {
+          ...staleGuard,
+          inputRevision: state.generation.inputRevision,
+          priorSource: state.documents.prior,
+        },
+      });
+      assert(state.generation.attempt.status === "running", "current scenario compile was rejected");
+      state = reduce(state, {
+        type: "generation-input-edited",
+        documents: { ...state.documents, prior: "edited again" },
+        revision: 2,
+      });
+      assert(state.generation.attempt.status === "idle", "prior edit retained generation attempt");
+      assert(state.generation.collection === null, "prior edit retained generated collection");
+      state = reduce(state, {
+        type: "generation-succeeded", requestId: "current-scenario",
+        dependencyKey: "scenario-current", collection: { sourceKind: "model-prior" },
+      });
+      assert(state.generation.collection === null, "stale scenario completion was accepted");
+    },
+  },
+  {
     name: "conditioning commit installs fit and artifacts atomically",
     fn: () => {
       let state = initialState();

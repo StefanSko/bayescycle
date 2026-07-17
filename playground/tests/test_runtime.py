@@ -5,6 +5,7 @@ from playwright.sync_api import Page
 
 CASES = [
     "fixed and model-prior plans lower to one exact native request",
+    "runtime publishes and verifies composed-prior authored provenance",
     "runtime rejects caller asserted posterior association",
     "generation abort after engine output rejects before publication",
     "runtime rejects malformed successful generation output",

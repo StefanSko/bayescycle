@@ -53,6 +53,27 @@ function parseBoundedJson(text, enforceScalarCount) {
   return value;
 }
 
+/**
+ * Retain canonical variables in the requested order without changing their
+ * dtype, shape, or values.
+ * @param {ReturnType<typeof normalizeDocument>} document
+ * @param {string[]} names
+ */
+export function projectDocument(document, names) {
+  const normalized = normalizeDocument(document);
+  if (!Array.isArray(names) || !names.every((name) => typeof name === "string")) {
+    throw new TypeError("projected variable names must be strings");
+  }
+  const variables = {};
+  const included = new Set();
+  for (const name of names) {
+    if (included.has(name) || !Object.hasOwn(normalized.variables, name)) continue;
+    included.add(name);
+    defineVariable(variables, name, normalized.variables[name]);
+  }
+  return { format: FORMAT, variables };
+}
+
 /** @param {ReturnType<typeof normalizeDocument>} document */
 export function serializeDocument(document) {
   return `${JSON.stringify(document)}\n`;

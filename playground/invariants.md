@@ -25,9 +25,11 @@ document conflicts with this file, resolve the conflict before changing code.
 2. The worker is terminated before the compile promise settles on every exit:
    success, declaration failure, malformed response, worker error, startup
    failure, timeout, or cancellation.
-3. A compile request contains only protocol metadata and model source. The
-   compiler worker never receives observed data, design data, parameter truth,
-   sampler settings, fits, posterior draws, diagnostics, or run artifacts.
+3. A compile request contains only protocol metadata and model source. A
+   composed-prior scenario request may contain the current main model source
+   and one prior-only model snippet. The compiler worker never receives
+   observed data, design data, parameter truth, sampler settings, fits,
+   posterior draws, diagnostics, or run artifacts.
 4. Pyodide and Bayeswire are loaded from pinned same-origin release assets into
    worker-local memory. Later compiles do not load Python modules or files from
    state produced by an earlier compiler worker.
@@ -35,8 +37,10 @@ document conflicts with this file, resolve the conflict before changing code.
    worker API restrictions are defense in depth. Same-origin compiler fetches
    can reach only the playground's public static deployment.
 6. Compilation has explicit time, source-size, and output-size bounds. Model
-   source is rejected above 1 MiB of UTF-8 before a worker is created;
-   exceeding any compile bound produces a visible error.
+   source is rejected above 1 MiB of UTF-8 before a worker is created. For a
+   composed-prior scenario, the prior-only snippet and the main source are each
+   bounded and together must fit the same 1 MiB UTF-8 budget. Exceeding any
+   compile bound produces a visible error.
 7. The compiler uses Bayeswire's ordinary canonical serializer. Application
    code does not clone Bayeswire private functions, freeze Python module
    graphs, or maintain a second canonical JSON serializer.
@@ -44,7 +48,10 @@ document conflicts with this file, resolve the conflict before changing code.
    cause its own compile to fail or emit unexpected bytes. Such mutation must
    not affect a later compile.
 9. The trusted browser client computes SHA-256 over the exact bytes received
-   from the worker. A worker-supplied digest is neither required nor trusted.
+   from the worker. For composed-prior scenarios it independently hashes both
+   the target and composed IR, and generation proceeds only when the
+   scenario-worker target hash equals the current compiled-model hash. A
+   worker-supplied digest is neither required nor trusted.
 10. Compiler responses are validated for request identity, message shape,
     byte type, and size before use. Malformed or stale responses are ignored or
     surfaced as bounded errors.
@@ -60,9 +67,10 @@ input to a later compilation.
 
 ## Runtime and artifact boundary
 
-1. The UI talks to one runtime interface with both `compile(source)` and
-   `run(request, onProgress)` operations. Application code does not import the
-   compiler or Bayesite executor directly.
+1. The UI talks to one runtime interface with `compile(source)`,
+   `compileScenario(source, priorSource)`, and `run(request, onProgress)`
+   operations. Application code does not import the compiler or Bayesite
+   executor directly.
 2. `BrowserRuntime` implements that interface with the disposable compiler and
    separate Bayesite WASM workers. A future `LocalRuntime` may implement it over
    a loopback Bayescycle service without changing UI workflow semantics.
@@ -82,20 +90,27 @@ input to a later compilation.
 6. Generated records retain one natural-scale parameter document paired with
    one complete canonical dataset per draw. A requested count redraws the
    parameter source per dataset; fixed parameters repeat only because their
-   source is a point mass. Generation never launches one Wasm worker per draw.
+   source is a point mass. An alternative prior is composed with the main model
+   in a fresh compiler worker and generation draws from that ordinary closed
+   model, while conditioning continues to use the original compiled model.
+   Prior-only snippets cannot add or change data or observed slots, and their
+   declared parameter dimensions and coordinates must pass Bayeswire's exact
+   compatibility checks. Generation never launches one Wasm worker per draw.
 7. Conditioning is a separate runtime transition over a selected canonical
-   dataset. A posterior source is available only while its exact model/data/fit
-   lineage survives.
+   dataset. Recovery truth from a composed model is projected to the original
+   model's parameter names without changing the retained generated pair; an
+   empty projection skips recovery with a visible notice. A posterior source is
+   available only while its exact model/data/fit lineage survives.
 8. The UI may parse artifacts through pure renderers. It does not inspect raw
    IR node tags to infer required data, defaults, dimensions, parameter truth,
    partial-observation behavior, or engine capabilities.
 9. Observed data, generation design, and fixed parameter values remain explicit
    canonical JSON documents. The browser does not synthesize semantic forms
    from model IR.
-10. Model, observed-data, design, fixed-value, parameter-source,
-    generation-setting, inference-setting, selected-draw, and fit revisions invalidate only their
-    descendants. Unknown or stale asynchronous completions cannot mutate
-    current state.
+10. Model, observed-data, design, fixed-value, prior-snippet, parameter-source,
+    generation-setting, inference-setting, selected-draw, and fit revisions
+    invalidate only their descendants. Unknown or stale asynchronous
+    completions cannot mutate current state.
 11. Each compile, generation, and fit attempt owns one cancellation signal.
     One user cancellation ends every concurrently current attempt, and user
     cancellation or reducer-decided invalidation terminates every engine worker
@@ -142,6 +157,10 @@ Browser v0 does not guarantee that:
 - arbitrary Python is safe or side-effect free;
 - compiler output semantically matches a reader's interpretation of source;
 - model source cannot alter its own compile result;
+- a prior-only snippet — trusted arbitrary Python at the same level as
+  model source — cannot alter the target it composes with; a composed
+  generation model is still hashed over its exact bytes, and conditioning
+  always fits the original compiled model, never the composed one;
 - worker termination erases browser storage explicitly written by hostile code;
 - a tab survives deliberate memory exhaustion or a browser/Pyodide exploit.
 
@@ -168,8 +187,13 @@ Tests must freeze these observable claims before implementation changes:
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
 - project edits and stale completions obey the revisioned state contract;
-- fixed, model-prior, and posterior generation share one exact plan and redraw
-  law while preserving parameter/dataset pairs;
+- fixed, model-prior (including a separately authored composed prior), and
+  posterior generation share one exact plan and redraw law while preserving
+  parameter/dataset pairs;
+- scenario target divergence, prior-only data extension, incompatible authored
+  dimensions, and stale scenario completion fail before engine dispatch;
+- composed-pair recovery uses only original-model parameter truth while the
+  generated pair remains byte-exact;
 - malformed, oversized, unsupported, and lineage-mismatched generation fails
   without deleting earlier artifacts;
 - selection and setting edits invalidate only their documented descendants;

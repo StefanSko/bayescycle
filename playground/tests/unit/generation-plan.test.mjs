@@ -31,6 +31,11 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+async function hashBytes(value) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 async function fixtureBytes() {
   const response = await fetch("/tests/fixtures/generation_plan.fixed.v0.json");
   return new Uint8Array(await response.arrayBuffer());
@@ -113,6 +118,35 @@ export default [
         fit_model_hash: "sha256:2c8947663a1a49b8e48c52542efc5b94c237365e40d859ee088b9d214845ccd5",
         fit_data_hash: "sha256:7657f9e3dcc7ce5eba549ba1641bd0bf3d7b5fc1dceea7b042184bfbc9c63294",
       }), "posterior descriptor differs");
+    },
+  },
+  {
+    name: "composed-prior provenance claims composed source and original outcome hashes",
+    fn: async () => {
+      const composedHash = await hashBytes(OTHER_MODEL_BYTES);
+      const originalHash = await hashBytes(MODEL_BYTES);
+      const plan = generateDatasets(OTHER_MODEL_BYTES, {
+        design: DESIGN_BYTES,
+        parameterSource: modelPrior(OTHER_MODEL_BYTES, {
+          claimedSourceModelHash: composedHash,
+          claimedOutcomeModelHash: originalHash,
+        }),
+        count: 2,
+        seed: 3,
+      });
+      const document = JSON.parse(TEXT.decode(await serializeGenerationPlan(plan)));
+      assert(
+        document.distribution.parameters.model_hash === composedHash,
+        "composed prior model hash changed",
+      );
+      assert(
+        document.distribution.outcomes.model_hash === composedHash,
+        "generation outcomes did not use composed bytes",
+      );
+      assert(JSON.stringify(document.distribution.parameters.authored_provenance) === JSON.stringify({
+        claimed_source_model_hash: composedHash,
+        claimed_outcome_model_hash: originalHash,
+      }), "composed-prior authored provenance was wired backwards");
     },
   },
   {
