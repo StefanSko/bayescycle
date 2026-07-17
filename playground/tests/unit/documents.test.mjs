@@ -131,6 +131,35 @@ export default [
     },
   },
   {
+    name: "compact eight schools sidecar preserves previous normalized values",
+    fn: async () => {
+      const [compact, previousEnvelope] = await Promise.all([
+        fetch("/site/examples/eight_schools_non_centered.data.json").then(
+          (response) => response.text(),
+        ),
+        fetch("/tests/fixtures/engine/eight_schools_non_centered/data.json").then(
+          (response) => response.text(),
+        ),
+      ]);
+      const actual = parseDocument(compact);
+      const expected = parseDocument(previousEnvelope);
+      assert(
+        JSON.stringify(Object.keys(actual.variables)) ===
+          JSON.stringify(Object.keys(expected.variables)),
+        "eight schools variable order changed",
+      );
+      for (const name of Object.keys(expected.variables)) {
+        assert(
+          JSON.stringify(actual.variables[name].shape) ===
+            JSON.stringify(expected.variables[name].shape) &&
+            JSON.stringify(actual.variables[name].values) ===
+              JSON.stringify(expected.variables[name].values),
+          `eight schools ${name} shape or values changed`,
+        );
+      }
+    },
+  },
+  {
     name: "representative normalization matches pinned canonical bytes",
     fn: async () => {
       const [input, expected] = await Promise.all([

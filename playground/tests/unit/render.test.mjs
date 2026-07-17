@@ -183,6 +183,34 @@ export default [
     },
   },
   {
+    name: "precis labels its value axis and recovery truth",
+    fn: async () => {
+      const { data } = await fixture();
+      const label = data.parameters[0].label;
+      const source = renderPrecis(data, { [label]: 0 });
+      const document = parsedSvg(source);
+      assert(document.querySelector(".value-axis") !== null, "precis value baseline is absent");
+      assert(
+        document.querySelectorAll(".value-axis-tick").length >= 2 &&
+          document.querySelectorAll(".value-axis-label").length >= 2,
+        "precis min/zero/max ticks are not labelled",
+      );
+      assert(
+        source.includes("posterior 89% interval · mean") && source.includes("true value"),
+        "precis legend does not distinguish posterior and truth",
+      );
+      assert(
+        document.querySelector(`.truth-marker[data-parameter="${label}"]`) !== null,
+        "precis truth marker is absent",
+      );
+      assert(source.includes("· true 0.00"), "precis true-value annotation is absent");
+
+      const observedSource = renderPrecis(data);
+      assert(!observedSource.includes("truth-marker"), "observed precis acquired a truth marker");
+      assert(!observedSource.includes("true value"), "observed precis acquired a truth legend");
+    },
+  },
+  {
     name: "divergence verdict thresholds",
     fn: () => {
       assert(divergenceVerdict(0) === "outlook good", "zero-divergence verdict differs");

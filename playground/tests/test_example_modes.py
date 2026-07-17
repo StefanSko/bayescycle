@@ -1,19 +1,67 @@
 from playwright.sync_api import Page, expect
 
 
-def test_examples_load_raw_documents_in_json_escape_hatches(page: Page, base_url: str) -> None:
+def test_form_eligible_example_derives_design_forms_from_compiled_schema(
+    page: Page, base_url: str
+) -> None:
     page.goto(f"{base_url}/site/")
     menu = page.locator("#examples-menu")
     expect(menu.locator("option")).to_have_count(4)
     menu.select_option("eight-schools")
     expect(page.locator("#design-data")).to_have_value("")
     menu.select_option("linear-simulation")
-    expect(page.locator("#design-data")).not_to_have_value("")
+    expect(page.locator("#design-data")).to_have_value("")
     expect(page.locator("#truth-data")).not_to_have_value("")
     page.locator("#compile-button").click()
-    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-slots")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-field")).to_be_hidden()
+    expect(page.locator("#design-expr-x")).to_have_value("linspace(-2, 2, 25)")
     expect(page.locator("#truth-json-field")).to_be_visible()
-    expect(page.locator("#design-slots")).to_be_hidden()
+
+
+def test_pasted_form_eligible_model_prefills_each_actual_design_slot(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class TwoDesigns:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    time = Data.vector()\n"
+        "    dose = Data.vector(6)\n"
+        "    y = Observed(Normal(beta * time + dose, 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-slots .slot-card")).to_have_count(2, timeout=120_000)
+    expect(page.locator("#design-expr-time")).to_have_value("linspace(-2, 2, 25)")
+    expect(page.locator("#design-expr-dose")).to_have_value("linspace(-2, 2, 6)")
+    assert '"time"' in page.locator("#design-data").input_value()
+    assert '"dose"' in page.locator("#design-data").input_value()
+    assert '"x"' not in page.locator("#design-data").input_value()
+
+
+def test_pasted_non_form_eligible_model_gets_schema_shaped_json_placeholder(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class PastedOrdinal:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector()\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-json-toggle")).to_be_disabled()
+    expect(page.locator("#design-data")).to_have_value('{"n_cutpoints":0,"x":[]}')
 
 
 def test_scalar_design_slots_remain_in_the_json_escape_hatch(page: Page, base_url: str) -> None:
@@ -100,7 +148,9 @@ def test_zero_product_canonical_shape_stays_in_json_mode(page: Page, base_url: s
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#compile-button").click()
-    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-slots")).to_be_visible(timeout=120_000)
+    page.locator("#design-json-toggle").click()
+    expect(page.locator("#design-json-field")).to_be_visible()
     page.locator("#design-data").fill(
         '{"format":"bayescycle.data.json.v1","variables":'
         '{"x":{"dtype":"float64","shape":[1000000000,0],"values":[]}}}'

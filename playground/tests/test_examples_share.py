@@ -14,7 +14,6 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
     page.locator("#inference-seed").fill("17")
     page.locator("#generation-seed").fill("23")
     page.locator("#generation-count").fill("37")
-    page.locator("#design-json-toggle").click()
     page.locator("#truth-json-toggle").click()
     expect(page.locator("#design-slots")).to_be_visible()
     expect(page.locator("#parameter-fields")).to_be_visible()
@@ -43,7 +42,7 @@ def test_example_and_share_require_explicit_compile(page: Page, base_url: str) -
         expect(fresh.locator("#ir-hash")).to_be_visible(timeout=120_000)
         expect(fresh.locator("#design-slots")).to_be_visible()
         expect(fresh.locator("#parameter-fields")).to_be_visible()
-        expect(fresh.locator("#design-expr-x")).to_have_value("[-1,-0.5,0,0.5,1]")
+        expect(fresh.locator("#design-expr-x")).to_have_value("linspace(-2, 2, 25)")
     finally:
         fresh.close()
 
@@ -94,7 +93,6 @@ def test_recipient_edits_before_compile_outrank_shared_form_state(
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#compile-button").click()
     expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
-    page.locator("#design-json-toggle").click()
     page.locator("#truth-json-toggle").click()
     expect(page.locator("#design-slots")).to_be_visible()
     page.locator("#share-button").click()
@@ -140,7 +138,6 @@ def test_sharing_uncompiled_source_edits_omits_stale_form_state(page: Page, base
     page.locator("#examples-menu").select_option("linear-simulation")
     page.locator("#compile-button").click()
     expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
-    page.locator("#design-json-toggle").click()
     page.locator("#truth-json-toggle").click()
     expect(page.locator("#design-slots")).to_be_visible()
 

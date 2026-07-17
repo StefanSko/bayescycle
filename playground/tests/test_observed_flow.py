@@ -5,6 +5,30 @@ from playwright.sync_api import Page, expect
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def test_observed_example_uses_compact_prefill_and_ready_to_fit_hint(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#examples-menu").select_option("eight-schools")
+    compact = (
+        '{"n_schools":8,'
+        '"sigma":[15.0,10.0,16.0,11.0,9.0,11.0,10.0,18.0],'
+        '"y":[28.0,8.0,-3.0,7.0,-1.0,1.0,18.0,12.0]}\n'
+    )
+    expect(page.locator("#observed-data")).to_have_value(compact)
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+
+    page.locator("#compile-button").click()
+    expect(page.locator("#observed-ready-hint")).to_be_visible(timeout=120_000)
+    expect(page.locator("#observed-ready-hint")).to_have_text(
+        "Ready to fit — no simulate run needed."
+    )
+    page.locator("#observed-data").fill("{")
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+    page.locator("#observed-data").fill(compact)
+    expect(page.locator("#observed-ready-hint")).to_be_visible()
+
+
 def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
     source = (FIXTURES / "corpus" / "eight_schools_non_centered.py").read_text()
@@ -27,6 +51,7 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
     expect(page.locator("#fit-button")).to_be_enabled()
     page.locator("#fit-button").click()
     expect(page.locator("#run-status")).to_have_text("Fitting is running…")
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
     expect(page.locator("#compile-button")).to_be_disabled()
 
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)

@@ -22,3 +22,5 @@ def test_completed_posterior_renders_core_plots(page: Page, base_url: str) -> No
     expect(page.locator("#plot-trank svg")).to_be_visible(timeout=120_000)
     expect(page.locator("#plot-ess-rhat svg")).to_be_visible()
     expect(page.locator("#plot-precis svg")).to_be_visible()
+    expect(page.locator("#plot-precis .value-axis")).to_have_count(1)
+    expect(page.locator("#plot-precis .truth-marker")).to_have_count(0)
