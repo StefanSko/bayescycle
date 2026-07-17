@@ -523,11 +523,16 @@ function canScaffoldDesign(schema) {
 }
 
 function placeholderVariable(slot) {
+  // canScaffoldDesign gates defaultDesignDocument, so only scalars and vectors
+  // reach here; reject anything else rather than fabricate a rank-1 shape.
+  if (slot.kind !== "scalar" && slot.kind !== "vector") {
+    throw new Error(`Cannot scaffold a ${slot.kind} design slot`);
+  }
   const fill = slot.dtype === "bool" ? false : 0;
   if (slot.kind === "scalar") {
     return { dtype: slot.dtype, shape: [], values: [fill] };
   }
-  const length = slot.kind === "vector" ? (slot.length ?? 0) : 0;
+  const length = slot.length ?? 0;
   return {
     dtype: slot.dtype,
     shape: [length],
