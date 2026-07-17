@@ -52,6 +52,15 @@ export class BrowserRuntime {
   }
 
   /**
+   * @param {string} source
+   * @param {string} priorSource
+   * @param {{timeoutMs?: number, signal?: AbortSignal}} [options]
+   */
+  compileScenario(source, priorSource, options) {
+    return this.compiler.compileScenario(source, priorSource, options);
+  }
+
+  /**
    * @param {Record<string, unknown> & {operation: string}} request
    * @param {((event: Record<string, unknown>) => void) | {signal?: AbortSignal}} [onProgress]
    * @param {{signal?: AbortSignal}} [options]

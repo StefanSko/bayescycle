@@ -8,7 +8,7 @@ const FIT_DESCENDANT_ARTIFACTS = [
 export function initialState() {
   return Object.freeze({
     source: "",
-    documents: Object.freeze({ observed: "", design: "", truth: "" }),
+    documents: Object.freeze({ observed: "", design: "", truth: "", prior: "" }),
     sourceRevision: 0,
     projectRevision: 0,
     compile: Object.freeze({ status: "idle" }),
@@ -398,6 +398,7 @@ function matchesGenerationGuard(state, guard) {
   return guard.compileRevision === (state.compile.revision ?? null) &&
     guard.inputRevision === state.generation.inputRevision &&
     guard.settingsRevision === state.generation.settingsRevision &&
+    (guard.priorSource ?? "") === state.documents.prior &&
     (guard.sourceKind !== "posterior" ||
       guard.fitLineageKey === (state.conditioning.fit?.lineageKey ?? null));
 }

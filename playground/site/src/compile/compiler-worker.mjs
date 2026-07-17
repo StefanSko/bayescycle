@@ -18,6 +18,10 @@ self.addEventListener("message", (event) => {
 async function handleMessage(message) {
   if (!validRequest(message)) return;
   runtime.globals.set("__playground_source", message.source);
+  runtime.globals.set("__playground_mode", message.mode ?? "model");
+  if (message.mode === "with-prior") {
+    runtime.globals.set("__playground_prior_source", message.priorSource);
+  }
   try {
     const serialized = runtime.runPython(PYTHON_COMPILE);
     const result = JSON.parse(serialized);
@@ -43,6 +47,8 @@ async function handleMessage(message) {
     }
   } finally {
     runtime.globals.delete("__playground_source");
+    runtime.globals.delete("__playground_mode");
+    runtime.globals.delete("__playground_prior_source");
   }
 }
 
@@ -70,8 +76,11 @@ function lockDownNetwork() {
 }
 
 function validRequest(value) {
-  return value !== null && typeof value === "object" && value.type === "compile" &&
-    value.protocol === 1 && typeof value.id === "string" && typeof value.source === "string";
+  if (value === null || typeof value !== "object" || value.type !== "compile" ||
+      value.protocol !== 1 || typeof value.id !== "string" ||
+      typeof value.source !== "string") return false;
+  if (value.mode === undefined) return value.priorSource === undefined;
+  return value.mode === "with-prior" && typeof value.priorSource === "string";
 }
 
 async function initializeRuntime() {
@@ -108,10 +117,12 @@ import math
 import traceback
 
 import bayeswire.ir
+from bayeswire import with_prior
 from bayeswire.constraints import Interval, Ordered, Positive, UnitInterval, VectorBounds
 from bayeswire.distributions import Normal, Truncated
 from bayeswire.model import (
     DataDimRef,
+    ModelMeta,
     ResolvedDataRankSchema,
     ResolvedDataShapeSchema,
     attached_model_dimensions,
@@ -119,6 +130,7 @@ from bayeswire.model import (
     model_dependencies,
     model_meta,
 )
+from bayeswire.model.dimensions import ResolvedModelDimensions
 from bayeswire.model.expr import (
     ConstNode,
     DataRef,
@@ -315,38 +327,202 @@ def _model_schema(model):
     }
 
 
-def compile_editor_source(source):
+def _local_models(namespace, module_name):
+    models = []
+    seen = set()
+    for value in namespace.values():
+        if (
+            is_model_class(value)
+            and getattr(value, "__module__", None) == module_name
+            and id(value) not in seen
+        ):
+            models.append(value)
+            seen.add(id(value))
+    return models
+
+
+def _select_editor_model(namespace):
+    models = _local_models(namespace, "__playground_editor__")
+    referenced = set()
+    traversed = set()
+    pending = list(models)
+    while pending:
+        model = pending.pop()
+        if id(model) in traversed:
+            continue
+        traversed.add(id(model))
+        dependencies = model_dependencies(model)
+        referenced.update(dependencies)
+        pending.extend(dependencies)
+    if len(models) > 1:
+        roots = [model for model in models if model not in referenced]
+        if len(roots) == 1:
+            models = roots
+    if len(models) != 1:
+        raise ValueError(f"Expected exactly one @model class, found {len(models)}")
+    return models[0]
+
+
+def _compile_model(source):
+    namespace = {"__name__": "__playground_editor__"}
+    exec(compile(source, "<playground-editor>", "exec"), namespace)
+    return _select_editor_model(namespace), namespace
+
+
+def _param_ref_names(root):
+    names = set()
+    stack = [root]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, ParamRef):
+            names.add(value.name)
+        else:
+            stack.extend(_walk_children(value))
+    return names
+
+
+def _completed_prior(target, authored_prior):
+    """Complete an authored partial prior with untouched target declarations."""
+    target_meta = model_meta(target)
+    source_meta = model_meta(authored_prior)
+    target_names = set(target_meta.params)
+    source_names = set(source_meta.params)
+    replacements = target_names & source_names
+
+    supporting_names = set()
+    pending = list(replacements)
+    while pending:
+        name = pending.pop()
+        parameter = source_meta.params[name]
+        for dependency in _param_ref_names(parameter.distribution):
+            if dependency in source_names and dependency not in supporting_names:
+                supporting_names.add(dependency)
+                pending.append(dependency)
+    unused = source_names - target_names - supporting_names
+    if unused:
+        name = next(name for name in source_meta.params if name in unused)
+        raise ValueError(
+            f"prior parameter {name!r} does not exist in the target or support a "
+            "hierarchical replacement"
+        )
+
+    selected_params = {}
+    for name, parameter in target_meta.params.items():
+        selected_params[name] = source_meta.params.get(name, parameter)
+    for name, parameter in source_meta.params.items():
+        if name not in selected_params:
+            selected_params[name] = parameter
+
+    params = {}
+    pending_params = dict(selected_params)
+    while pending_params:
+        ready = [
+            name for name, parameter in pending_params.items()
+            if not (_param_ref_names(parameter.distribution) & pending_params.keys())
+        ]
+        if not ready:
+            raise ValueError("prior parameter dependencies could not be ordered")
+        for name in ready:
+            params[name] = pending_params.pop(name)
+
+    def owner_sites(meta):
+        owners = {}
+        for site in meta.stochastic_sites:
+            if isinstance(site.value, ParamRef) and site.value.name in meta.params:
+                owners[site.value.name] = site
+        return owners
+
+    target_owners = owner_sites(target_meta)
+    source_owners = owner_sites(source_meta)
+    sites = tuple(
+        source_owners.get(name, target_owners.get(name))
+        for name in params
+    )
+    if any(site is None for site in sites):
+        raise ValueError("prior composition could not resolve every parameter owner site")
+
+    data = dict(target_meta.data)
+    data.update(source_meta.data)
+    free_values = {
+        name: source_meta.free_values.get(name, target_meta.free_values.get(name))
+        for name in params
+    }
+    if any(value is None for value in free_values.values()):
+        raise ValueError("prior composition could not resolve every parameter free slot")
+
+    target_dimensions = attached_model_dimensions(target)
+    source_dimensions = attached_model_dimensions(authored_prior)
+    all_variables = {}
+    all_coords = {}
+    for dimensions in (target_dimensions, source_dimensions):
+        if dimensions is None:
+            continue
+        all_variables.update(dimensions.variables)
+        all_coords.update(dimensions.coords)
+    declared_names = (
+        set(params)
+        | set(data)
+        | set(source_meta.expressions)
+        | {observed.name for observed in source_meta.observed_nodes}
+    )
+    variables = {
+        name: variable_dims
+        for name, variable_dims in all_variables.items()
+        if name in declared_names
+    }
+    used_dimension_names = {
+        dimension_name
+        for variable_dims in variables.values()
+        for dimension_name in variable_dims.names
+    }
+    coords = {
+        name: values for name, values in all_coords.items()
+        if name in used_dimension_names
+    }
+    dimensions = ResolvedModelDimensions(variables=variables, coords=coords)
+
+    completed_meta = ModelMeta(
+        params=params,
+        data=data,
+        observed_nodes=source_meta.observed_nodes,
+        expressions=dict(source_meta.expressions),
+        free_values=free_values,
+        stochastic_sites=sites,
+    )
+    return bayeswire.ir.bindable_from_meta(completed_meta, dimensions=dimensions)
+
+
+def _compile_scenario(source, prior_source):
+    target, target_namespace = _compile_model(source)
+    prior_namespace = dict(target_namespace)
+    prior_namespace["__name__"] = "__playground_prior__"
+    exec(compile(prior_source, "<playground-prior>", "exec"), prior_namespace)
+    models = _local_models(prior_namespace, "__playground_prior__")
+    if len(models) != 1:
+        raise ValueError(
+            f"Expected exactly one @model class in prior-only source, found {len(models)}"
+        )
     try:
-        namespace = {"__name__": "__playground_editor__"}
-        exec(compile(source, "<playground-editor>", "exec"), namespace)
-        models = []
-        seen = set()
-        for value in namespace.values():
-            if (
-                is_model_class(value)
-                and getattr(value, "__module__", None) == "__playground_editor__"
-                and id(value) not in seen
-            ):
-                models.append(value)
-                seen.add(id(value))
-        referenced = set()
-        traversed = set()
-        pending = list(models)
-        while pending:
-            model = pending.pop()
-            if id(model) in traversed:
-                continue
-            traversed.add(id(model))
-            dependencies = model_dependencies(model)
-            referenced.update(dependencies)
-            pending.extend(dependencies)
-        if len(models) > 1:
-            roots = [model for model in models if model not in referenced]
-            if len(roots) == 1:
-                models = roots
-        if len(models) != 1:
-            raise ValueError(f"Expected exactly one @model class, found {len(models)}")
-        selected_model = models[0]
+        # Validate the authored source before completing its intentionally
+        # omitted target Params. Only Bayeswire's missing-target error is the
+        # expected signal that partial completion is needed; every structural
+        # source error remains verbatim.
+        return with_prior(target, prior=models[0])
+    except ValueError as error:
+        if not str(error).startswith("prior is missing target parameter "):
+            raise
+    completed_prior = _completed_prior(target, models[0])
+    return with_prior(target, prior=completed_prior)
+
+
+def compile_editor_source(source, mode="model", prior_source=None):
+    try:
+        if mode == "model":
+            selected_model, _namespace = _compile_model(source)
+        elif mode == "with-prior" and isinstance(prior_source, str):
+            selected_model = _compile_scenario(source, prior_source)
+        else:
+            raise ValueError("Unsupported playground compiler mode")
         ir_bytes = bayeswire.ir.canonical_bytes(model_meta(selected_model))
         result = {
             "ok": True,
@@ -357,7 +533,8 @@ def compile_editor_source(source):
         frames = traceback.extract_tb(error.__traceback__)
         frames = [
             frame for frame in frames
-            if frame.filename == "<playground-editor>" or "/bayeswire/" in frame.filename
+            if frame.filename in ("<playground-editor>", "<playground-prior>")
+            or "/bayeswire/" in frame.filename
         ]
         result = {
             "ok": False,
@@ -370,5 +547,9 @@ def compile_editor_source(source):
     return json.dumps(result, separators=(",", ":"))
 
 
-compile_editor_source(__playground_source)
+compile_editor_source(
+    __playground_source,
+    __playground_mode,
+    globals().get("__playground_prior_source"),
+)
 `;

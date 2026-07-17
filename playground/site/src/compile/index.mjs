@@ -31,7 +31,42 @@ export class CompilerClient {
         `Model source exceeds maximum UTF-8 size of ${MAX_MODEL_SOURCE_BYTES} bytes`,
       ));
     }
+    return this.#request({ source }, options, "Model compilation");
+  }
 
+  /**
+   * @param {string} source
+   * @param {string} priorSource
+   * @param {{timeoutMs?: number, signal?: AbortSignal}} [options]
+   */
+  compileScenario(source, priorSource, options = {}) {
+    if (typeof source !== "string") return Promise.reject(new TypeError("model source must be a string"));
+    if (typeof priorSource !== "string") {
+      return Promise.reject(new TypeError("prior-only source must be a string"));
+    }
+    if (exceedsUtf8Bytes(source, MAX_MODEL_SOURCE_BYTES)) {
+      return Promise.reject(new Error(
+        `Model source exceeds maximum UTF-8 size of ${MAX_MODEL_SOURCE_BYTES} bytes`,
+      ));
+    }
+    if (exceedsUtf8Bytes(priorSource, MAX_MODEL_SOURCE_BYTES)) {
+      return Promise.reject(new Error(
+        `Prior-only source exceeds maximum UTF-8 size of ${MAX_MODEL_SOURCE_BYTES} bytes`,
+      ));
+    }
+    if (exceedsCombinedUtf8Bytes(source, priorSource, MAX_MODEL_SOURCE_BYTES)) {
+      return Promise.reject(new Error(
+        `Model source and prior-only source together exceed maximum UTF-8 size of ${MAX_MODEL_SOURCE_BYTES} bytes`,
+      ));
+    }
+    return this.#request(
+      { source, mode: "with-prior", priorSource },
+      options,
+      "Prior composition",
+    );
+  }
+
+  #request(payload, options, operationLabel) {
     let worker;
     try {
       worker = this.workerFactory();
@@ -71,7 +106,7 @@ export class CompilerClient {
         dispose();
         resolve(value);
       };
-      const cancellationError = () => new Error("Model compilation was cancelled");
+      const cancellationError = () => new Error(`${operationLabel} was cancelled`);
       const onAbort = () => fail(cancellationError());
       const onError = (event) => fail(new Error(boundedMessage(event.message, "Compiler worker failed")));
       const onMessage = (event) => {
@@ -79,11 +114,13 @@ export class CompilerClient {
         if (isReady(message)) {
           clearTimeout(startupTimer);
           compileTimer = setTimeout(
-            () => fail(new Error("Model compilation timed out")),
+            () => fail(new Error(`${operationLabel} timed out`)),
             timeoutMs,
           );
           try {
-            worker.postMessage({ type: "compile", protocol: PROTOCOL_VERSION, id, source });
+            worker.postMessage({
+              type: "compile", protocol: PROTOCOL_VERSION, id, ...payload,
+            });
           } catch (error) {
             fail(error);
           }
@@ -152,6 +189,15 @@ export class CompilerClient {
 /** @param {string} source @param {{timeoutMs?: number, signal?: AbortSignal}} [options] */
 export function compile(source, options) {
   return new CompilerClient().compile(source, options);
+}
+
+/**
+ * @param {string} source
+ * @param {string} priorSource
+ * @param {{timeoutMs?: number, signal?: AbortSignal}} [options]
+ */
+export function compileScenario(source, priorSource, options) {
+  return new CompilerClient().compileScenario(source, priorSource, options);
 }
 
 function isReady(value) {
@@ -321,14 +367,13 @@ function utf8BytesUpTo(value, maximumBytes) {
 }
 
 function exceedsUtf8Bytes(value, maximumBytes) {
-  let byteLength = 0;
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    byteLength += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 :
-      codePoint <= 0xffff ? 3 : 4;
-    if (byteLength > maximumBytes) return true;
-  }
-  return false;
+  return utf8BytesUpTo(value, maximumBytes) > maximumBytes;
+}
+
+function exceedsCombinedUtf8Bytes(left, right, maximumBytes) {
+  const leftBytes = utf8BytesUpTo(left, maximumBytes);
+  if (leftBytes > maximumBytes) return true;
+  return utf8BytesUpTo(right, maximumBytes - leftBytes) > maximumBytes - leftBytes;
 }
 
 function boundedMessage(value, fallback) {

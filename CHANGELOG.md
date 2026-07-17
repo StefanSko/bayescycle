@@ -12,6 +12,9 @@ formats retain their own compatibility policies.
 
 ### Added
 
+- Add an **Another prior** Playground parameter source that composes a small
+  prior-only model with the compiled model in a fresh disposable worker,
+  simulates from the composed prior, and still conditions on the original model.
 - Add a Playground Cancel affordance that promptly terminates every worker
   owned by an in-flight compile, generation, or fit while preserving earlier
   artifacts.
