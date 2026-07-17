@@ -68,7 +68,7 @@ export default [{
     assert(worker.terminated, "oversized response retained its worker");
   },
 }, {
-  name: "posterior response at exactly the byte ceiling is accepted",
+  name: "posterior response at exactly the byte ceiling passes the worker boundary",
   fn: async () => {
     let worker;
     const engine = new WorkerEngine("test", "wasm", "metadata", () => {

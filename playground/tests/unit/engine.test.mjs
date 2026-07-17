@@ -1,5 +1,6 @@
 import {
   InProcessEngine,
+  MAX_POSTERIOR_RESPONSE_BYTES,
   diagnose,
   mergeChainFits,
   parseEngineMetadata,
@@ -152,6 +153,47 @@ export default [
         report !== null && typeof report === "object" && !Array.isArray(report),
         "diagnose output is not a JSON report object",
       );
+    },
+  },
+  {
+    name: "diagnose bounds merged fits by default before executor dispatch",
+    fn: async () => {
+      const fit = (chain) => [
+        { chain_count: 1, chain_order: [chain], draw_count: 1 },
+        { chain, draw_index: 0, values: { alpha: chain } },
+        {
+          trailer: {
+            chain_count: 1,
+            chain_order: [chain],
+            draw_count: 1,
+            parameter_order: ["alpha"],
+            chains: [{ chain, draw_count: 1 }],
+          },
+        },
+      ].map((value) => JSON.stringify(value)).join("\n") + "\n";
+      const nativeEncode = TextEncoder.prototype.encode;
+      let executorCalls = 0;
+      let result;
+      try {
+        // Report an oversized encoded line without allocating a 64 MiB fixture.
+        TextEncoder.prototype.encode = function () {
+          return { byteLength: MAX_POSTERIOR_RESPONSE_BYTES + 1 };
+        };
+        result = await diagnose({
+          fits: [fit(0), fit(1)],
+          executor: {
+            execute: async () => {
+              executorCalls += 1;
+              return { rawBytes: new Uint8Array([1]) };
+            },
+          },
+        });
+      } finally {
+        TextEncoder.prototype.encode = nativeEncode;
+      }
+      assert(!result.ok && result.error.error === "PosteriorTooLarge",
+        `default diagnose merge was not bounded: ${JSON.stringify(result)}`);
+      assert(executorCalls === 0, `oversized diagnose merge reached executor ${executorCalls} times`);
     },
   },
   {

@@ -1,6 +1,7 @@
 import { BrowserRuntime } from "/site/src/runtime/browser-runtime.mjs";
 import { EngineError } from "/site/src/engine/types.mjs";
 import {
+  MAX_GENERATION_INPUT_BYTES,
   fitArtifact,
   fixed,
   generateDatasets,
@@ -17,6 +18,14 @@ function bytes(value) { return new TextEncoder().encode(value); }
 async function hash(value) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function posteriorBytesOfLength(byteLength) {
+  const prefix = '{"padding":"';
+  const suffix = '"}\n{"value":1}\n{"trailer":{}}\n';
+  const framingBytes = bytes(`${prefix}${suffix}`).byteLength;
+  assert(byteLength >= framingBytes, "posterior target is smaller than its framing");
+  return bytes(`${prefix}${"x".repeat(byteLength - framingBytes)}${suffix}`);
 }
 
 function runtimePosteriorBytes() {
@@ -587,6 +596,36 @@ export default [
         });
         assert(calls === expectedCalls, `${JSON.stringify(settings)} made ${calls} calls`);
       }
+    },
+  },
+  {
+    name: "runtime accepts a posterior above the generation input limit end to end",
+    fn: async () => {
+      const posteriorByteLength = MAX_GENERATION_INPUT_BYTES + 1;
+      const posterior = posteriorBytesOfLength(posteriorByteLength);
+      const calls = [];
+      const executor = {
+        execute: async (request) => {
+          calls.push(request.command);
+          return request.command === "sample"
+            ? { rawBytes: posterior }
+            : { rawBytes: bytes("{}") };
+        },
+      };
+      const result = await new BrowserRuntime(executor).run({
+        operation: "condition",
+        modelIr: bytes('{"bayeswire_ir":1}'),
+        data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+        settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      });
+      const published = result.artifacts.find((entry) => entry.name === "posterior.ndjson");
+      assert(published?.bytes.byteLength === posteriorByteLength,
+        `posterior publication changed: ${String(published?.bytes.byteLength)}`);
+      assert(result.fitArtifact.posteriorBytes.byteLength === posteriorByteLength,
+        "fit artifact retained the old generation-input ceiling");
+      assert(posteriorOf(result.fitArtifact).kind === "posterior",
+        "published fit could not become a posterior source");
+      assert(calls.join(",") === "sample,diagnose", `fit did not complete: ${calls.join(",")}`);
     },
   },
   {

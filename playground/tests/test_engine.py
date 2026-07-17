@@ -8,6 +8,7 @@ CASES = [
     "streams per_draw_v2 in batches",
     "sample yields one output per chain and streams draws",
     "diagnose merges the two chain fits",
+    "diagnose bounds merged fits by default before executor dispatch",
     "merged fits never retain first-chain diagnostics",
     "merged fit serialization enforces its byte ceiling",
     "malformed IR returns a typed engine error",
