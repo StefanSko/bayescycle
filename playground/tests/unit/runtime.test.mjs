@@ -1,4 +1,5 @@
 import { BrowserRuntime } from "/site/src/runtime/browser-runtime.mjs";
+import { EngineError } from "/site/src/engine/types.mjs";
 import {
   fitArtifact,
   fixed,
@@ -72,6 +73,38 @@ function runtimePosteriorBytes() {
       },
     },
   ].map((document) => JSON.stringify(document)).join("\n") + "\n");
+}
+
+async function conditionWithCancelledFollowUp(command) {
+  const controller = new AbortController();
+  const executor = {
+    execute: async (request) => {
+      if (request.command === "sample") return { rawBytes: runtimePosteriorBytes() };
+      if (request.command === command) {
+        throw new EngineError("Cancelled", `${command} worker cancelled`);
+      }
+      return { rawBytes: bytes("{}") };
+    },
+  };
+  let error;
+  try {
+    await new BrowserRuntime(executor).run({
+      operation: "condition",
+      modelIr: bytes('{"bayeswire_ir":1}'),
+      data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+      settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      ...(command === "recover-check" ? {
+        pairedParameters: {
+          format: "bayescycle.data.json.v1",
+          variables: { theta: { dtype: "float64", shape: [], values: [0.5] } },
+        },
+      } : {}),
+    }, undefined, { signal: controller.signal });
+  } catch (reason) {
+    error = reason;
+  }
+  assert(!controller.signal.aborted, "outer signal unexpectedly aborted");
+  assert(error?.kind === "Cancelled", `${command} cancellation resolved: ${String(error)}`);
 }
 
 function generatedOutput(request) {
@@ -153,9 +186,11 @@ export default [
       const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
       const parameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
       const requests = [];
+      const executionSignals = [];
       const executor = {
-        execute: async (request) => {
+        execute: async (request, options) => {
           requests.push(request);
+          executionSignals.push(options.signal);
           return { rawBytes: generatedOutput(request) };
         },
       };
@@ -166,7 +201,13 @@ export default [
       ];
       const artifactNames = [];
       for (const [index, plan] of plans.entries()) {
-        const result = await runtime.run({ type: "run", id: `generation-${index}`, operation: "generate", plan });
+        const controller = new AbortController();
+        const result = await runtime.run(
+          { type: "run", id: `generation-${index}`, operation: "generate", plan },
+          undefined,
+          { signal: controller.signal },
+        );
+        assert(executionSignals.at(-1) === controller.signal, "generate lost its run signal");
         artifactNames.push(result.artifacts.map((artifact) => artifact.name));
         assert(result.artifacts.some((artifact) => artifact.name === "generated_datasets.ndjson"), "generated artifact missing");
       }
@@ -225,6 +266,39 @@ export default [
       }
       assert(message.includes("association"), `forged runtime fit succeeded: ${message}`);
       assert(requests === 0, `forged runtime fit reached engine ${requests} times`);
+    },
+  },
+  {
+    name: "generation abort after engine output rejects before publication",
+    fn: async () => {
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const parameters = bytes(
+        '{"format":"bayescycle.data.json.v1","variables":' +
+        '{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n',
+      );
+      const controller = new AbortController();
+      let delivered = false;
+      const executor = {
+        execute: async (request) => {
+          delivered = true;
+          queueMicrotask(() => controller.abort());
+          return { rawBytes: generatedOutput(request) };
+        },
+      };
+      let error;
+      try {
+        await new BrowserRuntime(executor).run({
+          operation: "generate",
+          plan: generateDatasets(model, {
+            design, parameterSource: fixed(parameters), count: 1, seed: 0,
+          }),
+        }, undefined, { signal: controller.signal });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(delivered, "engine output was not delivered before abort");
+      assert(error?.kind === "Cancelled", `post-engine abort resolved: ${String(error)}`);
     },
   },
   {
@@ -307,6 +381,44 @@ export default [
     },
   },
   {
+    name: "typed diagnostic cancellation rejects conditioning",
+    fn: async () => conditionWithCancelledFollowUp("diagnose"),
+  },
+  {
+    name: "typed recovery cancellation rejects conditioning",
+    fn: async () => conditionWithCancelledFollowUp("recover-check"),
+  },
+  {
+    name: "runtime propagates abort signals to diagnostic and recovery verbs",
+    fn: async () => {
+      const calls = [];
+      const executor = {
+        execute: async (request, options) => {
+          calls.push({ request, options });
+          return { rawBytes: bytes("{}") };
+        },
+      };
+      const runtime = new BrowserRuntime(executor);
+      const controller = new AbortController();
+      await runtime.run(
+        { operation: "diagnose", fit: "fit" },
+        undefined,
+        { signal: controller.signal },
+      );
+      await runtime.run(
+        {
+          operation: "recover-check",
+          fit: "fit",
+          truth: { format: "bayescycle.data.json.v1", variables: {} },
+        },
+        undefined,
+        { signal: controller.signal },
+      );
+      assert(calls.length === 2, `expected two verb calls, got ${calls.length}`);
+      assert(calls.every((call) => call.options.signal === controller.signal), "a follow-up verb lost its run signal");
+    },
+  },
+  {
     name: "retired legacy operations are rejected",
     fn: async () => {
       const runtime = new BrowserRuntime();
@@ -345,6 +457,26 @@ export default [
       assert(UTF8.decode(byName["model.ir.json"].bytes) === UTF8.decode(modelIr), "model artifact changed bytes");
       assert(UTF8.decode(byName["data.json"].bytes) === UTF8.decode(data), "data artifact changed bytes");
       assert(byName["posterior.ndjson"] !== undefined, "posterior artifact missing");
+    },
+  },
+  {
+    name: "selected canonical data bytes remain byte-exact through conditioning",
+    fn: async () => {
+      const data = bytes(
+        '{"format":"bayescycle.data.json.v1","variables":' +
+        '{"x":{"dtype":"float64","shape":[3],"values":[-1.0,0.0,1.0]}}}\n',
+      );
+      const executor = {
+        execute: async () => ({ rawBytes: bytes('{"kind":"header"}\n{"x":1}\n{"kind":"trailer"}\n') }),
+      };
+      const result = await new BrowserRuntime(executor).run({
+        type: "run", id: "exact-data", operation: "sample",
+        modelIr: bytes('{"bayeswire_ir":1}'), data,
+        settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      });
+      const artifact = result.artifacts.find((entry) => entry.name === "data.json");
+      assert(artifact !== undefined, "data artifact missing");
+      assert(UTF8.decode(artifact.bytes) === UTF8.decode(data), "canonical data lexemes changed");
     },
   },
   {
@@ -389,6 +521,130 @@ export default [
         "condition diagnostics artifact missing");
       assert(result.fitArtifact !== undefined, "condition did not issue runtime fit authority");
       assert(progress.some((event) => event.chainId === 0), "condition progress missing");
+    },
+  },
+  {
+    name: "runtime accepts sampling settings at documented boundaries",
+    fn: async () => {
+      const cases = [
+        [{ chains: 1 }, 1],
+        [{ chains: 8 }, 8],
+        [{ chains: 1, num_warmup: 0 }, 1],
+        [{ chains: 1, num_warmup: 100000 }, 1],
+        [{ chains: 1, num_draws: 4 }, 1],
+        [{ chains: 1, num_draws: 100000 }, 1],
+        [{ chains: 1, max_treedepth: 1 }, 1],
+        [{ chains: 1, max_treedepth: 20 }, 1],
+      ];
+      for (const [settings, expectedCalls] of cases) {
+        let calls = 0;
+        const runtime = new BrowserRuntime({
+          execute: async () => {
+            calls += 1;
+            return { rawBytes: runtimePosteriorBytes() };
+          },
+        });
+        await runtime.run({
+          operation: "sample",
+          modelIr: bytes('{"bayeswire_ir":1}'),
+          data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+          settings,
+        });
+        assert(calls === expectedCalls, `${JSON.stringify(settings)} made ${calls} calls`);
+      }
+    },
+  },
+  {
+    name: "runtime rejects out-of-range sampling settings before executor dispatch",
+    fn: async () => {
+      for (const settings of [
+        { chains: 0 }, { chains: 9 },
+        { chains: 1, num_warmup: -1 }, { chains: 1, num_warmup: 100001 },
+        { chains: 1, num_draws: 3 }, { chains: 1, num_draws: 100001 },
+        { chains: 1, max_treedepth: 0 }, { chains: 1, max_treedepth: 21 },
+      ]) {
+        let calls = 0;
+        let error;
+        try {
+          await new BrowserRuntime({
+            execute: async () => {
+              calls += 1;
+              return { rawBytes: runtimePosteriorBytes() };
+            },
+          }).run({
+            operation: "sample",
+            modelIr: bytes('{"bayeswire_ir":1}'),
+            data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+            settings,
+          });
+        } catch (reason) {
+          error = reason;
+        }
+        assert(error?.kind === "InvalidSettings", `${JSON.stringify(settings)} was accepted`);
+        assert(calls === 0, `${JSON.stringify(settings)} reached executor ${calls} times`);
+      }
+    },
+  },
+  {
+    name: "first chain failure aborts every sibling execution",
+    fn: async () => {
+      const calls = [];
+      const executor = {
+        execute: (request, options) => new Promise((resolve, reject) => {
+          const call = { request, options, aborted: false };
+          calls.push(call);
+          options.signal.addEventListener("abort", () => {
+            call.aborted = true;
+            reject(new EngineError("Cancelled", "cancelled sibling"));
+          }, { once: true });
+          if (request.chain_id === 0) {
+            queueMicrotask(() => reject(new EngineError("ChainFailure", "chain zero failed")));
+          }
+        }),
+      };
+      let message = "";
+      try {
+        await new BrowserRuntime(executor).run({
+          operation: "sample",
+          modelIr: bytes('{"bayeswire_ir":1}'),
+          data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+          settings: { chains: 3, num_warmup: 0, num_draws: 4 },
+        });
+      } catch (error) {
+        message = String(error);
+      }
+      assert(message.includes("chain zero failed"), `first failure disappeared: ${message}`);
+      assert(calls.length === 3, `only ${calls.length} chains launched`);
+      assert(calls.every((call) => call.aborted), "a sibling chain was not aborted");
+    },
+  },
+  {
+    name: "run abort propagates to every in-flight chain",
+    fn: async () => {
+      const calls = [];
+      const executor = {
+        execute: (request, options) => new Promise((resolve, reject) => {
+          const call = { request, options, aborted: false };
+          calls.push(call);
+          options.signal.addEventListener("abort", () => {
+            call.aborted = true;
+            reject(new EngineError("Cancelled", "cancelled chain"));
+          }, { once: true });
+        }),
+      };
+      const controller = new AbortController();
+      const pending = new BrowserRuntime(executor).run({
+        operation: "sample",
+        modelIr: bytes('{"bayeswire_ir":1}'),
+        data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+        settings: { chains: 3, num_warmup: 0, num_draws: 4 },
+      }, undefined, { signal: controller.signal });
+      controller.abort();
+      let message = "";
+      try { await pending; } catch (error) { message = String(error); }
+      assert(message.includes("cancelled chain"), `abort disappeared: ${message}`);
+      assert(calls.length === 3, `only ${calls.length} chains launched`);
+      assert(calls.every((call) => call.aborted), "an aborted run retained a chain");
     },
   },
   {

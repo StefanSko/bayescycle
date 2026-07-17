@@ -46,6 +46,7 @@ def test_native_document_surfaces_are_present() -> None:
     html = (SITE_ROOT / "index.html").read_text()
     for element_id in (
         "model-source",
+        "share-error",
         "observed-data",
         "design-data",
         "truth-data",
@@ -55,6 +56,8 @@ def test_native_document_surfaces_are_present() -> None:
         "truth-json-toggle",
         "observed-data-field",
         "generation-count",
+        "authoring-error",
+        "cancel-run",
         "artifact-generated-datasets",
         "generated-dataset-index",
         "selected-pair-summary",

@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "count": 3,
+  "measurements": [[1, 2.5], [3, 4]],
+  "empty": []
+}

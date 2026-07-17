@@ -11,6 +11,21 @@ def test_successful_compile_is_announced_without_relying_on_hash(page: Page, bas
     expect(page.locator("#ir-hash")).to_be_visible()
 
 
+def test_oversized_model_source_surfaces_without_starting_a_compile(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill("é" * (1024 * 1024 // 2 + 1))
+    page.locator("#compile-button").click()
+    expect(page.locator("#compile-error")).to_contain_text("maximum UTF-8 size of 1048576 bytes")
+    expect(page.locator("#compile-button")).to_be_enabled()
+    page.locator("#share-button").click()
+    expect(page.locator("#share-error")).to_contain_text(
+        "decompressed payload exceeds 1048576 bytes"
+    )
+    expect(page.locator("#share-output")).to_be_hidden()
+
+
 def test_authoring_edits_made_during_recompile_survive_completion(
     page: Page, base_url: str
 ) -> None:

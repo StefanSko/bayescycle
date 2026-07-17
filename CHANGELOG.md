@@ -10,6 +10,12 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+### Added
+
+- Add a Playground Cancel affordance that promptly terminates every worker
+  owned by an in-flight compile, generation, or fit while preserving earlier
+  artifacts.
+
 ### Changed
 
 - Rework the Playground's data-authoring workflow into a schema-driven
@@ -17,6 +23,10 @@ formats retain their own compatibility policies.
   fixed-parameter forms, JSON escape hatches, and count-aware simulation controls.
 - Remove stale implementation logs, completed plans, generated walkthroughs,
   and duplicated documentation so maintained guidance has a clear owner.
+- Bound Playground model source, example sidecars, share decompression, JSON
+  documents, runtime sampler settings, compiler schemas, and schema-driven form
+  rendering so every accepted input remains tab-safe and malformed or
+  oversized input produces an actionable error.
 
 ## [0.6.0] - 2026-07-15
 

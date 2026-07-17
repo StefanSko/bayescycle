@@ -1,0 +1,1 @@
+{"format":"bayescycle.data.json.v1","variables":{"enabled":{"dtype":"bool","shape":[],"values":[true]},"count":{"dtype":"int64","shape":[],"values":[3]},"measurements":{"dtype":"float64","shape":[2,2],"values":[1,2.5,3,4]},"empty":{"dtype":"float64","shape":[0],"values":[]}}}

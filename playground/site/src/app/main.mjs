@@ -1,4 +1,10 @@
-import { parseDocument, serializeDocument } from "../data/documents.mjs";
+import {
+  MAX_DOCUMENT_INPUT_BYTES,
+  MAX_DOCUMENT_SCALARS,
+  parseDocument,
+  parseDocumentValue,
+  serializeDocument,
+} from "../data/documents.mjs";
 import { parseGeneratedDatasets } from "../generation/artifact.mjs";
 import { evaluateDesignExpression } from "../generation/design-expr.mjs";
 import {
@@ -10,11 +16,29 @@ import {
 } from "../generation/plan.mjs";
 import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
+import {
+  MAX_SAMPLE_CHAINS,
+  MAX_SAMPLE_DRAWS,
+  MAX_SAMPLE_TREEDEPTH,
+  MAX_SAMPLE_WARMUP,
+  MIN_SAMPLE_CHAINS,
+  MIN_SAMPLE_DRAWS,
+  MIN_SAMPLE_TREEDEPTH,
+  MIN_SAMPLE_WARMUP,
+} from "../sampling-limits.mjs";
+import {
+  MAX_DESIGN_FORM_SLOTS,
+  MAX_PARAMETER_FORM_FIELDS,
+  supportsDesignForms,
+  supportsParameterForms,
+} from "./form-limits.mjs";
 import { renderRecoverySummary } from "./recovery.mjs";
+import { cancellationEvents, RunControllers } from "./run-controllers.mjs";
 import { decodeProject, encodeProject, FRAGMENT_WARN_LENGTH } from "./share.mjs";
 import { initialState, reduce } from "./state.mjs";
 
 const runtime = new BrowserRuntime();
+const runControllers = new RunControllers();
 let state = initialState();
 let revision = 0;
 let pendingSharedProject;
@@ -24,6 +48,7 @@ let designJsonMode = true;
 let truthJsonMode = true;
 let designExpressions = {};
 let fixedValueEntries = {};
+let authoringError = null;
 let authoringRestore = { kind: "fresh" };
 const examples = new Map();
 const objectUrls = new Set();
@@ -45,10 +70,12 @@ source.addEventListener("input", () => {
 observed.addEventListener("input", observedEdited);
 design.addEventListener("input", () => {
   designJsonMode = true;
+  authoringError = null;
   generationInputsEdited();
 });
 truth.addEventListener("input", () => {
   truthJsonMode = true;
+  authoringError = null;
   generationInputsEdited();
 });
 element("#design-json-toggle").addEventListener("click", toggleDesignJson);
@@ -82,6 +109,7 @@ element("#generated-dataset-index").addEventListener("change", () => {
 element("#fit-button").addEventListener("click", () => {
   launchRun(selectedDatasetSource() === "generated" ? sampleGenerated : samplePosterior);
 });
+element("#cancel-run").addEventListener("click", cancelActiveRun);
 element("#examples-menu").addEventListener("change", () => void loadExample());
 element("#share-button").addEventListener("click", () => void shareProject());
 element("#load-shared").addEventListener("click", loadSharedProject);
@@ -119,11 +147,21 @@ async function loadExample() {
   const entry = examples.get(selectedId);
   if (entry === undefined) return;
   const loadRevision = ++exampleLoadRevision;
-  const [modelSource, observedText, designText, truthText] = await Promise.all([
-    fetchAsset(entry.source), fetchOptionalAsset(entry.observed),
-    fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
-  ]);
+  let assets;
+  try {
+    assets = await Promise.all([
+      fetchAsset(entry.source), fetchOptionalAsset(entry.observed),
+      fetchOptionalAsset(entry.design), fetchOptionalAsset(entry.truth),
+    ]);
+  } catch (error) {
+    if (loadRevision !== exampleLoadRevision ||
+        element("#examples-menu").value !== selectedId) return;
+    element("#compile-error").hidden = false;
+    element("#compile-error").textContent = message(error);
+    return;
+  }
   if (loadRevision !== exampleLoadRevision || element("#examples-menu").value !== selectedId) return;
+  const [modelSource, observedText, designText, truthText] = assets;
   setProject(
     { source: modelSource, observed: observedText, design: designText, truth: truthText },
     { kind: "documents" },
@@ -133,7 +171,36 @@ async function loadExample() {
 async function fetchAsset(path) {
   const response = await fetch(new URL(path, EXAMPLES_ROOT));
   if (!response.ok) throw new Error(`Could not load example asset ${path}`);
-  return response.text();
+  if (response.body === null) {
+    throw new Error(`Could not stream example asset ${path}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const parts = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > MAX_DOCUMENT_INPUT_BYTES) {
+        await reader.cancel("example asset too large");
+        throw new Error(
+          `Example asset ${path} exceeds ${MAX_DOCUMENT_INPUT_BYTES} UTF-8 bytes`,
+        );
+      }
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(`Example asset ${path} is not valid UTF-8`, { cause: error });
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  return parts.join("");
 }
 
 function fetchOptionalAsset(path) {
@@ -141,6 +208,9 @@ function fetchOptionalAsset(path) {
 }
 
 async function shareProject() {
+  const shareError = element("#share-error");
+  shareError.hidden = true;
+  shareError.textContent = "";
   // Authoring state describes the compiled schema; a source edit resets the
   // compile, so stale form modes and entries are omitted from the payload
   // and the recipient lands in the JSON documents instead.
@@ -164,7 +234,15 @@ async function shareProject() {
       },
     } : {}),
   };
-  const payload = await encodeProject(project);
+  let payload;
+  try {
+    payload = await encodeProject(project);
+  } catch (error) {
+    element("#share-output").hidden = true;
+    shareError.hidden = false;
+    shareError.textContent = message(error);
+    return;
+  }
   const url = new URL(window.location.href);
   url.hash = `project=${payload}`;
   element("#share-url").value = url.href;
@@ -210,6 +288,7 @@ function setProject(project, restore = { kind: "documents" }) {
   authoringRestore = restore;
   designJsonMode = true;
   truthJsonMode = true;
+  authoringError = null;
   renderedSchema = null;
   dispatch({ type: "source-edited", source: project.source, revision: ++revision });
   dispatch({ type: "documents-edited", documents: { observed: project.observed, design: project.design, truth: project.truth }, revision: ++revision });
@@ -255,6 +334,12 @@ function launchRun(operation) {
     element("#run-error").hidden = false;
     element("#run-error").textContent = message(error);
   });
+}
+
+function cancelActiveRun() {
+  const cancellationMessage = "Cancelled. You can start another run.";
+  element("#progress").replaceChildren();
+  for (const event of cancellationEvents(state, cancellationMessage)) dispatch(event);
 }
 
 function settingsEdited() {
@@ -331,6 +416,7 @@ function configureAuthoring(schema) {
     );
   }
   if (!supportsDesignForms(schema)) designJsonMode = true;
+  if (!supportsParameterForms(schema)) truthJsonMode = true;
   authoringRestore = { kind: "preserve" };
   renderedSchema = null;
   // Shared documents keep their carried bytes: they were produced by the
@@ -393,25 +479,34 @@ function toggleDesignJson() {
   if (state.compile.status !== "compiled" || schema === undefined ||
       !supportsDesignForms(schema)) return;
   if (designJsonMode) {
-    hydrateDesignExpressions(schema);
+    if (!hydrateDesignExpressions(schema)) {
+      render();
+      return;
+    }
     designJsonMode = false;
     commitRewrittenDocument(design, () => writeDesignDocumentFromEntries(schema));
     return;
   }
   designJsonMode = true;
+  authoringError = null;
   render();
 }
 
 function toggleTruthJson() {
   const schema = state.compile.modelSchema;
-  if (state.compile.status !== "compiled" || schema === undefined) return;
+  if (state.compile.status !== "compiled" || schema === undefined ||
+      !supportsParameterForms(schema)) return;
   if (truthJsonMode) {
-    hydrateFixedValues(schema);
+    if (!hydrateFixedValues(schema)) {
+      render();
+      return;
+    }
     truthJsonMode = false;
     commitRewrittenDocument(truth, () => writeTruthDocumentFromEntries(schema));
     return;
   }
   truthJsonMode = true;
+  authoringError = null;
   render();
 }
 
@@ -435,10 +530,13 @@ function hydrateDesignExpressions(schema) {
       const value = values[slot.name];
       if (Array.isArray(value)) designExpressions[slot.name] = JSON.stringify(value);
     }
-  } catch {
-    // Existing form entries remain available when raw JSON cannot be projected.
+  } catch (error) {
+    authoringError = `Design JSON: ${message(error)}`;
+    return false;
   }
+  authoringError = null;
   updateAuthoringControls(schema);
+  return true;
 }
 
 function hydrateFixedValues(schema) {
@@ -452,10 +550,13 @@ function hydrateFixedValues(schema) {
         fixedValueEntries[parameter.name] = JSON.stringify(value);
       }
     }
-  } catch {
-    // Existing form entries remain available when raw JSON cannot be projected.
+  } catch (error) {
+    authoringError = `Fixed parameter JSON: ${message(error)}`;
+    return false;
   }
+  authoringError = null;
   updateAuthoringControls(schema);
+  return true;
 }
 
 function plainDocumentValues(text) {
@@ -469,6 +570,18 @@ function plainDocumentValues(text) {
 }
 
 function reshapeValues(values, shape) {
+  let projectedValues = 0;
+  let width = 1;
+  for (const dimension of shape) {
+    width *= dimension;
+    projectedValues += width;
+    if (!Number.isSafeInteger(projectedValues) ||
+        projectedValues > MAX_DOCUMENT_SCALARS) {
+      throw new Error(
+        `document shape projection exceeds ${MAX_DOCUMENT_SCALARS} form values`,
+      );
+    }
+  }
   if (shape.length === 0) return values[0];
   const stride = shape.slice(1).reduce((left, right) => left * right, 1);
   return Array.from({ length: shape[0] }, (_, index) =>
@@ -477,39 +590,98 @@ function reshapeValues(values, shape) {
 
 function writeDesignDocumentFromEntries(schema) {
   try {
-    const value = Object.fromEntries(
-      schema.data.map((slot) => [
-        slot.name,
-        evaluateSlotValues(slot, entryOr(designExpressions, slot.name, defaultExpression(slot))),
-      ]),
-    );
+    const value = {};
+    let scalarCount = 0;
+    for (const slot of schema.data) {
+      const values = evaluateSlotValues(
+        slot,
+        entryOr(designExpressions, slot.name, defaultExpression(slot)),
+      );
+      scalarCount += values.length;
+      requireScalarBudget(scalarCount);
+      defineOwn(value, slot.name, values);
+    }
     design.value = serializeDocument(parseDocument(JSON.stringify(value)));
+    authoringError = null;
     return true;
-  } catch {
+  } catch (error) {
     design.value = "";
+    authoringError = message(error);
     return false;
   }
 }
 
 function writeTruthDocumentFromEntries(schema) {
   try {
-    const value = Object.fromEntries(schema.parameters.map((parameter) => {
+    const value = {};
+    let scalarCount = 0;
+    for (const parameter of schema.parameters) {
       const entry = entryOr(fixedValueEntries, parameter.name, "");
+      let parsed;
       if (parameter.shape.length === 0) {
-        const number = Number(entry);
-        if (entry.trim() === "" || !Number.isFinite(number)) {
+        parsed = Number(entry);
+        if (entry.trim() === "" || !Number.isFinite(parsed)) {
           throw new Error(`${parameter.name} needs a finite number`);
         }
-        return [parameter.name, number];
+      } else {
+        parsed = parseDocumentValue(entry);
+        if (!Array.isArray(parsed)) {
+          throw new Error(`${parameter.name} needs a JSON array value`);
+        }
       }
-      return [parameter.name, JSON.parse(entry)];
-    }));
+      scalarCount += countScalars(parsed);
+      requireScalarBudget(scalarCount);
+      defineOwn(value, parameter.name, parsed);
+    }
     truth.value = serializeDocument(parseDocument(JSON.stringify(value)));
+    authoringError = null;
     return true;
-  } catch {
+  } catch (error) {
     truth.value = "";
+    authoringError = message(error);
     return false;
   }
+}
+
+function defineOwn(target, name, value) {
+  Object.defineProperty(target, name, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+function requireScalarBudget(count) {
+  if (count > MAX_DOCUMENT_SCALARS) {
+    throw new Error(
+      `data document exceeds maximum scalar count of ${MAX_DOCUMENT_SCALARS}`,
+    );
+  }
+}
+
+function countScalars(value) {
+  if (!Array.isArray(value)) return 1;
+  let count = 0;
+  const arrays = [value];
+  const indexes = [0];
+  while (arrays.length > 0) {
+    const depth = arrays.length - 1;
+    const array = arrays[depth];
+    if (indexes[depth] >= array.length) {
+      arrays.pop();
+      indexes.pop();
+      continue;
+    }
+    const entry = array[indexes[depth]++];
+    if (Array.isArray(entry)) {
+      arrays.push(entry);
+      indexes.push(0);
+    } else {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function renderAuthoring() {
@@ -534,12 +706,17 @@ function renderAuthoring() {
   const designFormsSupported = supportsDesignForms(schema);
   element("#design-json-toggle").disabled = !designFormsSupported;
   element("#design-json-toggle").textContent = !designFormsSupported
-    ? "JSON required for integer or non-vector slots"
+    ? schema.data.length > MAX_DESIGN_FORM_SLOTS
+      ? `JSON required for more than ${MAX_DESIGN_FORM_SLOTS} design slots`
+      : "JSON required for integer or non-vector slots"
     : designJsonMode ? "use design forms" : "edit as JSON";
   element("#truth-json-field").hidden = !truthJsonMode;
   element("#parameter-fields").hidden = truthJsonMode;
-  element("#truth-json-toggle").disabled = false;
-  element("#truth-json-toggle").textContent = truthJsonMode ? "use parameter form" : "edit as JSON";
+  const parameterFormsSupported = supportsParameterForms(schema);
+  element("#truth-json-toggle").disabled = !parameterFormsSupported;
+  element("#truth-json-toggle").textContent = parameterFormsSupported
+    ? truthJsonMode ? "use parameter form" : "edit as JSON"
+    : `JSON required for more than ${MAX_PARAMETER_FORM_FIELDS} parameters`;
   if (!designJsonMode) renderDesignPreviews(schema);
   renderPlanSummary();
 }
@@ -547,6 +724,13 @@ function renderAuthoring() {
 function buildDesignSlots(schema) {
   const container = element("#design-slots");
   container.replaceChildren();
+  if (schema.data.length > MAX_DESIGN_FORM_SLOTS) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = `JSON required for more than ${MAX_DESIGN_FORM_SLOTS} design slots.`;
+    container.append(hint);
+    return;
+  }
   if (schema.data.length === 0) {
     const hint = document.createElement("p");
     hint.className = "hint";
@@ -598,6 +782,13 @@ function buildDesignSlots(schema) {
 function buildParameterFields(schema) {
   const container = element("#parameter-fields");
   container.replaceChildren();
+  if (!supportsParameterForms(schema)) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = `JSON required for more than ${MAX_PARAMETER_FORM_FIELDS} parameters.`;
+    container.append(hint);
+    return;
+  }
   if (schema.parameters.length === 0) {
     const hint = document.createElement("p");
     hint.className = "hint";
@@ -705,13 +896,6 @@ function renderPlanSummary() {
     `draw(count=${count}, seed=${seed})\n  parameters: ${parameterSource}\n  design: ${designSource || "{}"}`;
 }
 
-// Integer slots (dimension sizes, index vectors) have no safe synthesized
-// default, so any non-float64 or non-vector slot keeps the whole design in
-// the JSON escape hatch.
-function supportsDesignForms(schema) {
-  return schema.data.every((slot) => slot.kind === "vector" && slot.dtype === "float64");
-}
-
 function entryOr(entries, name, fallback) {
   return Object.hasOwn(entries, name) ? entries[name] : fallback;
 }
@@ -725,22 +909,42 @@ function safeId(name) {
 async function compileModel() {
   const requestId = crypto.randomUUID();
   const sourceRevision = state.sourceRevision;
+  const priorIrHash = state.compile.status === "compiled"
+    ? state.compile.irHash
+    : state.compile.priorIrHash ?? null;
+  let completionRevision = sourceRevision;
+  const controller = runControllers.begin("compile", requestId);
   dispatch({ type: "compile-started", requestId, revision: sourceRevision });
+  if (state.compile.status !== "compiling" || state.compile.requestId !== requestId) return;
   try {
-    const result = await runtime.compile(state.source);
+    const result = await runtime.compile(state.source, { signal: controller.signal });
     if (result.ok) {
       if (state.compile.status !== "compiling" || state.compile.requestId !== requestId ||
           state.sourceRevision !== sourceRevision) return;
+      // A fresh interpreter can legitimately produce different bytes for the
+      // same source. Reuse the reducer's source invalidation transition so no
+      // fit or generation remains associated with the prior model bytes.
+      if (priorIrHash !== null && priorIrHash !== result.irHash) {
+        completionRevision = ++revision;
+        dispatch({
+          type: "source-edited", source: state.source, revision: completionRevision,
+        });
+        dispatch({
+          type: "compile-started", requestId, revision: completionRevision,
+        });
+      }
       configureAuthoring(result.modelSchema);
       dispatch({
-        type: "compile-succeeded", requestId, revision: sourceRevision,
+        type: "compile-succeeded", requestId, revision: completionRevision,
         irBytes: result.irBytes, irHash: result.irHash, modelSchema: result.modelSchema,
       });
     } else {
-      dispatch({ type: "compile-failed", requestId, revision: sourceRevision, error: result.traceback });
+      dispatch({ type: "compile-failed", requestId, revision: completionRevision, error: result.traceback });
     }
   } catch (error) {
-    dispatch({ type: "compile-failed", requestId, revision: sourceRevision, error: message(error) });
+    dispatch({ type: "compile-failed", requestId, revision: completionRevision, error: message(error) });
+  } finally {
+    runControllers.finish("compile", requestId);
   }
 }
 
@@ -787,10 +991,11 @@ async function generateCollection() {
   const requestId = crypto.randomUUID();
   dispatch({ type: "generation-started", requestId, dependencyKey, guard });
   if (state.generation.attempt.requestId !== requestId) return;
+  const controller = runControllers.begin("generation", requestId);
   try {
     const result = await runtime.run({
       type: "run", id: requestId, operation: "generate", plan,
-    });
+    }, undefined, { signal: controller.signal });
     const artifact = result.artifacts.find(
       (entry) => entry.name === "generated_datasets.ndjson",
     );
@@ -815,6 +1020,8 @@ async function generateCollection() {
     dispatch({
       type: "generation-failed", requestId, dependencyKey, error: message(error),
     });
+  } finally {
+    runControllers.finish("generation", requestId);
   }
 }
 
@@ -868,6 +1075,18 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     operation: "condition",
     datasetSource,
   });
+  if (state.run.status !== "running" || state.run.requestId !== requestId) {
+    dispatch({
+      type: "conditioning-failed",
+      requestId,
+      dependencyKey,
+      error: "Conditioning request became stale before launch",
+    });
+    return;
+  }
+  const controller = runControllers.begin("conditioning", requestId);
+  runControllers.reconcile(state);
+  if (controller.signal.aborted) return;
   try {
     const sampled = await runtime.run({
       type: "run",
@@ -877,7 +1096,9 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
       data: dataBytes,
       settings,
       ...(recoveryTruth === undefined ? {} : { pairedParameters: recoveryTruth }),
-    }, (event) => renderActiveProgress(requestId, projectRevision, event));
+    }, (event) => renderActiveProgress(requestId, projectRevision, event), {
+      signal: controller.signal,
+    });
     const posterior = sampled.artifacts.find((artifact) => artifact.name === "posterior.ndjson");
     if (posterior === undefined) throw new Error("Runtime returned no posterior artifact");
     const artifacts = [...sampled.artifacts];
@@ -901,6 +1122,8 @@ async function sampleData(dataBytes, datasetSource, recoveryTruth) {
     dispatch({
       type: "conditioning-failed", requestId, dependencyKey, error: message(error),
     });
+  } finally {
+    runControllers.finish("conditioning", requestId);
   }
 }
 
@@ -921,6 +1144,22 @@ function validDocument(text) {
   } catch {
     return false;
   }
+}
+
+function rawGenerationDocumentError(paramSource) {
+  if (state.compile.status !== "compiled") return null;
+  for (const [label, enabled, text] of [
+    ["Design JSON", designJsonMode, design.value],
+    ["Fixed parameter JSON", paramSource === "fixed" && truthJsonMode, truth.value],
+  ]) {
+    if (!enabled || text.trim() === "") continue;
+    try {
+      documentBytes(text);
+    } catch (error) {
+      return `${label}: ${message(error)}`;
+    }
+  }
+  return null;
 }
 
 async function bytesHash(bytes) {
@@ -972,15 +1211,17 @@ function validSeedSettings(settings = samplerSettings()) {
 // Upper bounds keep one submission tab-safe: each chain launches its own
 // wasm worker, and the engine itself enforces max_treedepth 1..20.
 function validSampleSettings(settings = samplerSettings()) {
-  return Number.isSafeInteger(settings.chains) && settings.chains >= 1 &&
-    settings.chains <= 8 &&
-    Number.isSafeInteger(settings.num_warmup) && settings.num_warmup >= 0 &&
-    settings.num_warmup <= 100000 &&
-    Number.isSafeInteger(settings.num_draws) && settings.num_draws >= 4 &&
-    settings.num_draws <= 100000 &&
+  return Number.isSafeInteger(settings.chains) &&
+    settings.chains >= MIN_SAMPLE_CHAINS && settings.chains <= MAX_SAMPLE_CHAINS &&
+    Number.isSafeInteger(settings.num_warmup) &&
+    settings.num_warmup >= MIN_SAMPLE_WARMUP &&
+    settings.num_warmup <= MAX_SAMPLE_WARMUP &&
+    Number.isSafeInteger(settings.num_draws) &&
+    settings.num_draws >= MIN_SAMPLE_DRAWS && settings.num_draws <= MAX_SAMPLE_DRAWS &&
     validSeedSettings(settings) &&
-    Number.isSafeInteger(settings.max_treedepth) && settings.max_treedepth >= 1 &&
-    settings.max_treedepth <= 20 &&
+    Number.isSafeInteger(settings.max_treedepth) &&
+    settings.max_treedepth >= MIN_SAMPLE_TREEDEPTH &&
+    settings.max_treedepth <= MAX_SAMPLE_TREEDEPTH &&
     Number.isFinite(settings.target_accept) && settings.target_accept > 0 &&
     settings.target_accept < 1;
 }
@@ -1015,6 +1256,7 @@ function renderProgress(event) {
 
 function dispatch(event) {
   state = reduce(state, event);
+  runControllers.reconcile(state);
   render();
 }
 
@@ -1078,6 +1320,13 @@ function render() {
   element("#fit-button").disabled = unavailable || !validSampleSettings() ||
     (datasetSource === "observed" && observed.value.trim() === "") ||
     (datasetSource === "generated" && !generatedAvailable);
+  const visibleAuthoringError = authoringError ?? rawGenerationDocumentError(paramSource);
+  const authoringErrorElement = element("#authoring-error");
+  authoringErrorElement.hidden = visibleAuthoringError === null;
+  authoringErrorElement.textContent = visibleAuthoringError ?? "";
+  const activeRun = state.compile.status === "compiling" ||
+    state.generation.attempt.status === "running" || state.run.status === "running";
+  element("#cancel-run").hidden = !activeRun;
   element("#run-status").textContent = state.generation.attempt.status === "running"
     ? "Generating paired datasets is running…"
     : state.run.status === "running" ? `${operationLabel(state.run.operation)} is running…` : "";

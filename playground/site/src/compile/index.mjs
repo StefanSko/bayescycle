@@ -2,6 +2,9 @@ const PROTOCOL_VERSION = 1;
 const DEFAULT_STARTUP_TIMEOUT_MS = 120_000;
 const DEFAULT_COMPILE_TIMEOUT_MS = 30_000;
 export const MAX_IR_BYTES = 8 * 1024 * 1024;
+export const MAX_MODEL_SOURCE_BYTES = 1024 * 1024;
+export const MAX_MODEL_SCHEMA_ENTRIES = 1024;
+export const MAX_MODEL_SCHEMA_TEXT_CHARACTERS = 512;
 
 /**
  * Source-only disposable compiler client. Every call owns one worker and the
@@ -23,6 +26,11 @@ export class CompilerClient {
   /** @param {string} source @param {{timeoutMs?: number, signal?: AbortSignal}} [options] */
   compile(source, options = {}) {
     if (typeof source !== "string") return Promise.reject(new TypeError("model source must be a string"));
+    if (exceedsUtf8Bytes(source, MAX_MODEL_SOURCE_BYTES)) {
+      return Promise.reject(new Error(
+        `Model source exceeds maximum UTF-8 size of ${MAX_MODEL_SOURCE_BYTES} bytes`,
+      ));
+    }
 
     let worker;
     try {
@@ -63,7 +71,8 @@ export class CompilerClient {
         dispose();
         resolve(value);
       };
-      const onAbort = () => fail(new Error("Model compilation was cancelled"));
+      const cancellationError = () => new Error("Model compilation was cancelled");
+      const onAbort = () => fail(cancellationError());
       const onError = (event) => fail(new Error(boundedMessage(event.message, "Compiler worker failed")));
       const onMessage = (event) => {
         const message = event.data;
@@ -99,9 +108,15 @@ export class CompilerClient {
           // Dispose the mutable interpreter before performing trusted hashing.
           dispose();
           void sha256(irBytes).then(
-            (irHash) => succeed({
-              ok: true, irBytes, irHash, modelSchema, executionContext: "worker",
-            }),
+            (irHash) => {
+              if (signal?.aborted === true) {
+                fail(cancellationError());
+                return;
+              }
+              succeed({
+                ok: true, irBytes, irHash, modelSchema, executionContext: "worker",
+              });
+            },
             fail,
           );
           return;
@@ -152,7 +167,7 @@ function validSuccess(value) {
     keys.every((key) => ["type", "id", "irBytes", "modelSchema", "irHash"].includes(key));
 }
 
-export function validateModelSchema(value) {
+export function validateModelSchema(value, maxSchemaBytes = MAX_IR_BYTES) {
   requireObjectKeys(value, ["schema_format", "parameters", "data", "observed"], "model schema");
   if (value.schema_format !== "bayescycle.playground.model-schema.v0") {
     throw malformedSchema("unsupported schema_format");
@@ -161,6 +176,13 @@ export function validateModelSchema(value) {
       !Array.isArray(value.observed)) {
     throw malformedSchema("parameters, data, and observed must be arrays");
   }
+  const entryCount = value.parameters.length + value.data.length + value.observed.length;
+  if (entryCount > MAX_MODEL_SCHEMA_ENTRIES) {
+    throw malformedSchema(
+      `parameters, data, and observed exceed ${MAX_MODEL_SCHEMA_ENTRIES} total entries`,
+    );
+  }
+  let shapeByteBudget = maxSchemaBytes;
   const parameterNames = new Set();
   const parameters = value.parameters.map((parameter, index) => {
     requireObjectKeys(
@@ -172,12 +194,28 @@ export function validateModelSchema(value) {
     if (typeof parameter.prior !== "string" || parameter.prior === "") {
       throw malformedSchema(`parameter ${index} prior must be non-empty text`);
     }
+    requireBoundedText(parameter.prior, `parameter ${index} prior`);
     if (parameter.constraint !== null && typeof parameter.constraint !== "string") {
       throw malformedSchema(`parameter ${index} constraint must be text or null`);
     }
-    if (!Array.isArray(parameter.shape) ||
-        !parameter.shape.every((dimension) => typeof dimension === "string" && dimension !== "")) {
+    if (parameter.constraint !== null) {
+      requireBoundedText(parameter.constraint, `parameter ${index} constraint`);
+    }
+    if (!Array.isArray(parameter.shape)) {
       throw malformedSchema(`parameter ${index} shape must contain non-empty strings`);
+    }
+    if (parameter.shape.length * 3 > shapeByteBudget) {
+      throw malformedSchema("parameter shapes exceed compiler output byte limit");
+    }
+    for (const dimension of parameter.shape) {
+      if (typeof dimension !== "string" || dimension === "") {
+        throw malformedSchema(`parameter ${index} shape must contain non-empty strings`);
+      }
+      requireBoundedText(dimension, `parameter ${index} shape dimension`);
+      shapeByteBudget -= utf8BytesUpTo(dimension, shapeByteBudget) + 3;
+      if (shapeByteBudget < 0) {
+        throw malformedSchema("parameter shapes exceed compiler output byte limit");
+      }
     }
     if (parameter.default !== null &&
         (typeof parameter.default !== "number" || !Number.isFinite(parameter.default))) {
@@ -218,10 +256,17 @@ function requireObjectKeys(value, expected, label) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw malformedSchema(`${label} must be an object`);
   }
-  const keys = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  if (JSON.stringify(keys) !== JSON.stringify(wanted)) {
-    throw malformedSchema(`${label} requires exactly ${wanted.join(", ")}`);
+  const wanted = new Set(expected);
+  let keyCount = 0;
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) continue;
+    keyCount += 1;
+    if (keyCount > expected.length || !wanted.has(key)) {
+      throw malformedSchema(`${label} requires exactly ${[...wanted].sort().join(", ")}`);
+    }
+  }
+  if (keyCount !== expected.length) {
+    throw malformedSchema(`${label} requires exactly ${[...wanted].sort().join(", ")}`);
   }
 }
 
@@ -229,8 +274,21 @@ function requireName(name, names, label) {
   if (typeof name !== "string" || name === "") {
     throw malformedSchema(`${label} name must be non-empty text`);
   }
+  requireBoundedText(name, `${label} name`);
   if (names.has(name)) throw malformedSchema(`duplicate name ${name}`);
   names.add(name);
+}
+
+function requireBoundedText(value, label) {
+  let characters = 0;
+  for (const _character of value) {
+    characters += 1;
+    if (characters > MAX_MODEL_SCHEMA_TEXT_CHARACTERS) {
+      throw malformedSchema(
+        `${label} exceeds ${MAX_MODEL_SCHEMA_TEXT_CHARACTERS} characters`,
+      );
+    }
+  }
 }
 
 function malformedSchema(detail) {
@@ -249,6 +307,28 @@ function validFailure(value) {
 async function sha256(bytes) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function utf8BytesUpTo(value, maximumBytes) {
+  let byteLength = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    byteLength += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 :
+      codePoint <= 0xffff ? 3 : 4;
+    if (byteLength > maximumBytes) return maximumBytes + 1;
+  }
+  return byteLength;
+}
+
+function exceedsUtf8Bytes(value, maximumBytes) {
+  let byteLength = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    byteLength += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 :
+      codePoint <= 0xffff ? 3 : 4;
+    if (byteLength > maximumBytes) return true;
+  }
+  return false;
 }
 
 function boundedMessage(value, fallback) {

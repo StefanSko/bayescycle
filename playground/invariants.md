@@ -34,8 +34,9 @@ document conflicts with this file, resolve the conflict before changing code.
 5. External-origin requests from compiler source are blocked by browser policy;
    worker API restrictions are defense in depth. Same-origin compiler fetches
    can reach only the playground's public static deployment.
-6. Compilation has explicit time and output-size bounds. Exceeding either
-   bound terminates the worker and produces a visible error.
+6. Compilation has explicit time, source-size, and output-size bounds. Model
+   source is rejected above 1 MiB of UTF-8 before a worker is created;
+   exceeding any compile bound produces a visible error.
 7. The compiler uses Bayeswire's ordinary canonical serializer. Application
    code does not clone Bayeswire private functions, freeze Python module
    graphs, or maintain a second canonical JSON serializer.
@@ -95,9 +96,17 @@ input to a later compilation.
     generation-setting, inference-setting, selected-draw, and fit revisions invalidate only their
     descendants. Unknown or stale asynchronous completions cannot mutate
     current state.
-11. A failed follow-up operation does not erase artifacts from an earlier
-    successful run.
-12. Capability failures are visible and bounded. The frontend never drops
+11. Each compile, generation, and fit attempt owns one cancellation signal.
+    One user cancellation ends every concurrently current attempt, and user
+    cancellation or reducer-decided invalidation terminates every engine worker
+    still owned by those attempts. The first failed sampling chain terminates
+    its in-flight siblings; cancellation never waits for sibling chains to
+    finish naturally or degrades into a partial-success warning.
+12. A failed or cancelled follow-up operation, including recompilation, does
+    not erase artifacts or fit lineage from an earlier successful run. A
+    successful compile with changed model bytes still invalidates prior run
+    descendants.
+13. Capability failures are visible and bounded. The frontend never drops
     score factors or claims that every scoreable model is ancestrally
     sampleable.
 
@@ -110,7 +119,21 @@ input to a later compilation.
 - Shared projects never compile automatically.
 - User-visible failures are bounded and actionable; malformed JSON, invalid
   settings, compile failures, and engine failures do not disappear into the
-  developer console.
+  developer console. The shared Cancel control is visible for compilation as
+  well as generation and fitting.
+- Share fragments are rejected above 65,536 compressed characters and are
+  decompressed as a stream with a 1 MiB output ceiling.
+- User data documents are rejected above 4 MiB of UTF-8 before JSON parsing.
+  Normalization accepts at most 32 nesting levels and 100,000 scalar values,
+  and flattening is linear in the accepted document size.
+- Compiler schemas contain at most 1,024 parameter, data, and observed entries
+  in total. Names, priors, constraints, and shape dimension names contain at
+  most 512 characters.
+  The UI renders parameter forms for at most 200 parameters and design cards
+  for at most 50 data slots; larger accepted schemas stay in JSON mode.
+- Sampling limits are enforced at the runtime boundary before worker dispatch,
+  not only by the UI: 1–8 chains, 0–100,000 warmup iterations, 4–100,000 draws,
+  and tree depth 1–20.
 
 ## Explicit non-guarantees
 
@@ -136,7 +159,11 @@ Tests must freeze these observable claims before implementation changes:
 - compiler requests contain source and protocol metadata only;
 - poisoning one worker cannot change a known corpus compile in the next worker;
 - the client, not the worker, hashes exact returned bytes;
-- stale, malformed, oversized, failed, and timed-out responses are bounded;
+- stale, malformed, oversized, failed, cancelled, and timed-out responses are bounded;
+- aborting or invalidating a run terminates all owned workers, and stale
+  post-abort completions remain inert;
+- compressed shares, decompressed shares, model source, data documents, and
+  compiler schemas enforce their stated bounds before unbounded work;
 - external-origin compiler requests are blocked in a real browser;
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
