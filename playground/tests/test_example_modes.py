@@ -346,3 +346,49 @@ def test_exact_length_design_slots_enforce_their_shape(page: Page, base_url: str
     expect(page.locator("#generate-button")).to_be_disabled()
     page.locator("#generation-seed").fill("0")
     expect(page.locator("#generate-button")).to_be_enabled()
+
+
+def test_oversized_static_design_length_is_not_scaffolded(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    # A known but over-budget static length must not allocate a giant
+    # placeholder during compile; the design stays empty instead.
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class OversizedDesign:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector(100001)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-data")).to_have_value("")
+    expect(page.locator("#generate-button")).to_be_disabled()
+
+
+def test_form_edited_design_survives_a_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    model = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class Lin:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + x, 1.0))\n"
+    )
+    page.locator("#model-source").fill(model)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-x")).to_be_visible(timeout=120_000)
+    page.locator("#design-expr-x").fill("[1.5, 2.5]")
+    # A form-authored design must survive a later source edit + recompile
+    # instead of being discarded as the untouched schema default.
+    page.locator("#model-source").fill(model + "# tweak\n")
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-data")).to_contain_text("1.5")
+    expect(page.locator("#design-data")).to_contain_text("2.5")
