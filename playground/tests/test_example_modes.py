@@ -61,7 +61,36 @@ def test_pasted_non_form_eligible_model_gets_schema_shaped_json_placeholder(
     page.locator("#compile-button").click()
     expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
     expect(page.locator("#design-json-toggle")).to_be_disabled()
-    expect(page.locator("#design-data")).to_have_value('{"n_cutpoints":0,"x":[]}')
+    expect(page.locator("#design-data")).to_have_value(
+        '{"format":"bayescycle.data.json.v1","variables":{'
+        '"n_cutpoints":{"dtype":"int64","shape":[],"values":[0]},'
+        '"x":{"dtype":"float64","shape":[0],"values":[]}}}'
+    )
+
+
+def test_non_eligible_placeholder_honors_exact_vector_lengths(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class FixedLenOrdinal:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector(3)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-json-field")).to_be_visible(timeout=120_000)
+    # The exact-length x slot gets a length-3 float64 placeholder, not [] —
+    # a shape-invalid design must not look runnable.
+    expect(page.locator("#design-data")).to_have_value(
+        '{"format":"bayescycle.data.json.v1","variables":{'
+        '"n_cutpoints":{"dtype":"int64","shape":[],"values":[0]},'
+        '"x":{"dtype":"float64","shape":[3],"values":[0,0,0]}}}'
+    )
 
 
 def test_scalar_design_slots_remain_in_the_json_escape_hatch(page: Page, base_url: str) -> None:
