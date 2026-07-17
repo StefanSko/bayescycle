@@ -52,6 +52,7 @@ let fixedValueEntries = {};
 let authoringError = null;
 let authoringRestore = { kind: "fresh" };
 let designDocumentIsSchemaDefault = false;
+let truthDocumentIsSchemaDefault = false;
 const examples = new Map();
 const objectUrls = new Set();
 const EXAMPLES_ROOT = new URL("../../examples/", import.meta.url);
@@ -70,6 +71,10 @@ source.addEventListener("input", () => {
     design.value = "";
     designDocumentIsSchemaDefault = false;
   }
+  if (truthDocumentIsSchemaDefault) {
+    truth.value = "";
+    truthDocumentIsSchemaDefault = false;
+  }
   authoringRestore = { kind: "fresh" };
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
@@ -83,6 +88,7 @@ design.addEventListener("input", () => {
 });
 truth.addEventListener("input", () => {
   truthJsonMode = true;
+  truthDocumentIsSchemaDefault = false;
   authoringError = null;
   generationInputsEdited();
 });
@@ -307,6 +313,7 @@ function setProject(project, restore = { kind: "documents" }) {
   }
   authoringRestore = restore;
   designDocumentIsSchemaDefault = false;
+  truthDocumentIsSchemaDefault = false;
   designJsonMode = true;
   truthJsonMode = true;
   authoringError = null;
@@ -466,7 +473,10 @@ function configureAuthoring(schema) {
       writeDesignDocumentFromEntries(schema);
       designDocumentIsSchemaDefault = true;
     }
-    if (!truthJsonMode) writeTruthDocumentFromEntries(schema);
+    if (!truthJsonMode) {
+      writeTruthDocumentFromEntries(schema);
+      truthDocumentIsSchemaDefault = true;
+    }
     generationInputsEdited();
   }
 }
@@ -960,6 +970,9 @@ function syncDesignForms() {
 function syncTruthForm() {
   const schema = state.compile.modelSchema;
   if (state.compile.status !== "compiled" || schema === undefined) return;
+  // A form edit makes the fixed values user-authored, so a later source edit
+  // preserves them rather than discarding them as the schema default.
+  truthDocumentIsSchemaDefault = false;
   writeTruthDocumentFromEntries(schema);
   generationInputsEdited();
 }
