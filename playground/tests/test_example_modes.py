@@ -446,3 +446,28 @@ def test_form_default_truth_is_rederived_after_source_edit(page: Page, base_url:
     expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
     expect(page.locator("#truth-data")).to_have_value(re.compile("gamma"))
     expect(page.locator("#truth-data")).not_to_have_value(re.compile("beta"))
+
+
+def test_form_edited_design_survives_recompile_then_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    model = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class Lin:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + x, 1.0))\n"
+    )
+    page.locator("#model-source").fill(model)
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-x")).to_be_visible(timeout=120_000)
+    page.locator("#design-expr-x").fill("[1.5, 2.5]")
+    # Recompile between the form edit and the source edit must not re-flag the
+    # user-authored design as a schema default.
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    page.locator("#model-source").fill(model + "# tweak\n")
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#design-data")).to_have_value(re.compile(r"1\.5.*2\.5"))
