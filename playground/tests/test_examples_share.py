@@ -159,3 +159,41 @@ def test_sharing_uncompiled_source_edits_omits_stale_form_state(page: Page, base
         expect(fresh.locator("#truth-json-field")).to_be_visible()
     finally:
         fresh.close()
+
+
+def test_legacy_share_stays_json_first_after_a_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    source = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class Lin:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + x, 1.0))\n"
+    )
+    payload = page.evaluate(
+        """async (source) => {
+          const { encodeProject } = await import('/site/src/app/share.mjs');
+          return encodeProject({
+            v: 1, source, observed: '', design: '', truth: '',
+            sampler: {chains: 1, num_warmup: 0, num_draws: 4, seed: 0,
+                      target_accept: 0.8, max_treedepth: 10},
+            generation: {seed: 0, count: 1},
+          });
+        }""",
+        source,
+    )
+    shared = page.context.browser.new_page()
+    try:
+        shared.goto(f"{base_url}/site/#project={payload}")
+        shared.locator("#load-shared").click()
+        # A recipient tweaks the source before compiling; the legacy share's
+        # carried documents must stay JSON-first, not be synthesized to forms.
+        shared.locator("#model-source").fill(source + "# tweak\n")
+        shared.locator("#compile-button").click()
+        expect(shared.locator("#ir-hash")).to_be_visible(timeout=120_000)
+        expect(shared.locator("#design-json-field")).to_be_visible()
+        expect(shared.locator("#design-slots")).to_be_hidden()
+    finally:
+        shared.close()
