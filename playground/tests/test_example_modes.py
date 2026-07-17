@@ -1,3 +1,5 @@
+import re
+
 from playwright.sync_api import Page, expect
 
 
@@ -390,5 +392,5 @@ def test_form_edited_design_survives_a_source_edit(page: Page, base_url: str) ->
     page.locator("#model-source").fill(model + "# tweak\n")
     page.locator("#compile-button").click()
     expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
-    expect(page.locator("#design-data")).to_contain_text("1.5")
-    expect(page.locator("#design-data")).to_contain_text("2.5")
+    # Assert on the textarea's value (its DOM text content is empty).
+    expect(page.locator("#design-data")).to_have_value(re.compile(r"1\.5.*2\.5"))
