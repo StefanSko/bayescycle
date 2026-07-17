@@ -79,7 +79,13 @@ source.addEventListener("input", () => {
     truth.value = "";
     truthDocumentIsSchemaDefault = false;
   }
-  authoringRestore = { kind: "fresh" };
+  // A shared restore keeps its carried documents authoritative (JSON-first)
+  // even after a source tweak; only stale shared form state is dropped. Other
+  // contexts re-derive authoring mode from the new schema.
+  authoringRestore =
+    authoringRestore.kind === "shared" || authoringRestore.kind === "shared-documents"
+      ? { kind: "shared-documents" }
+      : { kind: "fresh" };
   element("#progress").replaceChildren();
   dispatch({ type: "source-edited", source: source.value, revision: ++revision });
 });
