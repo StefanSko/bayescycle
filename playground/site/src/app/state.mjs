@@ -70,15 +70,21 @@ export function reduce(state, event) {
         fitDatasetSource: null,
         notice: null,
       });
-    case "compile-started":
+    case "compile-started": {
       if (event.revision !== state.sourceRevision) return state;
-      return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision }, run: { status: "idle" } });
+      // The last successfully compiled hash survives recompiles so a later
+      // success can detect that preserved lineage belongs to another model.
+      const priorIrHash = state.compile.status === "compiled"
+        ? state.compile.irHash
+        : state.compile.priorIrHash ?? null;
+      return freeze({ ...state, compile: { status: "compiling", requestId: event.requestId, revision: event.revision, priorIrHash }, run: { status: "idle" } });
+    }
     case "compile-succeeded":
       if (!matches(state.compile, event, "compiling") || event.revision !== state.sourceRevision) return state;
       return freeze({ ...state, compile: { status: "compiled", irBytes: event.irBytes, irHash: event.irHash, modelSchema: event.modelSchema, revision: event.revision }, run: { status: "idle" }, artifacts: [], fitDatasetSource: null });
     case "compile-failed":
       if (!matches(state.compile, event, "compiling")) return state;
-      return freeze({ ...state, compile: { status: "failed", error: event.error }, run: { status: "idle" } });
+      return freeze({ ...state, compile: { status: "failed", error: event.error, priorIrHash: state.compile.priorIrHash ?? null }, run: { status: "idle" } });
     case "run-started":
       if (event.revision !== state.projectRevision) return state;
       return freeze({ ...state, run: { status: "running", requestId: event.requestId, revision: event.revision, operation: event.operation, datasetSource: event.datasetSource ?? null }, notice: null });

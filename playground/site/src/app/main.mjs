@@ -909,7 +909,9 @@ function safeId(name) {
 async function compileModel() {
   const requestId = crypto.randomUUID();
   const sourceRevision = state.sourceRevision;
-  const priorIrHash = state.compile.status === "compiled" ? state.compile.irHash : null;
+  const priorIrHash = state.compile.status === "compiled"
+    ? state.compile.irHash
+    : state.compile.priorIrHash ?? null;
   let completionRevision = sourceRevision;
   const controller = runControllers.begin("compile", requestId);
   dispatch({ type: "compile-started", requestId, revision: sourceRevision });
