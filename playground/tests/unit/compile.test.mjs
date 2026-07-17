@@ -102,11 +102,18 @@ class LinearRegression:
     x = Data.vector()
     y = Observed(Normal(alpha + beta * x, sigma))
 `;
-      const result = await compileScenario(source, `@model
+      const [target, result] = await Promise.all([
+        compile(source),
+        compileScenario(source, `@model
 class SteepSlopes:
     beta = Param(Normal(3.0, 0.25))
-`);
+`),
+      ]);
+      assert(target.ok, `target compilation failed: ${target.traceback}`);
       assert(result.ok, `scenario compilation failed: ${result.traceback}`);
+      assert(result.targetIrHash === target.irHash, "scenario target hash changed");
+      assert(UTF8.decode(result.targetIrBytes) === UTF8.decode(target.irBytes),
+        "scenario target bytes changed");
       const document = JSON.parse(UTF8.decode(result.irBytes));
       const serialized = JSON.stringify(document);
       assert(serialized.includes('"name":"y"'), "composed IR lost the target outcome");
@@ -137,6 +144,94 @@ class Hierarchical:
       const names = result.modelSchema.parameters.map((parameter) => parameter.name);
       assert(names.indexOf("location") < names.indexOf("theta"),
         `hierarchical parameter order is not ancestral: ${names}`);
+    },
+  },
+  {
+    name: "scenario compile rejects source-declared data slots",
+    fn: async () => {
+      const source = `from bayeswire import Data, Observed, Param, model
+from bayeswire.distributions import Normal
+@model
+class Target:
+    beta = Param(Normal(0.0, 1.0))
+    x = Data.vector()
+    y = Observed(Normal(beta + x, 1.0))
+`;
+      const result = await compileScenario(source, `@model
+class DataPrior:
+    prior_location = Data.scalar()
+    beta = Param(Normal(prior_location, 0.25))
+`);
+      assert(!result.ok, "source data reached a composed generation model");
+      assert(result.message === "prior-only model must not declare data slots: prior_location",
+        `source data error changed: ${result.message}`);
+    },
+  },
+  {
+    name: "scenario compile rejects declared parameter dimension mismatches in every target order",
+    fn: async () => {
+      const target = (declarations) => `from bayeswire import Dim, Param, model
+from bayeswire.distributions import Normal
+target_axis = Dim("target_axis", coords=("a", "b"))
+@model
+class Target:
+${declarations}
+`;
+      const snippets = [
+        `source_axis = Dim("source_axis", coords=("a", "b"))
+@model
+class WrongDimensionName:
+    beta = Param(Normal(2.0, 0.5), size=2, dims=(source_axis,))
+`,
+        `target_axis = Dim("target_axis", coords=("a", "different"))
+@model
+class WrongCoordinates:
+    beta = Param(Normal(2.0, 0.5), size=2, dims=(target_axis,))
+`,
+      ];
+      for (const declarations of [
+        "    alpha = Param(Normal(0.0, 1.0), size=2, dims=(target_axis,))\n    beta = Param(Normal(0.0, 1.0), size=2, dims=(target_axis,))",
+        "    beta = Param(Normal(0.0, 1.0), size=2, dims=(target_axis,))\n    alpha = Param(Normal(0.0, 1.0), size=2, dims=(target_axis,))",
+      ]) {
+        for (const snippet of snippets) {
+          const result = await compileScenario(target(declarations), snippet);
+          assert(!result.ok, `dimension mismatch succeeded for target order: ${declarations}`);
+          assert(
+            result.message === "prior parameter 'beta' must match the target dimensions exactly",
+            `dimension error changed: ${result.message}`,
+          );
+        }
+      }
+    },
+  },
+  {
+    name: "scenario compile attributes shared-coordinate conflicts to authored support parameters",
+    fn: async () => {
+      const target = (declarations) => `from bayeswire import Dim, Param, model
+from bayeswire.distributions import Normal
+shared = Dim("shared", coords=("a", "b"))
+@model
+class Target:
+${declarations}
+`;
+      const snippet = `shared = Dim("shared", coords=("x", "y"))
+@model
+class HierarchicalPrior:
+    location = Param(Normal(2.0, 0.5), size=2, dims=(shared,))
+    beta = Param(Normal(location[0], 0.1))
+`;
+      for (const declarations of [
+        "    alpha = Param(Normal(0.0, 1.0), size=2, dims=(shared,))\n    beta = Param(Normal(0.0, 1.0))",
+        "    beta = Param(Normal(0.0, 1.0))\n    alpha = Param(Normal(0.0, 1.0), size=2, dims=(shared,))",
+      ]) {
+        const result = await compileScenario(target(declarations), snippet);
+        assert(!result.ok, `support coordinate conflict succeeded: ${declarations}`);
+        assert(
+          result.message ===
+            "prior parameter 'location' dimension 'shared' conflicts with target coordinates",
+          `support coordinate error changed: ${result.message}`,
+        );
+      }
     },
   },
   {

@@ -7,6 +7,7 @@ CASES = [
     "runtime owns the compiler adapter",
     "each compile owns a fresh source-only worker request",
     "each scenario compile owns a fresh bounded worker request",
+    "scenario target bytes are independently bounded hashed and checked",
     "worker terminates before success and declaration failure settle",
     "worker terminates on startup failure malformed response and worker error",
     "oversized compiler output is bounded before use",

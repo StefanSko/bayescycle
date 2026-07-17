@@ -84,7 +84,9 @@ def test_another_prior_simulates_composed_parameters_and_fits_original_model(
     page.locator("#param-source-other-prior").check()
     expect(page.locator("#prior-source")).to_be_visible()
     page.locator("#prior-source").fill(
-        "@model\nclass SteepSlopes:\n    beta = Param(Normal(3.0, 0.25))\n"
+        "@model\nclass SteepSlopes:\n"
+        "    location = Param(Normal(3.0, 0.2))\n"
+        "    beta = Param(Normal(location, 0.15))\n"
     )
     page.locator("#generation-count").fill("20")
     page.locator("#generation-seed").fill("17")
@@ -102,6 +104,7 @@ def test_another_prior_simulates_composed_parameters_and_fits_original_model(
         record["parameters"]["variables"]["beta"]["values"][0] for record in records[1:-1]
     ]
     assert 2.8 < sum(beta_values) / len(beta_values) < 3.2
+    assert all("location" in record["parameters"]["variables"] for record in records[1:-1])
 
     plan = page.locator("#artifact-generation-plan a").evaluate(
         "async (link) => JSON.parse(await window.__artifactBlobs.get(link.href).text())"
@@ -120,6 +123,15 @@ def test_another_prior_simulates_composed_parameters_and_fits_original_model(
     page.locator("#fit-button").click()
     expect(page.locator("#artifact-posterior")).to_be_visible(timeout=120_000)
     expect(page.locator("#artifact-recovery")).to_be_visible(timeout=120_000)
+    recovery = page.locator("#artifact-recovery a").evaluate(
+        "async (link) => JSON.parse(await window.__artifactBlobs.get(link.href).text())"
+    )
+    assert "beta" in recovery["target_order"]
+    assert "location" not in recovery["target_order"]
+    generated_after_fit = page.locator("#artifact-generated-datasets a").evaluate(
+        "async (link) => (await window.__artifactBlobs.get(link.href).text())"
+    )
+    assert generated_after_fit == generated
     expect(page.locator("#artifact-generation-model")).to_be_visible()
     model_hashes = page.evaluate(
         """async () => {

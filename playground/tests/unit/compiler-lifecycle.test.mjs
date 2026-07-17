@@ -1,4 +1,5 @@
 import * as compilerModule from "/site/src/compile/index.mjs";
+import { assertScenarioCompatible } from "/site/src/app/scenario.mjs";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -55,6 +56,11 @@ function readyThen(response) {
     queueMicrotask(() => worker.emit("message", { type: "ready", protocol: 1 }));
     return worker;
   };
+}
+
+async function hash(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function rejectedAfterTermination(promise, worker, expected) {
@@ -162,6 +168,53 @@ export default [
       } catch (error) { combinedMessage = String(error); }
       assert(combinedMessage.includes("together"), `combined cap was unclear: ${combinedMessage}`);
       assert(constructions === 0, "oversized scenario constructed a worker");
+    },
+  },
+  {
+    name: "scenario target bytes are independently bounded hashed and checked",
+    fn: async () => {
+      const composedBytes = new TextEncoder().encode('{"composed":true}');
+      const targetBytes = new TextEncoder().encode('{"target":"scenario"}');
+      const originalBytes = new TextEncoder().encode('{"target":"original"}');
+      let worker;
+      const compiler = client({
+        workerFactory: () => {
+          worker = readyThen((request) => ({
+            type: "compiled",
+            id: request.id,
+            irBytes: composedBytes.buffer.slice(0),
+            targetIrBytes: targetBytes.buffer.slice(0),
+            modelSchema: MODEL_SCHEMA,
+          }))();
+          return worker;
+        },
+      });
+      const result = await compiler.compileScenario("main", "prior");
+      assert(worker.terminated, "scenario result settled before worker termination");
+      assert(result.irHash === await hash(composedBytes), "composed bytes were not hashed");
+      assert(result.targetIrHash === await hash(targetBytes), "target bytes were not hashed");
+      assert(new TextDecoder().decode(result.targetIrBytes) === '{"target":"scenario"}',
+        "scenario target bytes changed");
+      let message = "";
+      try {
+        assertScenarioCompatible(
+          { irHash: await hash(originalBytes), modelSchema: MODEL_SCHEMA },
+          result,
+        );
+      } catch (error) { message = error.message; }
+      assert(message.includes("Recompile the model"), `divergent target was accepted: ${message}`);
+
+      let malformedWorker;
+      const malformed = client({ workerFactory: () => {
+        malformedWorker = readyThen((request) => ({
+          type: "compiled", id: request.id,
+          irBytes: composedBytes.buffer.slice(0), modelSchema: MODEL_SCHEMA,
+        }))();
+        return malformedWorker;
+      } });
+      await rejectedAfterTermination(
+        malformed.compileScenario("main", "prior"), malformedWorker, "malformed",
+      );
     },
   },
   {
