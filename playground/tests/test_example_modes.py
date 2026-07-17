@@ -394,3 +394,27 @@ def test_form_edited_design_survives_a_source_edit(page: Page, base_url: str) ->
     expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
     # Assert on the textarea's value (its DOM text content is empty).
     expect(page.locator("#design-data")).to_have_value(re.compile(r"1\.5.*2\.5"))
+
+
+def test_form_default_truth_is_rederived_after_source_edit(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    original = (
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class A:\n"
+        "    alpha = Param(Normal(0.0, 1.0))\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    x = Data.vector()\n"
+        "    y = Observed(Normal(alpha + beta * x, 1.0))\n"
+    )
+    page.locator("#model-source").fill(original)
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # Rename a parameter and recompile; the auto-written fixed-parameter
+    # default must re-derive for the new schema, not preserve stale bytes.
+    page.locator("#model-source").fill(original.replace("beta", "gamma"))
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    expect(page.locator("#truth-data")).to_have_value(re.compile("gamma"))
+    expect(page.locator("#truth-data")).not_to_have_value(re.compile("beta"))
