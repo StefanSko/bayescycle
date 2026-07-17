@@ -489,15 +489,30 @@ function defaultExpression(slot) {
   return `linspace(${DEFAULT_DESIGN_RANGE_START}, ${DEFAULT_DESIGN_RANGE_STOP}, ${slot.length ?? 25})`;
 }
 
+// A canonical document carries explicit dtype and shape, so a non-eligible
+// model's placeholder honors each slot's real length and type — a plain-JSON
+// placeholder cannot (JSON.parse collapses 0.0 to 0, inferring int64) and an
+// empty array for a fixed-length vector would pass validation yet be
+// shape-invalid.
 function defaultDesignDocument(schema) {
-  const value = {};
+  const variables = {};
   for (const slot of schema.data) {
-    const placeholder = slot.kind === "scalar"
-      ? slot.dtype === "bool" ? false : 0
-      : [];
-    defineOwn(value, slot.name, placeholder);
+    defineOwn(variables, slot.name, placeholderVariable(slot));
   }
-  return JSON.stringify(value);
+  return JSON.stringify({ format: "bayescycle.data.json.v1", variables });
+}
+
+function placeholderVariable(slot) {
+  const fill = slot.dtype === "bool" ? false : 0;
+  if (slot.kind === "scalar") {
+    return { dtype: slot.dtype, shape: [], values: [fill] };
+  }
+  const length = slot.kind === "vector" ? (slot.length ?? 0) : 0;
+  return {
+    dtype: slot.dtype,
+    shape: [length],
+    values: Array.from({ length }, () => fill),
+  };
 }
 
 function evaluateSlotValues(slot, expression) {
