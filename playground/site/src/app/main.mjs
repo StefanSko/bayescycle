@@ -1496,6 +1496,15 @@ function renderArtifacts(artifacts) {
     item.querySelector("a").href = url;
     item.hidden = false;
   }
+  // The generation run's manifest references model.ir.json; when both model
+  // artifacts are visible the fit model downloads under its own name so a
+  // flat downloads directory cannot shadow the manifested bytes.
+  const fitModelLink = element("#artifact-model a");
+  const fitDownloadName = element("#artifact-generation-model").hidden
+    ? "model.ir.json"
+    : "fit-model.ir.json";
+  fitModelLink.download = fitDownloadName;
+  fitModelLink.textContent = fitDownloadName;
   element("#artifacts").hidden = artifacts.length === 0;
   renderRecovery(artifacts);
   renderPlots(artifacts);
