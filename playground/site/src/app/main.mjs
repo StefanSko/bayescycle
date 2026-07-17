@@ -1315,12 +1315,26 @@ function observedDocumentBindsSchema(text, schema) {
   if (text.trim() === "") return false;
   try {
     const document = parseDocument(text);
-    return [...schema.data, ...schema.observed].every(
-      (slot) => Object.hasOwn(document.variables, slot.name),
-    );
+    for (const slot of [...schema.data, ...schema.observed]) {
+      if (!Object.hasOwn(document.variables, slot.name)) return false;
+      if (!observedShapeMatchesSlot(document.variables[slot.name].shape, slot)) return false;
+    }
+    return true;
   } catch {
     return false;
   }
+}
+
+// Validate the shape constraints the schema actually knows — scalars and
+// statically-fixed-length vectors. Dimension-linked vectors, observed slots,
+// and higher-rank slots carry no concrete shape here; the engine validates
+// those during binding.
+function observedShapeMatchesSlot(shape, slot) {
+  if (slot.kind === "scalar") return shape.length === 0;
+  if (slot.kind === "vector" && slot.length !== null) {
+    return shape.length === 1 && shape[0] === slot.length;
+  }
+  return true;
 }
 
 function rawGenerationDocumentError(paramSource) {
