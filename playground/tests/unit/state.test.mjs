@@ -463,6 +463,31 @@ export default [
     },
   },
   {
+    name: "failed recompiles retain the prior compiled hash for invalidation",
+    fn: () => {
+      let state = initialState();
+      state = reduce(state, { type: "source-edited", source: "model", revision: 1 });
+      state = reduce(state, { type: "compile-started", requestId: "initial", revision: 1 });
+      state = reduce(state, {
+        type: "compile-succeeded", requestId: "initial", revision: 1,
+        irBytes: new Uint8Array([1]), irHash: "hash-a", modelSchema: {},
+      });
+
+      state = reduce(state, { type: "compile-started", requestId: "retry", revision: 1 });
+      assert(state.compile.priorIrHash === "hash-a", "compiling state lost the prior hash");
+      state = reduce(state, {
+        type: "compile-failed", requestId: "retry", revision: 1, error: "cancelled",
+      });
+      assert(state.compile.priorIrHash === "hash-a", "failed state lost the prior hash");
+
+      state = reduce(state, { type: "compile-started", requestId: "again", revision: 1 });
+      assert(
+        state.compile.priorIrHash === "hash-a",
+        "recompile after failure lost the prior hash",
+      );
+    },
+  },
+  {
     name: "failed recompile preserves artifacts and fit lineage",
     fn: () => {
       let state = initialState();
