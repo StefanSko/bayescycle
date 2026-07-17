@@ -124,6 +124,12 @@ input to a later compilation.
 13. Capability failures are visible and bounded. The frontend never drops
     score factors or claims that every scoreable model is ancestrally
     sampleable.
+14. Each sampling-chain posterior response and the merged `posterior.ndjson`
+    are bounded to 64 MiB. An oversized chain is rejected in its engine worker
+    before transfer and again at the worker-message boundary; aggregate chain
+    bytes are checked before main-thread decode or merge. Rejection fails the
+    fit without publishing partial posterior, diagnostics, or recovery
+    artifacts.
 
 ## Browser application constraints
 
@@ -193,6 +199,9 @@ Tests must freeze these observable claims before implementation changes:
 - external-origin compiler requests are blocked in a real browser;
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
+- oversized chain and aggregate posterior output fails before main-thread
+  decode, merge, follow-up diagnostics, or artifact publication, while an
+  exactly 64 MiB chain response remains accepted;
 - project edits and stale completions obey the revisioned state contract;
 - empty schema-derived design defaults, non-empty pre-compile documents, source
   schema changes, and exact shared-authoring restores are separately covered

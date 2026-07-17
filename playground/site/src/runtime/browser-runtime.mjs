@@ -1,11 +1,13 @@
 import { CompilerClient } from "../compile/index.mjs";
 import {
   EngineError,
+  MAX_POSTERIOR_RESPONSE_BYTES,
   WorkerEngine,
   diagnose,
   generate,
   mergeChainFits,
   recoverCheck,
+  requirePosteriorResponseWithinLimit,
   sample,
 } from "../engine/index.mjs";
 import {
@@ -39,11 +41,27 @@ const UTF8 = new TextDecoder();
 const ENCODE = new TextEncoder();
 
 export class BrowserRuntime {
+  #maxPosteriorResponseBytes;
   #runtimeFits = new WeakSet();
 
-  constructor(executor = new WorkerEngine(), compiler = new CompilerClient()) {
+  constructor(
+    executor = new WorkerEngine(),
+    compiler = new CompilerClient(),
+    maxPosteriorResponseBytes = MAX_POSTERIOR_RESPONSE_BYTES,
+  ) {
+    if (
+      !Number.isSafeInteger(maxPosteriorResponseBytes) ||
+      maxPosteriorResponseBytes <= 0 ||
+      maxPosteriorResponseBytes > MAX_POSTERIOR_RESPONSE_BYTES
+    ) {
+      throw new RuntimeError(
+        "InvalidPosteriorLimit",
+        `posterior limit must be an integer in 1..${String(MAX_POSTERIOR_RESPONSE_BYTES)}`,
+      );
+    }
     this.executor = executor;
     this.compiler = compiler;
+    this.#maxPosteriorResponseBytes = maxPosteriorResponseBytes;
   }
 
   /** @param {string} source @param {{timeoutMs?: number, signal?: AbortSignal}} [options] */
@@ -338,9 +356,21 @@ export class BrowserRuntime {
     });
     if (!result.ok) throw runtimeError(result.error);
     requireNotCancelled(signal);
-    const streams = result.outputs.map((output) => UTF8.decode(output.rawBytes));
-    const merged = streams.length === 1 ? streams[0] : mergeChainFits(streams);
-    const posteriorBytes = ENCODE.encode(merged);
+    let totalBytes = 0;
+    for (const output of result.outputs) {
+      totalBytes += output.rawBytes.byteLength;
+      requirePosteriorResponseWithinLimit(totalBytes, this.#maxPosteriorResponseBytes);
+    }
+    const posteriorBytes = result.outputs.length === 1
+      ? Uint8Array.from(result.outputs[0].rawBytes)
+      : ENCODE.encode(mergeChainFits(
+          result.outputs.map((output) => UTF8.decode(output.rawBytes)),
+          this.#maxPosteriorResponseBytes,
+        ));
+    requirePosteriorResponseWithinLimit(
+      posteriorBytes.byteLength,
+      this.#maxPosteriorResponseBytes,
+    );
     const association = fitArtifact(modelBytes, dataBytes, posteriorBytes, "runtime");
     this.#runtimeFits.add(association);
     return {
@@ -383,6 +413,9 @@ function requireOutput(result) {
 }
 
 function runtimeError(error) {
+  if (error.error === "PosteriorTooLarge") {
+    return new EngineError(error.error, error.message);
+  }
   return new RuntimeError(error.error, error.message);
 }
 

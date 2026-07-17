@@ -37,8 +37,9 @@ formats retain their own compatibility policies.
   and duplicated documentation so maintained guidance has a clear owner.
 - Bound Playground model source, example sidecars, share decompression, JSON
   documents, runtime sampler settings, compiler schemas, schema-driven forms,
-  aggregate design previews, and dashboard SVG rendering so every accepted input
-  remains tab-safe and malformed or oversized input produces an actionable error.
+  aggregate design previews, dashboard SVG rendering, and per-chain plus merged
+  posterior output so every accepted input remains tab-safe and malformed or
+  oversized input produces an actionable error.
 
 ## [0.6.0] - 2026-07-15
 

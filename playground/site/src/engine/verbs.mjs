@@ -4,7 +4,12 @@ import {
   MAX_SAMPLE_CHAINS,
   MIN_SAMPLE_CHAINS,
 } from "../sampling-limits.mjs";
-import { EngineError } from "./types.mjs";
+import {
+  EngineError,
+  requirePosteriorResponseWithinLimit,
+} from "./types.mjs";
+
+const ENCODE = new TextEncoder();
 
 /**
  * @typedef {Record<string, unknown>} EngineDocument
@@ -138,7 +143,8 @@ export async function sbc(inputs) {
   });
 }
 
-export function mergeChainFits(fits) {
+/** @param {string[]} fits @param {number} [maximumBytes] */
+export function mergeChainFits(fits, maximumBytes) {
   const parsed = fits.map((fit, fitIndex) => {
     const lines = fit.trimEnd().split("\n");
     if (lines.length < 3) {
@@ -196,7 +202,16 @@ export function mergeChainFits(fits) {
     rhat: unavailableDiagnostics(first.trailer.parameter_order),
     ess: unavailableDiagnostics(first.trailer.parameter_order),
   };
-  return [header, ...draws, { trailer }].map((value) => JSON.stringify(value)).join("\n") + "\n";
+  let outputBytes = 0;
+  const lines = [header, ...draws, { trailer }].map((value) => {
+    const line = `${JSON.stringify(value)}\n`;
+    if (maximumBytes !== undefined) {
+      outputBytes += ENCODE.encode(line).byteLength;
+      requirePosteriorResponseWithinLimit(outputBytes, maximumBytes);
+    }
+    return line;
+  });
+  return lines.join("");
 }
 
 function arrayValue(value) {
