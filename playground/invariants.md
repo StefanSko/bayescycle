@@ -157,6 +157,10 @@ Browser v0 does not guarantee that:
 - arbitrary Python is safe or side-effect free;
 - compiler output semantically matches a reader's interpretation of source;
 - model source cannot alter its own compile result;
+- a prior-only snippet — trusted arbitrary Python at the same level as
+  model source — cannot alter the target it composes with; a composed
+  generation model is still hashed over its exact bytes, and conditioning
+  always fits the original compiled model, never the composed one;
 - worker termination erases browser storage explicitly written by hostile code;
 - a tab survives deliberate memory exhaustion or a browser/Pyodide exploit.
 
