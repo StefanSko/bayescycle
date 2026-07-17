@@ -35,4 +35,34 @@ export default [
       assert(Object.keys(truth).length === 5, "truth map has unexpected labels");
     },
   },
+  {
+    name: "recovery truth indexing preserves vector labels at scale",
+    fn: () => {
+      const parameterCount = 250;
+      const componentCount = 20;
+      const targetOrder = Array.from(
+        { length: parameterCount },
+        (_, parameter) => `theta_${parameter}`,
+      );
+      const targets = Object.fromEntries(targetOrder.map((name, parameter) => [
+        name,
+        {
+          truth: Array.from(
+            { length: componentCount },
+            (_, component) => parameter * componentCount + component,
+          ),
+        },
+      ]));
+      const labels = targetOrder.flatMap((name) =>
+        Array.from({ length: componentCount }, (_, component) => `${name}[${component}]`));
+      const truth = recoveryTruthMap({ target_order: targetOrder, targets }, labels);
+      assert(
+        Object.keys(truth).length === parameterCount * componentCount,
+        "large truth map component count differs",
+      );
+      assert(truth["theta_0[0]"] === 0, "first large truth value changed");
+      assert(truth["theta_127[9]"] === 2549, "middle large truth value changed");
+      assert(truth["theta_249[19]"] === 4999, "last large truth value changed");
+    },
+  },
 ];

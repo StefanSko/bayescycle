@@ -1,6 +1,8 @@
 import {
   average,
   divergenceVerdict,
+  MAX_DASHBOARD_PARAMETER_COMPONENTS,
+  prepareDashboardPlots,
   gaussianKde,
   quantile,
   rankHistogram,
@@ -96,6 +98,35 @@ export default [
         data.divergences === divergenceCount,
         `expected ${divergenceCount} divergences, got ${data.divergences}`,
       );
+    },
+  },
+  {
+    name: "dashboard plot preparation omits SVGs above component cap",
+    fn: () => {
+      assert(
+        MAX_DASHBOARD_PARAMETER_COMPONENTS === 200,
+        `dashboard component cap changed: ${MAX_DASHBOARD_PARAMETER_COMPONENTS}`,
+      );
+      const componentCount = MAX_DASHBOARD_PARAMETER_COMPONENTS + 1;
+      const coordinates = Array.from({ length: componentCount }, (_, index) => [index]);
+      const values = Array.from({ length: componentCount }, (_, index) => index / 10);
+      const posterior = [
+        JSON.stringify({ params: [{ name: "z", coordinate_order: coordinates }] }),
+        JSON.stringify({ chain: 0, values: { z: values }, energy: 0, diverging: false }),
+        JSON.stringify({ trailer: {} }),
+      ].join("\n");
+      const data = readDashboardData({ fits: [posterior], diagnose: {} });
+      assert(data.parameters.length === componentCount, "expanded component count differs");
+      const prepared = prepareDashboardPlots(data);
+      assert(prepared.kind === "omitted", "oversized dashboard was rendered");
+      assert(prepared.componentCount === componentCount, "omission count differs");
+      assert(
+        prepared.notice ===
+          "Posterior has 201 parameter components; plots are shown for models with at most 200.",
+        `dashboard omission notice differs: ${prepared.notice}`,
+      );
+      assert(!Object.hasOwn(prepared, "trank"), "oversized trank SVG was built");
+      assert(!Object.hasOwn(prepared, "precis"), "oversized precis SVG was built");
     },
   },
   {

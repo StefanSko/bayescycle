@@ -317,6 +317,34 @@ def test_form_aggregate_scalar_cap_surfaces_before_materialization(
     expect(page.locator("#generate-button")).to_be_disabled()
 
 
+def test_design_previews_omit_remaining_slots_after_aggregate_budget(
+    page: Page, base_url: str
+) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class PreviewBudget:\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    a = Data.vector()\n"
+        "    b = Data.vector()\n"
+        "    c = Data.vector()\n"
+        "    y = Observed(Normal(beta * (a + b + c), 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#design-expr-c")).to_be_visible(timeout=120_000)
+    page.locator("#design-expr-c").fill("range(1, 3)")
+    expect(page.locator("#design-preview-c")).to_contain_text("unknown function")
+
+    page.locator("#design-expr-a").fill("linspace(0, 1, 60000)")
+    page.locator("#design-expr-b").fill("linspace(0, 1, 60000)")
+    expect(page.locator("#design-preview-a")).to_contain_text("shape [60000]")
+    expect(page.locator("#design-preview-b")).to_have_text("preview omitted (too large)")
+    expect(page.locator("#design-preview-c")).to_have_text("preview omitted (too large)")
+    expect(page.locator("#design-expr-c")).not_to_have_class("invalid")
+
+
 def test_exact_length_design_slots_enforce_their_shape(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/site/")
     page.locator("#model-source").fill(

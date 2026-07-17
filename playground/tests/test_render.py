@@ -5,6 +5,7 @@ from playwright.sync_api import Page
 
 RENDER_CASES = [
     "readDashboardData shapes the fixture",
+    "dashboard plot preparation omits SVGs above component cap",
     "stats primitives",
     "every renderer is deterministic",
     "trank grid draws one panel per parameter",

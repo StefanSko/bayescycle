@@ -11,5 +11,6 @@ def test_recovery_summary(
     assert [result["name"] for result in results] == [
         "recovery summary displays engine-owned facts",
         "recovery truth map uses dashboard parameter labels",
+        "recovery truth indexing preserves vector labels at scale",
     ]
     assert all(result["ok"] for result in results), results

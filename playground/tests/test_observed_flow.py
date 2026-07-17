@@ -113,3 +113,28 @@ def test_ready_hint_validates_known_fixed_lengths(page: Page, base_url: str) -> 
     # A schema-correct document shows the cue.
     page.locator("#observed-data").fill('{"x":[1,2,3],"y":[0,0,0]}')
     expect(page.locator("#observed-ready-hint")).to_be_visible()
+
+
+def test_ready_hint_validates_known_integer_slot_dtypes(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.constraints import Ordered\n"
+        "from bayeswire.distributions import Normal, OrderedLogistic\n\n"
+        "@model\n"
+        "class Ord:\n"
+        "    n_cutpoints = Data.scalar()\n"
+        "    x = Data.vector(3)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    cutpoints = Param(Normal(0.0, 2.0), size=n_cutpoints, constraint=Ordered())\n"
+        "    y = Observed(OrderedLogistic(beta * x, cutpoints))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # n_cutpoints is an integer slot; a fractional value is a known dtype
+    # mismatch, so the cue stays hidden even with correct names/shapes.
+    page.locator("#observed-data").fill('{"n_cutpoints":2.5,"x":[1,2,3],"y":[0,1,2]}')
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+    # Integer n_cutpoints and integer x (accepted for the float slot) bind.
+    page.locator("#observed-data").fill('{"n_cutpoints":2,"x":[1,2,3],"y":[0,1,2]}')
+    expect(page.locator("#observed-ready-hint")).to_be_visible()
