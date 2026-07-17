@@ -16,15 +16,21 @@ export function recoveryTruthMap(report, parameterLabels = []) {
       !parameterLabels.every((label) => typeof label === "string")) {
     throw new Error("Recovery parameter labels are malformed");
   }
+  const labelsByParameter = new Map();
+  for (const label of parameterLabels) {
+    const bracket = label.indexOf("[");
+    const name = bracket === -1 ? label : label.slice(0, bracket);
+    const labels = labelsByParameter.get(name);
+    if (labels === undefined) labelsByParameter.set(name, [label]);
+    else labels.push(label);
+  }
   const truth = {};
   for (const name of report.target_order) {
     const target = report.targets[name];
     if (target === null || typeof target !== "object") {
       throw new Error(`Recovery target ${String(name)} is malformed`);
     }
-    const labels = parameterLabels.filter(
-      (label) => label === name || label.startsWith(`${name}[`),
-    );
+    const labels = labelsByParameter.get(name) ?? [];
     const values = flattenedTruth(target.truth, name);
     if (labels.length === values.length && labels.length > 0) {
       for (const [index, label] of labels.entries()) defineTruth(truth, label, values[index]);

@@ -150,6 +150,9 @@ input to a later compilation.
   most 512 characters.
   The UI renders parameter forms for at most 200 parameters and design cards
   for at most 50 data slots; larger accepted schemas stay in JSON mode.
+- Dashboard SVGs render only for posteriors with at most 200 expanded parameter
+  components. Design-form previews share a 100,000-scalar aggregate budget per
+  render pass; later previews are omitted once that budget is exhausted.
 - Sampling limits are enforced at the runtime boundary before worker dispatch,
   not only by the UI: 1–8 chains, 0–100,000 warmup iterations, 4–100,000 draws,
   and tree depth 1–20.
@@ -204,6 +207,8 @@ Tests must freeze these observable claims before implementation changes:
 - malformed, oversized, unsupported, and lineage-mismatched generation fails
   without deleting earlier artifacts;
 - selection and setting edits invalidate only their documented descendants;
+- dashboard component limits, linear recovery-truth matching, and aggregate
+  design-preview limits bound rendering work before SVG or preview expansion;
 - application/UI source contains no private generation command names.
 
 Behavioral changes follow strict RED then GREEN commits. A RED commit freezes a

@@ -14,7 +14,11 @@ import {
   modelPrior,
   posteriorOf,
 } from "../generation/plan.mjs";
-import { readDashboardData, renderEssRhat, renderPrecis, renderTrank } from "../dashboard/index.mjs";
+import {
+  dashboardPlotLimit,
+  prepareDashboardPlots,
+  readDashboardData,
+} from "../dashboard/index.mjs";
 import { BrowserRuntime } from "../runtime/browser-runtime.mjs";
 import {
   MAX_SAMPLE_CHAINS,
@@ -566,7 +570,10 @@ function placeholderVariable(slot) {
 }
 
 function evaluateSlotValues(slot, expression) {
-  const values = evaluateDesignExpression(expression);
+  return requireSlotLength(slot, evaluateDesignExpression(expression));
+}
+
+function requireSlotLength(slot, values) {
   if (slot.length !== null && values.length !== slot.length) {
     throw new Error(`${slot.name} needs exactly ${slot.length} values, got ${values.length}`);
   }
@@ -978,12 +985,29 @@ function syncTruthForm() {
 }
 
 function renderDesignPreviews(schema) {
+  let previewScalarCount = 0;
+  let previewBudgetExceeded = false;
   for (const slot of schema.data) {
     const input = document.getElementById(`design-expr-${safeId(slot.name)}`);
     const preview = document.getElementById(`design-preview-${safeId(slot.name)}`);
     if (input === null || preview === null) continue;
+    if (previewBudgetExceeded) {
+      input.classList.remove("invalid");
+      preview.classList.remove("invalid");
+      preview.textContent = "preview omitted (too large)";
+      continue;
+    }
     try {
-      const values = evaluateSlotValues(slot, input.value);
+      const values = evaluateDesignExpression(input.value);
+      previewScalarCount += values.length;
+      if (previewScalarCount > MAX_DOCUMENT_SCALARS) {
+        previewBudgetExceeded = true;
+        input.classList.remove("invalid");
+        preview.classList.remove("invalid");
+        preview.textContent = "preview omitted (too large)";
+        continue;
+      }
+      requireSlotLength(slot, values);
       const shown = values.slice(0, 8).map((value) => Number(value).toFixed(2)).join(", ");
       input.classList.remove("invalid");
       preview.classList.remove("invalid");
@@ -1317,7 +1341,9 @@ function observedDocumentBindsSchema(text, schema) {
     const document = parseDocument(text);
     for (const slot of [...schema.data, ...schema.observed]) {
       if (!Object.hasOwn(document.variables, slot.name)) return false;
-      if (!observedShapeMatchesSlot(document.variables[slot.name].shape, slot)) return false;
+      const variable = document.variables[slot.name];
+      if (!observedShapeMatchesSlot(variable.shape, slot)) return false;
+      if (!observedDtypeMatchesSlot(variable.dtype, slot)) return false;
     }
     return true;
   } catch {
@@ -1335,6 +1361,20 @@ function observedShapeMatchesSlot(shape, slot) {
     return shape.length === 1 && shape[0] === slot.length;
   }
   return true;
+}
+
+const INTEGER_DTYPES = ["int32", "int64"];
+const FLOAT_DTYPES = ["float32", "float64"];
+
+// A data slot's schema dtype constrains what binds: an integer slot rejects
+// float observed values, a float slot accepts integer or float (the engine
+// coerces integers up), and bool requires bool. Observed slots carry no dtype
+// in the schema, so they are left to the engine.
+function observedDtypeMatchesSlot(observedDtype, slot) {
+  if (slot.dtype === undefined) return true;
+  if (slot.dtype === "bool") return observedDtype === "bool";
+  if (INTEGER_DTYPES.includes(slot.dtype)) return INTEGER_DTYPES.includes(observedDtype);
+  return INTEGER_DTYPES.includes(observedDtype) || FLOAT_DTYPES.includes(observedDtype);
 }
 
 function rawGenerationDocumentError(paramSource) {
@@ -1650,16 +1690,25 @@ function renderPlots(artifacts) {
   const diagnostics = artifacts.find((artifact) => artifact.name === "diagnostics.json");
   const plots = element("#plots");
   const plotGrid = element("#plot-grid");
+  const truncatedNotice = element("#plots-truncated-notice");
+  truncatedNotice.hidden = true;
   if (posterior === undefined || diagnostics === undefined) {
     plotGrid.hidden = true;
     plots.hidden = !artifacts.some((artifact) => artifact.name === "recovery_check.json");
-    for (const selector of ["#plot-trank", "#plot-ess-rhat", "#plot-precis"]) {
-      element(selector).replaceChildren();
-    }
+    clearDashboardPlots();
     return;
   }
   try {
     const data = readDashboardData({ fits: [posterior.bytes], diagnose: diagnostics.bytes });
+    const plotLimit = dashboardPlotLimit(data);
+    if (plotLimit.kind === "omitted") {
+      clearDashboardPlots();
+      truncatedNotice.textContent = plotLimit.notice;
+      truncatedNotice.hidden = false;
+      plotGrid.hidden = true;
+      plots.hidden = false;
+      return;
+    }
     const recovery = artifacts.find((artifact) => artifact.name === "recovery_check.json");
     const truth = recovery === undefined
       ? undefined
@@ -1667,16 +1716,25 @@ function renderPlots(artifacts) {
           JSON.parse(new TextDecoder().decode(recovery.bytes)),
           data.parameters.map((parameter) => parameter.label),
         );
-    element("#plot-trank").innerHTML = renderTrank(data);
-    element("#plot-ess-rhat").innerHTML = renderEssRhat(data);
-    element("#plot-precis").innerHTML = renderPrecis(data, truth);
+    const rendered = prepareDashboardPlots(data, truth);
+    if (rendered.kind !== "rendered") throw new Error("Dashboard plot limit changed");
+    element("#plot-trank").innerHTML = rendered.trank;
+    element("#plot-ess-rhat").innerHTML = rendered.essRhat;
+    element("#plot-precis").innerHTML = rendered.precis;
     plotGrid.hidden = false;
     plots.hidden = false;
   } catch (error) {
+    clearDashboardPlots();
     plotGrid.hidden = true;
     plots.hidden = !artifacts.some((artifact) => artifact.name === "recovery_check.json");
     element("#run-error").hidden = false;
     element("#run-error").textContent = `Artifacts downloaded, but plots could not render: ${message(error)}`;
+  }
+}
+
+function clearDashboardPlots() {
+  for (const selector of ["#plot-trank", "#plot-ess-rhat", "#plot-precis"]) {
+    element(selector).replaceChildren();
   }
 }
 
