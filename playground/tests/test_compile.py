@@ -10,6 +10,7 @@ CASES = [
     "scenario compile rejects source-declared data slots",
     "scenario compile rejects declared parameter dimension mismatches in every target order",
     "scenario compile attributes shared-coordinate conflicts to authored support parameters",
+    "scenario compile rejects unused prior parameters on the complete path",
     "scenario compile reports prior-only model counts and unknown names",
     "scenario compile retains target outcome dimensions",
     "scenario compile rejects forbidden prior-only factors verbatim",

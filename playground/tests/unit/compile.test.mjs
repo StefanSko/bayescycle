@@ -235,6 +235,34 @@ class HierarchicalPrior:
     },
   },
   {
+    name: "scenario compile rejects unused prior parameters on the complete path",
+    fn: async () => {
+      const source = `from bayeswire import Param, model
+from bayeswire.distributions import Normal
+@model
+class Target:
+    theta = Param(Normal(0.0, 1.0))
+`;
+      const typo = await compileScenario(
+        source,
+        "@model\nclass Typo:\n    theta = Param(Normal(1.0, 1.0))\n    theeta = Param(Normal(2.0, 1.0))\n",
+      );
+      assert(!typo.ok, "unused prior parameter was accepted on the complete path");
+      assert(
+        typo.message.includes("theeta"),
+        `unused-parameter error does not name the typo: ${typo.message}`,
+      );
+      const hierarchical = await compileScenario(
+        source,
+        "@model\nclass Hierarchical:\n    location = Param(Normal(3.0, 1.0))\n    theta = Param(Normal(location, 0.5))\n",
+      );
+      assert(
+        hierarchical.ok,
+        `supporting hierarchical parameter was rejected: ${hierarchical.message}`,
+      );
+    },
+  },
+  {
     name: "scenario compile reports prior-only model counts and unknown names",
     fn: async () => {
       const source = `from bayeswire import Param, model
