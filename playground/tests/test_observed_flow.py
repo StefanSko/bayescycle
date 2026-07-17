@@ -91,3 +91,25 @@ def test_observed_model_to_artifacts(page: Page, base_url: str) -> None:
 
     page.locator("#examples-menu").select_option("linear-simulation")
     expect(page.locator("#progress")).to_be_empty()
+
+
+def test_ready_hint_validates_known_fixed_lengths(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class FixedObs:\n"
+        "    x = Data.vector(3)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(beta * x, 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # x is a fixed-length vector(3); a 2-element x is a known shape mismatch,
+    # so the cue must stay hidden even though both names are present.
+    page.locator("#observed-data").fill('{"x":[1,2],"y":[0,0]}')
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+    # A schema-correct document shows the cue.
+    page.locator("#observed-data").fill('{"x":[1,2,3],"y":[0,0,0]}')
+    expect(page.locator("#observed-ready-hint")).to_be_visible()
