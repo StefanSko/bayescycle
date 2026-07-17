@@ -138,3 +138,23 @@ def test_ready_hint_validates_known_integer_slot_dtypes(page: Page, base_url: st
     # Integer n_cutpoints and integer x (accepted for the float slot) bind.
     page.locator("#observed-data").fill('{"n_cutpoints":2,"x":[1,2,3],"y":[0,1,2]}')
     expect(page.locator("#observed-ready-hint")).to_be_visible()
+
+
+def test_ready_hint_rejects_extra_observed_variables(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/site/")
+    page.locator("#model-source").fill(
+        "from bayeswire import Data, Observed, Param, model\n"
+        "from bayeswire.distributions import Normal\n\n"
+        "@model\n"
+        "class FixedObs:\n"
+        "    x = Data.vector(3)\n"
+        "    beta = Param(Normal(0.0, 1.0))\n"
+        "    y = Observed(Normal(beta * x, 1.0))\n"
+    )
+    page.locator("#compile-button").click()
+    expect(page.locator("#ir-hash")).to_be_visible(timeout=120_000)
+    # An unexpected variable is rejected at binding; the cue must stay hidden.
+    page.locator("#observed-data").fill('{"x":[1,2,3],"y":[0,0,0],"junk":[1]}')
+    expect(page.locator("#observed-ready-hint")).to_be_hidden()
+    page.locator("#observed-data").fill('{"x":[1,2,3],"y":[0,0,0]}')
+    expect(page.locator("#observed-ready-hint")).to_be_visible()
