@@ -21,7 +21,7 @@ def test_observed_ready_hint_requires_valid_settings_and_required_variables(
     page.locator("#compile-button").click()
     expect(page.locator("#observed-ready-hint")).to_be_visible(timeout=120_000)
     expect(page.locator("#observed-ready-hint")).to_have_text(
-        "Ready to fit — no simulate run needed."
+        "No simulate run needed — fit this observed data directly."
     )
 
     page.locator("#chains").fill("0")
