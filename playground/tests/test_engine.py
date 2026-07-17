@@ -9,6 +9,7 @@ CASES = [
     "sample yields one output per chain and streams draws",
     "diagnose merges the two chain fits",
     "merged fits never retain first-chain diagnostics",
+    "merged fit serialization enforces its byte ceiling",
     "malformed IR returns a typed engine error",
     "exports the six retained verbs including native generation",
 ]

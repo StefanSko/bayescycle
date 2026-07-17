@@ -9,6 +9,8 @@ def test_engine_worker_message_boundary(
 ) -> None:
     results = run_suite(page, base_url, "engine-boundary")
     assert [result["name"] for result in results] == [
+        "oversized posterior response is typed and terminates its worker before decode",
+        "posterior response at exactly the byte ceiling is accepted",
         "engine worker rejects malformed and unknown responses",
         "first chain failure and run abort terminate sibling workers",
         "aborting an engine execution terminates its worker with a typed cancellation",

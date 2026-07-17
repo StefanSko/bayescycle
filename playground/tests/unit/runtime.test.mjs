@@ -590,6 +590,36 @@ export default [
     },
   },
   {
+    name: "runtime rejects aggregate posterior bytes before decode or artifact publication",
+    fn: async () => {
+      const calls = [];
+      const executor = {
+        execute: async (request) => {
+          calls.push(request.command);
+          return { rawBytes: new Uint8Array(600 * 1024) };
+        },
+      };
+      const runtime = new BrowserRuntime(executor, undefined, 1024 * 1024);
+      let result;
+      let error;
+      try {
+        result = await runtime.run({
+          operation: "condition",
+          modelIr: bytes('{"bayeswire_ir":1}'),
+          data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+          settings: { chains: 2, num_warmup: 0, num_draws: 4 },
+        });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.error === "PosteriorTooLarge", `aggregate response was not typed: ${String(error)}`);
+      assert(error.message === "Posterior exceeds the 1 MiB browser limit; reduce parameters or draws.",
+        `aggregate response was not actionable: ${error?.message}`);
+      assert(result === undefined, "oversized conditioning published a partial result");
+      assert(calls.join(",") === "sample,sample", `follow-up artifacts ran: ${calls.join(",")}`);
+    },
+  },
+  {
     name: "runtime rejects out-of-range sampling settings before executor dispatch",
     fn: async () => {
       for (const settings of [

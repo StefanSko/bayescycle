@@ -186,6 +186,35 @@ export default [
     },
   },
   {
+    name: "merged fit serialization enforces its byte ceiling",
+    fn: () => {
+      const fit = (chain) => [
+        { chain_count: 1, chain_order: [chain], draw_count: 1 },
+        { chain, draw_index: 0, values: { alpha: chain } },
+        {
+          trailer: {
+            chain_count: 1,
+            chain_order: [chain],
+            draw_count: 1,
+            parameter_order: ["alpha"],
+            chains: [{ chain, draw_count: 1 }],
+          },
+        },
+      ].map((value) => JSON.stringify(value)).join("\n") + "\n";
+      const fits = [fit(0), fit(1)];
+      const merged = mergeChainFits(fits);
+      const exactBytes = new TextEncoder().encode(merged).byteLength;
+      assert(mergeChainFits(fits, exactBytes) === merged, "exact merged ceiling was rejected");
+      let error;
+      try {
+        mergeChainFits(fits, exactBytes - 1);
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.error === "PosteriorTooLarge", `oversized merge was not typed: ${String(error)}`);
+    },
+  },
+  {
     name: "malformed IR returns a typed engine error",
     fn: async () => {
       const [executor, dataText] = await Promise.all([

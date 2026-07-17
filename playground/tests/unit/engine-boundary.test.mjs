@@ -1,7 +1,16 @@
 import { WorkerEngine } from "/site/src/engine/executor.mjs";
+import { MAX_POSTERIOR_RESPONSE_BYTES } from "/site/src/engine/types.mjs";
 import { sample } from "/site/src/engine/verbs.mjs";
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
+
+class ReportedBytes extends Uint8Array {
+  constructor(byteLength) {
+    super(0);
+    this.reportedByteLength = byteLength;
+  }
+  get byteLength() { return this.reportedByteLength; }
+}
 
 class FakeWorker {
   constructor(response) {
@@ -35,6 +44,48 @@ async function rejectsBounded(response) {
 }
 
 export default [{
+  name: "oversized posterior response is typed and terminates its worker before decode",
+  fn: async () => {
+    let worker;
+    const engine = new WorkerEngine("test", "wasm", "metadata", () => {
+      worker = new FakeWorker((request) => ({
+        type: "result",
+        id: request.id,
+        chainId: 0,
+        rawBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES + 1),
+      }));
+      return worker;
+    });
+    let error;
+    try {
+      await engine.execute({ command: "sample" });
+    } catch (reason) {
+      error = reason;
+    }
+    assert(error?.error === "PosteriorTooLarge", `oversized response was not typed: ${String(error)}`);
+    assert(error.message === "Posterior exceeds the 64 MiB browser limit; reduce parameters or draws.",
+      `oversized response was not actionable: ${error?.message}`);
+    assert(worker.terminated, "oversized response retained its worker");
+  },
+}, {
+  name: "posterior response at exactly the byte ceiling is accepted",
+  fn: async () => {
+    let worker;
+    const engine = new WorkerEngine("test", "wasm", "metadata", () => {
+      worker = new FakeWorker((request) => ({
+        type: "result",
+        id: request.id,
+        chainId: 0,
+        rawBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES),
+      }));
+      return worker;
+    });
+    const output = await engine.execute({ command: "sample" });
+    assert(output.rawBytes.byteLength === MAX_POSTERIOR_RESPONSE_BYTES,
+      `exact ceiling changed: ${String(output.rawBytes.byteLength)}`);
+    assert(worker.terminated, "successful exact-ceiling worker survived");
+  },
+}, {
   name: "engine worker rejects malformed and unknown responses",
   fn: async () => {
     await rejectsBounded(() => null);
