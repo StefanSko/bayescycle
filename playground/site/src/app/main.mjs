@@ -1339,7 +1339,14 @@ function observedDocumentBindsSchema(text, schema) {
   if (text.trim() === "") return false;
   try {
     const document = parseDocument(text);
-    for (const slot of [...schema.data, ...schema.observed]) {
+    const slots = [...schema.data, ...schema.observed];
+    const expected = new Set(slots.map((slot) => slot.name));
+    // An unexpected variable is rejected at binding, so the cue must not claim
+    // readiness for a document whose names do not match the schema exactly.
+    for (const name of Object.keys(document.variables)) {
+      if (!expected.has(name)) return false;
+    }
+    for (const slot of slots) {
       if (!Object.hasOwn(document.variables, slot.name)) return false;
       const variable = document.variables[slot.name];
       if (!observedShapeMatchesSlot(variable.shape, slot)) return false;
