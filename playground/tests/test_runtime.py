@@ -7,6 +7,7 @@ CASES = [
     "fixed and model-prior plans lower to one exact native request",
     "runtime publishes and verifies composed-prior authored provenance",
     "runtime rejects caller asserted posterior association",
+    "runtime association uses the fit identity captured during snapshotting",
     "runtime snapshots structural generation plan bytes before reuse",
     "publication guard and portable validation enforce the 8 MiB source cap",
     "generation abort after engine output rejects before publication",

@@ -343,6 +343,80 @@ export default [
     },
   },
   {
+    name: "runtime association uses the fit identity captured during snapshotting",
+    fn: async () => {
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const data = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const issuedPosterior = runtimePosteriorBytes();
+      const unissuedDocuments = UTF8.decode(issuedPosterior).trimEnd().split("\n")
+        .map((line) => JSON.parse(line));
+      unissuedDocuments[0].padding = "unissued-runtime-fit";
+      const unissuedPosterior = bytes(
+        unissuedDocuments.map((document) => JSON.stringify(document)).join("\n") + "\n",
+      );
+      let generationRequests = 0;
+      const runtime = new BrowserRuntime({
+        execute: async (request) => {
+          if (request.command === "sample") return { rawBytes: issuedPosterior };
+          if (request.command === "generate") {
+            generationRequests += 1;
+            return { rawBytes: generatedOutput(request) };
+          }
+          return { rawBytes: bytes("{}") };
+        },
+      });
+      const conditioned = await runtime.run({
+        operation: "condition",
+        modelIr: model,
+        data,
+        settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      });
+      const genuineFit = conditioned.fitArtifact;
+      const unissuedFit = {
+        kind: "fit-artifact",
+        modelIrBytes: model,
+        dataBytes: data,
+        posteriorBytes: unissuedPosterior,
+        association: "runtime",
+      };
+      let fitArtifactReads = 0;
+      const parameters = {
+        kind: "posterior",
+        get fitArtifact() {
+          fitArtifactReads += 1;
+          return fitArtifactReads === 1 ? unissuedFit : genuineFit;
+        },
+      };
+      const plan = {
+        kind: "draw",
+        count: 1,
+        seed: 0,
+        distribution: {
+          kind: "joint-predict",
+          parameters,
+          outcomes: {
+            kind: "model-outcomes",
+            modelIrBytes: model,
+            designBytes: design,
+          },
+        },
+      };
+      let error;
+      try {
+        await runtime.run({ operation: "generate", plan });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.kind === "InvalidFitAssociation",
+        `unissued snapshot fit was accepted: ${String(error)}`);
+      assert(generationRequests === 0,
+        `engine received the unissued posterior ${generationRequests} times`);
+      assert(fitArtifactReads === 1,
+        `fitArtifact getter was read ${fitArtifactReads} times`);
+    },
+  },
+  {
     name: "runtime snapshots structural generation plan bytes before reuse",
     fn: async () => {
       const firstModel = bytes('{"bayeswire_ir":1,"model":{"name":"first"}}\n');
