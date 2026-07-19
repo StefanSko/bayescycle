@@ -34,7 +34,7 @@ def test_stale_example_load_cannot_overwrite_latest_selection(page: Page, base_u
     )
     page.goto(f"{base_url}/site/")
     menu = page.locator("#examples-menu")
-    expect(menu.locator("option")).to_have_count(4)
+    expect(menu.locator("option")).to_have_count(5)
     menu.select_option("eight-schools")
     menu.select_option("linear-simulation")
     expect(page.locator("#model-source")).to_contain_text("LinearRegression")
