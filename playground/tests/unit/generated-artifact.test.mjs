@@ -4,6 +4,7 @@ import {
   parseGeneratedDatasets,
   verifyGeneratedDatasets,
 } from "/site/src/generation/artifact.mjs";
+import { MAX_GENERATION_INPUT_BYTES } from "/site/src/generation/limits.mjs";
 import { validatePortablePosterior } from "/site/src/generation/posterior-source.mjs";
 
 const UTF8 = new TextEncoder();
@@ -18,6 +19,14 @@ const DATASET_0 = '{"format":"bayescycle.data.json.v1","variables":{"x":{"dtype"
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+class ReportedBytes extends Uint8Array {
+  constructor(byteLength) {
+    super(0);
+    this.reportedByteLength = byteLength;
+  }
+  get byteLength() { return this.reportedByteLength; }
 }
 
 async function fixtureBytes() {
@@ -406,6 +415,16 @@ export default [
           modelBytes: model, dataBytes: data, posteriorBytes: UTF8.encode(changed),
         }), expected);
       }
+    },
+  },
+  {
+    name: "portable posterior source retains the 8 MiB generation input bound",
+    fn: async () => {
+      await rejects(() => validatePortablePosterior({
+        modelBytes: MODEL_BYTES,
+        dataBytes: FIT_DATA_BYTES,
+        posteriorBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1),
+      }), "portable posterior source exceeds its byte bound");
     },
   },
   {

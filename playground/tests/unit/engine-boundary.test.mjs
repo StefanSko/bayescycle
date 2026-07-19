@@ -1,5 +1,5 @@
 import { WorkerEngine } from "/site/src/engine/executor.mjs";
-import { MAX_GENERATION_INPUT_BYTES } from "/site/src/generation/limits.mjs";
+import { MAX_POSTERIOR_RESPONSE_BYTES } from "/site/src/engine/types.mjs";
 import { sample } from "/site/src/engine/verbs.mjs";
 
 function assert(condition, message) { if (!condition) throw new Error(message); }
@@ -44,7 +44,7 @@ async function rejectsBounded(response) {
 }
 
 export default [{
-  name: "8 MiB plus one posterior response is typed and terminates its worker before decode",
+  name: "64 MiB plus one posterior response is typed and terminates its worker before decode",
   fn: async () => {
     let worker;
     const engine = new WorkerEngine("test", "wasm", "metadata", () => {
@@ -52,7 +52,7 @@ export default [{
         type: "result",
         id: request.id,
         chainId: 0,
-        rawBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1),
+        rawBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES + 1),
       }));
       return worker;
     });
@@ -63,12 +63,12 @@ export default [{
       error = reason;
     }
     assert(error?.error === "PosteriorTooLarge", `oversized response was not typed: ${String(error)}`);
-    assert(error.message === "Posterior exceeds the 8 MiB browser limit; reduce parameters or draws.",
+    assert(error.message === "Posterior exceeds the 64 MiB browser limit; reduce parameters or draws.",
       `oversized response was not actionable: ${error?.message}`);
     assert(worker.terminated, "oversized response retained its worker");
   },
 }, {
-  name: "posterior response at exactly 8 MiB passes the worker boundary",
+  name: "posterior response at exactly 64 MiB passes the worker boundary",
   fn: async () => {
     let worker;
     const engine = new WorkerEngine("test", "wasm", "metadata", () => {
@@ -76,12 +76,12 @@ export default [{
         type: "result",
         id: request.id,
         chainId: 0,
-        rawBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES),
+        rawBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES),
       }));
       return worker;
     });
     const output = await engine.execute({ command: "sample" });
-    assert(output.rawBytes.byteLength === MAX_GENERATION_INPUT_BYTES,
+    assert(output.rawBytes.byteLength === MAX_POSTERIOR_RESPONSE_BYTES,
       `exact ceiling changed: ${String(output.rawBytes.byteLength)}`);
     assert(worker.terminated, "successful exact-ceiling worker survived");
   },

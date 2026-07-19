@@ -1,9 +1,11 @@
 import {
   InProcessEngine,
+  MAX_POSTERIOR_RESPONSE_BYTES,
   diagnose,
   mergeChainFits,
   parseEngineMetadata,
   parseEngineOutput,
+  requirePosteriorResponseWithinLimit,
   sample,
 } from "/site/src/engine/index.mjs";
 import * as engine from "/site/src/engine/index.mjs";
@@ -156,7 +158,25 @@ export default [
     },
   },
   {
-    name: "diagnose bounds merged fits by default before executor dispatch",
+    name: "sampling posterior bound is independent of the generation input bound",
+    fn: () => {
+      assert(MAX_GENERATION_INPUT_BYTES === 8 * 1024 * 1024,
+        "generation input bound changed");
+      assert(MAX_POSTERIOR_RESPONSE_BYTES === 64 * 1024 * 1024,
+        "posterior response bound changed");
+      requirePosteriorResponseWithinLimit(MAX_GENERATION_INPUT_BYTES + 1);
+      let error;
+      try {
+        requirePosteriorResponseWithinLimit(MAX_POSTERIOR_RESPONSE_BYTES + 1);
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.error === "PosteriorTooLarge",
+        `oversized posterior response was not typed: ${String(error)}`);
+    },
+  },
+  {
+    name: "diagnose merge accepts above the generation cap and enforces the posterior cap",
     fn: async () => {
       const fit = (chain) => [
         { chain_count: 1, chain_order: [chain], draw_count: 1 },
@@ -173,27 +193,33 @@ export default [
       ].map((value) => JSON.stringify(value)).join("\n") + "\n";
       const nativeEncode = TextEncoder.prototype.encode;
       let executorCalls = 0;
-      let result;
-      try {
-        // Report an oversized encoded line without allocating an 8 MiB fixture.
-        TextEncoder.prototype.encode = function () {
-          return { byteLength: MAX_GENERATION_INPUT_BYTES + 1 };
-        };
-        result = await diagnose({
-          fits: [fit(0), fit(1)],
-          executor: {
-            execute: async () => {
-              executorCalls += 1;
-              return { rawBytes: new Uint8Array([1]) };
-            },
+      let reportedLineBytes = MAX_GENERATION_INPUT_BYTES + 1;
+      const inputs = {
+        fits: [fit(0), fit(1)],
+        executor: {
+          execute: async () => {
+            executorCalls += 1;
+            return { rawBytes: new Uint8Array([1]) };
           },
-        });
+        },
+      };
+      let accepted;
+      let rejected;
+      try {
+        // Exercise both defaults without allocating multi-mebibyte fixtures.
+        TextEncoder.prototype.encode = function () {
+          return { byteLength: reportedLineBytes };
+        };
+        accepted = await diagnose(inputs);
+        reportedLineBytes = MAX_POSTERIOR_RESPONSE_BYTES + 1;
+        rejected = await diagnose(inputs);
       } finally {
         TextEncoder.prototype.encode = nativeEncode;
       }
-      assert(!result.ok && result.error.error === "PosteriorTooLarge",
-        `default diagnose merge was not bounded: ${JSON.stringify(result)}`);
-      assert(executorCalls === 0, `oversized diagnose merge reached executor ${executorCalls} times`);
+      assert(accepted.ok, `diagnose merge retained the generation cap: ${JSON.stringify(accepted)}`);
+      assert(!rejected.ok && rejected.error.error === "PosteriorTooLarge",
+        `default diagnose merge was not bounded: ${JSON.stringify(rejected)}`);
+      assert(executorCalls === 1, `unexpected diagnose executor calls: ${executorCalls}`);
     },
   },
   {

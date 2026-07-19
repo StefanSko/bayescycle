@@ -10,6 +10,7 @@ CASES = [
     "verifies hashes fixed values and design prefix",
     "resolver rejects output from the wrong generation plan",
     "portable posterior requires complete chain and trailer lineage",
+    "portable posterior source retains the 8 MiB generation input bound",
     "rejects malformed truncated nonfinite and oversized streams",
 ]
 

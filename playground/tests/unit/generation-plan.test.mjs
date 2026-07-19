@@ -1,3 +1,4 @@
+import { MAX_POSTERIOR_RESPONSE_BYTES } from "/site/src/engine/types.mjs";
 import {
   MAX_GENERATION_COUNT,
   MAX_GENERATION_INPUT_BYTES,
@@ -29,6 +30,14 @@ const INVALIDATION_KEY = "sha256:ef642308cab544f3e479d74742988477c38a6f3640cb477
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+class ReportedBytes extends Uint8Array {
+  constructor(byteLength) {
+    super(1);
+    this.reportedByteLength = byteLength;
+  }
+  get byteLength() { return this.reportedByteLength; }
 }
 
 async function hashBytes(value) {
@@ -165,6 +174,36 @@ export default [
         () => jointPredict(modelPrior(OTHER_MODEL_BYTES), outcomesOf(MODEL_BYTES, DESIGN_BYTES)),
         "model",
       );
+    },
+  },
+  {
+    name: "fit posterior uses 64 MiB while fit model and data retain 8 MiB",
+    fn: async () => {
+      const fitValue = ({
+        modelIrBytes = MODEL_BYTES,
+        dataBytes = FIT_DATA_BYTES,
+        posteriorBytes = POSTERIOR_BYTES,
+      } = {}) => ({
+        kind: "fit-artifact",
+        modelIrBytes,
+        dataBytes,
+        posteriorBytes,
+        association: "runtime",
+      });
+      posteriorOf(fitValue({
+        posteriorBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1),
+      }));
+      await rejects(() => posteriorOf(fitValue({
+        posteriorBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES + 1),
+      })), `fit posterior exceeds ${String(MAX_POSTERIOR_RESPONSE_BYTES)} bytes`);
+      await rejects(() => posteriorOf(fitValue({
+        modelIrBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1),
+      })), `fit model IR exceeds ${String(MAX_GENERATION_INPUT_BYTES)} bytes`);
+      await rejects(() => posteriorOf(fitValue({
+        dataBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1),
+      })), `fit data exceeds ${String(MAX_GENERATION_INPUT_BYTES)} bytes`);
+      assert(MAX_POSTERIOR_RESPONSE_BYTES === 64 * 1024 * 1024,
+        "fit posterior bound changed");
     },
   },
   {

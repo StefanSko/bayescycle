@@ -26,7 +26,7 @@ def test_oversized_posterior_is_actionable_and_normal_retry_renders(
               this.inner.terminate();
               this.inner = null;
               class OversizedBytes extends Uint8Array {
-                get byteLength() { return 8 * 1024 * 1024 + 1; }
+                get byteLength() { return 64 * 1024 * 1024 + 1; }
               }
               queueMicrotask(() => this.onmessage?.({ data: {
                 type: "result",
@@ -58,7 +58,7 @@ def test_oversized_posterior_is_actionable_and_normal_retry_renders(
     page.locator("#fit-button").click()
 
     expect(page.locator("#run-error")).to_have_text(
-        "Posterior exceeds the 8 MiB browser limit; reduce parameters or draws.",
+        "Posterior exceeds the 64 MiB browser limit; reduce parameters or draws.",
         timeout=5_000,
     )
     expect(page.locator("#cancel-run")).to_be_hidden()
