@@ -31,6 +31,9 @@ export async function validatePortablePosterior({
     posteriorBytes,
     requireFingerprint,
     maximumBytes: MAX_BYTES,
+    sourceBoundMessage: "portable posterior source exceeds its byte bound",
+    lineBoundMessage: (lineNumber) =>
+      `portable posterior line ${lineNumber} is empty or oversized`,
   });
 }
 
@@ -41,15 +44,24 @@ export async function validateRuntimePosterior({ modelBytes, dataBytes, posterio
     posteriorBytes,
     requireFingerprint: false,
     maximumBytes: MAX_POSTERIOR_RESPONSE_BYTES,
+    sourceBoundMessage: "runtime posterior source exceeds the 64 MiB byte bound",
+    lineBoundMessage: (lineNumber) =>
+      `runtime posterior line ${lineNumber} is empty or exceeds the 64 MiB byte bound`,
   });
 }
 
 async function validatePosterior({
-  modelBytes, dataBytes, posteriorBytes, requireFingerprint, maximumBytes,
+  modelBytes,
+  dataBytes,
+  posteriorBytes,
+  requireFingerprint,
+  maximumBytes,
+  sourceBoundMessage,
+  lineBoundMessage,
 }) {
   if (!(posteriorBytes instanceof Uint8Array) ||
       posteriorBytes.byteLength === 0 || posteriorBytes.byteLength > maximumBytes) {
-    throw new PortablePosteriorError("portable posterior source exceeds its byte bound");
+    throw new PortablePosteriorError(sourceBoundMessage);
   }
   if (posteriorBytes.at(-1) !== 0x0a) {
     throw new PortablePosteriorError("portable posterior source must end in LF");
@@ -62,7 +74,7 @@ async function validatePosterior({
   }
   const documents = lines.map((line, index) => {
     if (line.byteLength === 0 || line.byteLength + 1 > maximumBytes) {
-      throw new PortablePosteriorError(`portable posterior line ${index + 1} is empty or oversized`);
+      throw new PortablePosteriorError(lineBoundMessage(index + 1));
     }
     validateDepth(line, index + 1);
     try {

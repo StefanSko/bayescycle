@@ -139,35 +139,49 @@ export class BrowserRuntime {
       }
       throw error;
     }
+    const requestedParameters = request.plan.distribution.parameters;
     const parameters = plan.distribution.parameters;
     const outcomes = plan.distribution.outcomes;
     const modelBytes = outcomes.modelIrBytes;
     const designBytes = outcomes.designBytes;
+    let fixedParametersBytes;
+    let modelPriorBytes;
+    let authoredProvenance = null;
+    let fitModelBytes;
+    let fitDataBytes;
+    let posteriorBytes;
+    let posteriorAssociation;
+    let requestedFitArtifact;
     const identities = {
       generation_model_hash: await sha256Bytes(modelBytes),
       design_hash: await sha256Bytes(designBytes),
     };
     let parameterSource;
     if (parameters.kind === "fixed") {
-      const parametersBytes = parameters.parametersBytes;
-      identities.parameters_hash = await sha256Bytes(parametersBytes);
+      fixedParametersBytes = parameters.parametersBytes;
+      identities.parameters_hash = await sha256Bytes(fixedParametersBytes);
       parameterSource = {
         kind: "fixed",
-        parameters: exactText(parametersBytes, "fixed parameters"),
+        parameters: exactText(fixedParametersBytes, "fixed parameters"),
       };
     } else if (parameters.kind === "model-prior") {
+      modelPriorBytes = parameters.modelIrBytes;
+      const provenance = parameters.authoredProvenance;
+      authoredProvenance = provenance === null ? null : {
+        claimed_source_model_hash: provenance.claimedSourceModelHash,
+        claimed_outcome_model_hash: provenance.claimedOutcomeModelHash,
+      };
       parameterSource = {
         kind: "model-prior",
-        authored_provenance: parameters.authoredProvenance === null ? null : {
-          claimed_source_model_hash: parameters.authoredProvenance.claimedSourceModelHash,
-          claimed_outcome_model_hash: parameters.authoredProvenance.claimedOutcomeModelHash,
-        },
+        authored_provenance: authoredProvenance,
       };
     } else {
       const fit = parameters.fitArtifact;
-      const fitModelBytes = fit.modelIrBytes;
-      const fitDataBytes = fit.dataBytes;
-      const posteriorBytes = fit.posteriorBytes;
+      fitModelBytes = fit.modelIrBytes;
+      fitDataBytes = fit.dataBytes;
+      posteriorBytes = fit.posteriorBytes;
+      posteriorAssociation = fit.association;
+      requestedFitArtifact = requestedParameters.fitArtifact;
       identities.fit_hash = await sha256Bytes(posteriorBytes);
       identities.fit_model_hash = await sha256Bytes(fitModelBytes);
       identities.fit_data_hash = await sha256Bytes(fitDataBytes);
@@ -177,18 +191,17 @@ export class BrowserRuntime {
         fit_data: exactText(fitDataBytes, "fit data"),
       };
     }
-    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime" &&
-        !this.#runtimeFits.has(parameters.fitArtifact)) {
+    if (posteriorAssociation === "runtime" && !this.#runtimeFits.has(requestedFitArtifact)) {
       throw new RuntimeError(
         "InvalidFitAssociation",
         "runtime posterior association was not issued by this conditioning runtime",
       );
     }
-    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "portable") {
+    if (posteriorAssociation === "portable") {
       await validatePortablePosterior({
-        modelBytes: parameters.fitArtifact.modelIrBytes,
-        dataBytes: parameters.fitArtifact.dataBytes,
-        posteriorBytes: parameters.fitArtifact.posteriorBytes,
+        modelBytes: fitModelBytes,
+        dataBytes: fitDataBytes,
+        posteriorBytes,
       });
     }
     requireNotCancelled(signal);
@@ -207,30 +220,12 @@ export class BrowserRuntime {
     await verifyGeneratedDatasets(parsedOutput, {
       modelBytes,
       designBytes,
-      fixedParametersBytes: parameters.kind === "fixed"
-        ? parameters.parametersBytes
-        : undefined,
-      modelPriorBytes: parameters.kind === "model-prior"
-        ? parameters.modelIrBytes
-        : undefined,
-      authoredProvenance: parameters.kind === "model-prior" &&
-        parameters.authoredProvenance !== null
-        ? {
-            claimed_source_model_hash:
-              parameters.authoredProvenance.claimedSourceModelHash,
-            claimed_outcome_model_hash:
-              parameters.authoredProvenance.claimedOutcomeModelHash,
-          }
-        : null,
-      posteriorBytes: parameters.kind === "posterior"
-        ? parameters.fitArtifact.posteriorBytes
-        : undefined,
-      fitDataBytes: parameters.kind === "posterior"
-        ? parameters.fitArtifact.dataBytes
-        : undefined,
-      posteriorAssociation: parameters.kind === "posterior"
-        ? parameters.fitArtifact.association
-        : undefined,
+      fixedParametersBytes,
+      modelPriorBytes,
+      authoredProvenance,
+      posteriorBytes,
+      fitDataBytes,
+      posteriorAssociation,
       expectedSourceKind: parameters.kind,
       expectedCount: plan.count,
       expectedSeed: plan.seed,
@@ -241,7 +236,7 @@ export class BrowserRuntime {
       "application/x-ndjson",
       output.rawBytes,
     );
-    if (parameters.kind === "posterior" && parameters.fitArtifact.association === "runtime") {
+    if (posteriorAssociation === "runtime") {
       requireNotCancelled(signal);
       return { artifacts: [generated] };
     }
@@ -256,16 +251,10 @@ export class BrowserRuntime {
       published.push(artifact(
         "fixed-parameters.json",
         "application/json",
-        parameters.parametersBytes,
+        fixedParametersBytes,
       ));
     } else if (parameters.kind === "posterior") {
-      const posteriorBytes = parameters.fitArtifact.posteriorBytes;
-      if (posteriorBytes.byteLength > MAX_GENERATION_INPUT_BYTES) {
-        throw new RuntimeError(
-          "PosteriorPublicationTooLarge",
-          "posterior source exceeds the 8 MiB generation-input limit and cannot be published",
-        );
-      }
+      requirePublishablePosteriorSource(posteriorBytes.byteLength);
       published.push(
         artifact(
           "source-posterior.ndjson",
@@ -275,7 +264,7 @@ export class BrowserRuntime {
         artifact(
           "source-fit-data.json",
           "application/json",
-          parameters.fitArtifact.dataBytes,
+          fitDataBytes,
         ),
       );
     }
@@ -397,6 +386,15 @@ export class RuntimeError extends Error {
     super(`${kind}: ${message}`);
     this.name = "RuntimeError";
     this.kind = kind;
+  }
+}
+
+export function requirePublishablePosteriorSource(byteLength) {
+  if (byteLength > MAX_GENERATION_INPUT_BYTES) {
+    throw new RuntimeError(
+      "PosteriorPublicationTooLarge",
+      "posterior source exceeds the 8 MiB generation-input limit and cannot be published",
+    );
   }
 }
 

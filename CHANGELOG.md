@@ -40,8 +40,9 @@ formats retain their own compatibility policies.
   aggregate design previews, dashboard SVG rendering, and per-chain plus merged
   posterior output. Sampling and conditioning now accept posterior output up to
   64 MiB, while portable generation inputs and published posterior sources stay
-  capped at 8 MiB with an explicit publication guard; malformed or oversized
-  input produces an actionable error.
+  capped at 8 MiB with an explicit publication guard. Generation snapshots
+  validated plan bytes before use, and runtime posterior bound errors name their
+  64 MiB ceiling explicitly; malformed or oversized input remains actionable.
 
 ## [0.6.0] - 2026-07-15
 

@@ -106,21 +106,21 @@ export function generateDatasets(modelIrBytes, options) {
 export function validateGenerationPlan(value) {
   exactKeys(value, ["kind", "count", "seed", "distribution"], "draw plan");
   if (value.kind !== "draw") throw new GenerationPlanError("plan kind must be draw");
-  integer(value.count, "count", 1, MAX_GENERATION_COUNT);
-  integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
-  validateJointPredict(value.distribution);
-  return value;
+  const count = integer(value.count, "count", 1, MAX_GENERATION_COUNT);
+  const seed = integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
+  const distribution = snapshotJointPredict(value.distribution);
+  return Object.freeze({ kind: "draw", count, seed, distribution });
 }
 
 export async function serializeGenerationPlan(plan) {
-  validateGenerationPlan(plan);
-  const parameters = await sourceDocument(plan.distribution.parameters);
-  const outcomes = plan.distribution.outcomes;
+  const validated = validateGenerationPlan(plan);
+  const parameters = await sourceDocument(validated.distribution.parameters);
+  const outcomes = validated.distribution.outcomes;
   const document = {
     generation_plan_format: "v0-provisional",
     kind: "draw",
-    count: plan.count,
-    seed: plan.seed,
+    count: validated.count,
+    seed: validated.seed,
     distribution: {
       kind: "joint-predict",
       parameters,
@@ -190,6 +190,55 @@ export async function generationInvalidationKey(plan) {
     UTF8.encode("bayescycle-generation-key-v0\n"),
     await serializeGenerationPlan(plan),
   ));
+}
+
+function snapshotParameterSource(source) {
+  if (!isObject(source)) throw new GenerationPlanError("parameter source must be an object");
+  if (source.kind === "fixed") {
+    exactKeys(source, ["kind", "parametersBytes"], "fixed source");
+    return fixed(source.parametersBytes);
+  }
+  if (source.kind === "model-prior") {
+    exactKeys(source, ["kind", "modelIrBytes", "authoredProvenance"], "model-prior source");
+    return modelPrior(source.modelIrBytes, source.authoredProvenance);
+  }
+  if (source.kind === "posterior") {
+    exactKeys(source, ["kind", "fitArtifact"], "posterior source");
+    const value = source.fitArtifact;
+    exactKeys(
+      value,
+      ["kind", "modelIrBytes", "dataBytes", "posteriorBytes", "association"],
+      "fit artifact",
+    );
+    if (value.kind !== "fit-artifact") {
+      throw new GenerationPlanError("fit artifact kind is invalid");
+    }
+    return posteriorOf(fitArtifact(
+      value.modelIrBytes,
+      value.dataBytes,
+      value.posteriorBytes,
+      value.association,
+    ));
+  }
+  throw new GenerationPlanError(`parameter source has unknown kind ${String(source.kind)}`);
+}
+
+function snapshotOutcomes(value) {
+  exactKeys(value, ["kind", "modelIrBytes", "designBytes"], "outcomes");
+  if (value.kind !== "model-outcomes") throw new GenerationPlanError("outcomes kind is invalid");
+  return outcomesOf(value.modelIrBytes, value.designBytes);
+}
+
+function snapshotJointPredict(value) {
+  exactKeys(value, ["kind", "parameters", "outcomes"], "joint prediction");
+  if (value.kind !== "joint-predict") throw new GenerationPlanError("distribution kind is invalid");
+  const parameters = snapshotParameterSource(value.parameters);
+  const outcomes = snapshotOutcomes(value.outcomes);
+  const sourceModel = sourceModelBytes(parameters);
+  if (sourceModel !== null && !equalBytes(sourceModel, outcomes.modelIrBytes)) {
+    throw new GenerationPlanError("parameter source model must equal the outcomes model bytes");
+  }
+  return Object.freeze({ kind: "joint-predict", parameters, outcomes });
 }
 
 function validateParameterSource(source) {
