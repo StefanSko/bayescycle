@@ -1,6 +1,7 @@
 import { CompilerClient } from "../compile/index.mjs";
 import {
   EngineError,
+  MAX_POSTERIOR_RESPONSE_BYTES,
   WorkerEngine,
   diagnose,
   generate,
@@ -47,16 +48,16 @@ export class BrowserRuntime {
   constructor(
     executor = new WorkerEngine(),
     compiler = new CompilerClient(),
-    maxPosteriorResponseBytes = MAX_GENERATION_INPUT_BYTES,
+    maxPosteriorResponseBytes = MAX_POSTERIOR_RESPONSE_BYTES,
   ) {
     if (
       !Number.isSafeInteger(maxPosteriorResponseBytes) ||
       maxPosteriorResponseBytes <= 0 ||
-      maxPosteriorResponseBytes > MAX_GENERATION_INPUT_BYTES
+      maxPosteriorResponseBytes > MAX_POSTERIOR_RESPONSE_BYTES
     ) {
       throw new RuntimeError(
         "InvalidPosteriorLimit",
-        `posterior limit must be an integer in 1..${String(MAX_GENERATION_INPUT_BYTES)}`,
+        `posterior limit must be an integer in 1..${String(MAX_POSTERIOR_RESPONSE_BYTES)}`,
       );
     }
     this.executor = executor;
@@ -258,11 +259,18 @@ export class BrowserRuntime {
         parameters.parametersBytes,
       ));
     } else if (parameters.kind === "posterior") {
+      const posteriorBytes = parameters.fitArtifact.posteriorBytes;
+      if (posteriorBytes.byteLength > MAX_GENERATION_INPUT_BYTES) {
+        throw new RuntimeError(
+          "PosteriorPublicationTooLarge",
+          "posterior source exceeds the 8 MiB generation-input limit and cannot be published",
+        );
+      }
       published.push(
         artifact(
           "source-posterior.ndjson",
           "application/x-ndjson",
-          parameters.fitArtifact.posteriorBytes,
+          posteriorBytes,
         ),
         artifact(
           "source-fit-data.json",

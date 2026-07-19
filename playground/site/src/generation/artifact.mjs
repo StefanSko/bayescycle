@@ -2,6 +2,7 @@ import { normalizeDocument } from "../data/documents.mjs";
 import {
   PortablePosteriorError,
   validatePortablePosterior,
+  validateRuntimePosterior,
 } from "./posterior-source.mjs";
 import { parseStrictJson } from "./strict-json.mjs";
 
@@ -283,11 +284,13 @@ export async function verifyGeneratedDatasets(artifact, sources) {
   }
   let posterior;
   try {
-    posterior = await validatePortablePosterior({
+    const validatePosterior = sources.posteriorAssociation === "runtime"
+      ? validateRuntimePosterior
+      : validatePortablePosterior;
+    posterior = await validatePosterior({
       modelBytes: sources.modelBytes,
       dataBytes: sources.fitDataBytes,
       posteriorBytes: sources.posteriorBytes,
-      requireFingerprint: sources.posteriorAssociation !== "runtime",
     });
   } catch (error) {
     if (error instanceof PortablePosteriorError) {
