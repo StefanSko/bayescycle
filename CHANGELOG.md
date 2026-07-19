@@ -23,6 +23,7 @@ formats retain their own compatibility policies.
 
 ### Changed
 
+- Pin native Bayesite provisioning to v0.3.1, including its corrected ancestral forward-simulation planning and partially observed ancestor propagation.
 - Rework the Playground's data-authoring workflow into a schema-driven
   **Simulate data** section with model-derived design prefills, design expressions
   and previews, generated fixed-parameter forms, JSON escape hatches, and
