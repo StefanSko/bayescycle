@@ -8,7 +8,7 @@ def test_form_eligible_example_derives_design_forms_from_compiled_schema(
 ) -> None:
     page.goto(f"{base_url}/site/")
     menu = page.locator("#examples-menu")
-    expect(menu.locator("option")).to_have_count(4)
+    expect(menu.locator("option")).to_have_count(5)
     menu.select_option("eight-schools")
     expect(page.locator("#design-data")).to_have_value("")
     menu.select_option("linear-simulation")
