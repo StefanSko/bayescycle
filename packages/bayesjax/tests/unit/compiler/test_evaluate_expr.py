@@ -10,6 +10,7 @@ from bayeswire.model.expr import (
     FullSlice,
     IndexOp,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -73,6 +74,33 @@ def test_binop_nested() -> None:
     values = {"a": jnp.array(1), "b": jnp.array(2), "c": jnp.array(3)}
     result = _evaluate_expr(node, values)
     assert jnp.allclose(result, jnp.array(9))
+
+
+def test_matrix_vector_product() -> None:
+    node = MatVecOp(DataRef("matrix"), ParamRef("vector"))
+    values = {
+        "matrix": jnp.asarray([[1.0, 2.0], [3.0, 4.0]]),
+        "vector": jnp.asarray([0.5, -1.0]),
+    }
+
+    result = _evaluate_expr(node, values)
+
+    assert jnp.allclose(result, jnp.asarray([-1.5, -2.5]))
+
+
+def test_matrix_vector_product_empty_contraction_returns_additive_identity() -> None:
+    node = MatVecOp(DataRef("matrix"), ParamRef("vector"))
+
+    result = _evaluate_expr(
+        node,
+        {
+            "matrix": jnp.zeros((3, 0)),
+            "vector": jnp.zeros((0,)),
+        },
+    )
+
+    assert result.shape == (3,)
+    assert jnp.array_equal(result, jnp.zeros((3,)))
 
 
 def test_unary_negation() -> None:

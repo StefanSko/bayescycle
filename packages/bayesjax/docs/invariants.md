@@ -41,6 +41,9 @@ Core invariants that should remain true as the codebase changes.
 
 - The compiler evaluates symbolic distribution arguments before calling the JAX
   backend log-probability operation for each stochastic site.
+- `MatVecOp` validates exact rank-2 `[m, n]` and rank-1 `[n]` operands at bind
+  time and evaluates to rank-1 `[m]`; JAX batching and broadcasting semantics
+  outside that wire contract are rejected before compilation.
 - Log density = constraint Jacobians + all stochastic site log-density terms.
 - The flat unconstrained parameter vector packs free values in the insertion
   order of `free_values`, or of `params` when `free_values` is empty.

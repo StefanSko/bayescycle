@@ -34,6 +34,7 @@ from bayeswire.model._deferred import (
     DeclarationSymbol,
     DeferredBinOp,
     DeferredIndexOp,
+    DeferredMatVecOp,
     DeferredUnaryOp,
     is_deferred_expr,
 )
@@ -70,6 +71,7 @@ from bayeswire.model.expr import (
     IndexOp,
     IndexSpec,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -260,6 +262,11 @@ def _prefix_expr(value: ExprNode, prefix: str) -> ExprNode:
         )
     if isinstance(value, UnaryOp):
         return UnaryOp(value.function, _prefix_expr(value.operand, prefix))
+    if isinstance(value, MatVecOp):
+        return MatVecOp(
+            matrix=_prefix_expr(value.matrix, prefix),
+            vector=_prefix_expr(value.vector, prefix),
+        )
     if isinstance(value, IndexOp):
         return IndexOp(
             _prefix_expr(value.base, prefix),
@@ -1197,6 +1204,11 @@ def _resolve_declaration_expr(value: object, symbols: SymbolTable) -> ExprNode:
             value.function,
             _resolve_declaration_expr(value.operand, symbols),
         )
+    if isinstance(value, DeferredMatVecOp):
+        return MatVecOp(
+            matrix=_resolve_declaration_expr(value.matrix, symbols),
+            vector=_resolve_declaration_expr(value.vector, symbols),
+        )
     if isinstance(value, DeferredIndexOp):
         return IndexOp(
             _resolve_declaration_expr(value.base, symbols),
@@ -1215,6 +1227,7 @@ def _is_declaration_expr(value: object) -> bool:
         | _SubmodelMember
         | DeferredBinOp
         | DeferredIndexOp
+        | DeferredMatVecOp
         | DeferredUnaryOp
         | int
         | float,

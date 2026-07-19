@@ -13,6 +13,7 @@ from bayeswire.model.expr import (
     FullSlice,
     IndexOp,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -47,6 +48,15 @@ def test_param_and_data_arithmetic_builds_expression_tree() -> None:
     assert expr.right.op == "*"
     assert expr.right.left == beta
     assert expr.right.right == x
+
+
+def test_matrix_vector_operator_builds_explicit_expression_node() -> None:
+    matrix = DataRef("matrix")
+    vector = ParamRef("vector")
+
+    expr = matrix @ vector
+
+    assert expr == MatVecOp(matrix=matrix, vector=vector)
 
 
 def test_scalar_constants_are_promoted_to_const_nodes() -> None:

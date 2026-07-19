@@ -7,13 +7,16 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 import pytest
-from bayeswire.distributions import Bernoulli, Binomial, Normal
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import Bernoulli, Binomial, HalfNormal, Normal
 from bayeswire.distributions.core import DistributionValue, LogProbability
 from bayeswire.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
-from bayeswire.model.expr import ConstNode, ParamRef, UnaryOp
+from bayeswire.model.expr import BinOp, ConstNode, DataRef, MatVecOp, ParamRef, UnaryOp
 
 from bayesjax._backends.jax.distributions import log_prob as distribution_log_prob
 from bayesjax.compiler.core import compile_log_density
+from bayesjax.model import bind_model
 from bayesjax.model.bound import BoundModel
 
 
@@ -175,6 +178,61 @@ def test_compiled_log_density_remains_differentiable() -> None:
 
     assert grad.shape == (1,)
     assert jnp.all(jnp.isfinite(grad))
+
+
+def test_compiled_log_density_differentiates_scaled_matrix_vector_product() -> None:
+    mean = MatVecOp(
+        BinOp("*", ParamRef("tau"), DataRef("matrix")),
+        ParamRef("z"),
+    )
+    meta = ModelMeta(
+        params={
+            "tau": ResolvedParam(Normal(0.0, 1.0), None, None),
+            "z": ResolvedParam(Normal(0.0, 1.0), None, 2),
+        },
+        data={},
+        observed_nodes=(ResolvedObserved("y", Normal(mean, 0.5)),),
+        expressions={"mean": mean},
+    )
+    bound = BoundModel(
+        meta=meta,
+        data={
+            "matrix": jnp.asarray([[1.0, 0.2], [-0.4, 1.5]]),
+            "y": jnp.asarray([0.25, -0.75]),
+        },
+        param_shapes={"tau": (), "z": (2,)},
+        n_params=3,
+    )
+
+    gradient = jax.grad(compile_log_density(bound))(jnp.asarray([0.8, 0.1, -0.2]))
+
+    assert gradient.shape == (3,)
+    assert jnp.all(jnp.isfinite(gradient))
+    assert jnp.all(jnp.abs(gradient) > 0.0)
+
+
+def test_authored_scaled_matrix_operand_remains_differentiable_end_to_end() -> None:
+    @model
+    class ScaledMatVec:
+        matrix = Data.matrix(2, 2)
+        tau = Param(HalfNormal(1.0), constraint=Positive())
+        z = Param(Normal(0.0, 1.0), size=2)
+        mean = (tau * matrix) @ z
+        y = Observed(Normal(mean, 0.5))
+
+    bound = bind_model(
+        ScaledMatVec,
+        {
+            "matrix": jnp.asarray([[1.0, 0.2], [-0.4, 1.5]]),
+            "y": jnp.asarray([0.25, -0.75]),
+        },
+    )
+
+    gradient = jax.grad(compile_log_density(bound))(jnp.asarray([0.1, 0.2, -0.3]))
+
+    assert gradient.shape == (3,)
+    assert jnp.all(jnp.isfinite(gradient))
+    assert jnp.all(jnp.abs(gradient) > 0.0)
 
 
 def test_no_params() -> None:

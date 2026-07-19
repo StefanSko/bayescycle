@@ -21,6 +21,7 @@ from bayeswire.model.expr import (
     IndexOp,
     IndexSpec,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -95,6 +96,10 @@ def _evaluate_expr(
         if function is None:
             raise ValueError(f"Unknown unary function: {node.function!r}")
         return function(operand)
+    if isinstance(node, MatVecOp):
+        matrix = _evaluate_expr(node.matrix, values, full_values=full_values)
+        vector = _evaluate_expr(node.vector, values, full_values=full_values)
+        return jnp.matmul(matrix, vector)
     if isinstance(node, IndexOp):
         base = _evaluate_expr(node.base, values, full_values=full_values)
         index = _evaluate_index_spec(node.index, values)
@@ -128,7 +133,8 @@ def _evaluate_expr(
 def _is_expr_node(value: object) -> TypeGuard[ExprNode]:
     """Return whether ``value`` is a final expression IR node."""
     return isinstance(
-        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+        value,
+        ParamRef | DataRef | ConstNode | BinOp | IndexOp | MatVecOp | UnaryOp | VectorScatterOp,
     )
 
 

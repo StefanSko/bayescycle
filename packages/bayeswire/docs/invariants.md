@@ -102,6 +102,10 @@ Core invariants that should remain true as the codebase changes.
 - Final expression trees may contain explicit unary operation nodes only for
   supported declaration-language unary operations such as `neg`, `exp`, and
   `sigmoid`.
+- Declaration syntax `matrix @ vector` resolves to a narrow `MatVecOp` with
+  exact `[m, n] @ [n] -> [m]` semantics. It adds no batching, broadcasting,
+  vector-matrix, or matrix-matrix operation; concrete shape validation remains
+  a backend binding concern.
 
 ## IR and serialization
 

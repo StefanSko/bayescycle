@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from bayeswire.distributions.core import SymbolicDistributionParameter
 
-type DeferredExpr = DeferredBinOp | DeferredIndexOp | DeferredUnaryOp
+type DeferredExpr = DeferredBinOp | DeferredIndexOp | DeferredMatVecOp | DeferredUnaryOp
 type DeferredBinaryOperator = str
 type DeferredUnaryFunction = str
 
@@ -55,6 +55,9 @@ class DeferredBinOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
 
+    def __matmul__(self, other: object) -> DeferredMatVecOp:
+        return DeferredMatVecOp(self, other)
+
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
 
@@ -92,6 +95,9 @@ class DeferredUnaryOp(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
+
+    def __matmul__(self, other: object) -> DeferredMatVecOp:
+        return DeferredMatVecOp(self, other)
 
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
@@ -131,6 +137,50 @@ class DeferredIndexOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
 
+    def __matmul__(self, other: object) -> DeferredMatVecOp:
+        return DeferredMatVecOp(self, other)
+
+    def __neg__(self) -> DeferredUnaryOp:
+        return DeferredUnaryOp("neg", self)
+
+    def __getitem__(self, index: object) -> DeferredIndexOp:
+        return DeferredIndexOp(self, index)
+
+
+@dataclass(frozen=True)
+class DeferredMatVecOp(SymbolicDistributionParameter):
+    """Deferred rank-2 by rank-1 matrix-vector product."""
+
+    matrix: object
+    vector: object
+
+    def __add__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("+", self, other)
+
+    def __radd__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("+", other, self)
+
+    def __sub__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("-", self, other)
+
+    def __rsub__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("-", other, self)
+
+    def __mul__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("*", self, other)
+
+    def __rmul__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("*", other, self)
+
+    def __truediv__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("/", self, other)
+
+    def __rtruediv__(self, other: object) -> DeferredBinOp:
+        return DeferredBinOp("/", other, self)
+
+    def __matmul__(self, other: object) -> DeferredMatVecOp:
+        return DeferredMatVecOp(self, other)
+
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
 
@@ -140,4 +190,4 @@ class DeferredIndexOp(SymbolicDistributionParameter):
 
 def is_deferred_expr(value: object) -> bool:
     """Return whether ``value`` is captured class-body syntax."""
-    return isinstance(value, DeferredBinOp | DeferredIndexOp | DeferredUnaryOp)
+    return isinstance(value, DeferredBinOp | DeferredIndexOp | DeferredMatVecOp | DeferredUnaryOp)

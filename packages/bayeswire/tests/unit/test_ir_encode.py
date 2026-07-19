@@ -38,6 +38,7 @@ from bayeswire.model.expr import (
     FullSlice,
     IndexOp,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -220,6 +221,24 @@ def test_round_trips_vector_bounds_on_free_values() -> None:
         "node": "VectorBounds",
         "lower": {"node": "DataRef", "name": "lower"},
         "upper": {"node": "DataRef", "name": "upper"},
+    }
+
+
+def test_round_trips_matrix_vector_product_node() -> None:
+    product = MatVecOp(DataRef("matrix"), ParamRef("vector"))
+    meta = minimal_meta(mu=product)
+
+    document = meta_to_dict(meta)
+
+    assert meta_from_dict(document) == meta
+    model = document["model"]
+    assert isinstance(model, dict)
+    expressions = model["expressions"]
+    assert isinstance(expressions, list)
+    assert _as_dict(expressions[0])["value"] == {
+        "node": "MatVecOp",
+        "matrix": {"node": "DataRef", "name": "matrix"},
+        "vector": {"node": "ParamRef", "name": "vector"},
     }
 
 

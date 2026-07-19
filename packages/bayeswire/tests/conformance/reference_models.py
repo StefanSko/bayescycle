@@ -131,6 +131,40 @@ def _eight_schools_non_centered() -> ReferenceModelCase:
     )
 
 
+def _mvn_non_centered() -> ReferenceModelCase:
+    @model
+    class MvnNonCentered:
+        n = Data.scalar()
+        mean = Data.vector(n)
+        latent_chol = Data.matrix(n, n)
+        observation_chol = Data.matrix(n, n)
+
+        z = Param(Normal(0.0, 1.0), size=n)
+        theta = mean + latent_chol @ z
+        y = Observed(MultivariateNormal(theta, observation_chol))
+
+    return ReferenceModelCase(
+        name="mvn_non_centered",
+        model_cls=MvnNonCentered,
+        meta=_meta(MvnNonCentered),
+        bind_values={
+            "n": 3,
+            "mean": [0.25, -0.5, 1.0],
+            "latent_chol": [
+                [1.0, 0.0, 0.0],
+                [0.6, 0.8, 0.0],
+                [0.25, 0.35, 0.9],
+            ],
+            "observation_chol": [
+                [0.5, 0.0, 0.0],
+                [0.1, 0.6, 0.0],
+                [-0.05, 0.2, 0.7],
+            ],
+            "y": [0.4, -0.1, 0.65],
+        },
+    )
+
+
 def _varying_intercepts_poisson() -> ReferenceModelCase:
     @model
     class VaryingInterceptsPoisson:
@@ -396,6 +430,7 @@ def reference_model_cases() -> tuple[ReferenceModelCase, ...]:
         _linear_regression(),
         _alternative_prior_regression(),
         _eight_schools_non_centered(),
+        _mvn_non_centered(),
         _varying_intercepts_poisson(),
         _composed_measurements(),
         _ordinal_regression(),

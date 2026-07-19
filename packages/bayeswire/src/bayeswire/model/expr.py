@@ -8,7 +8,9 @@ from typing import Protocol
 from bayeswire.distributions.core import SymbolicDistributionParameter
 from bayeswire.model._expression_errors import array_like_constant_error, is_array_like_constant
 
-type ExprNode = ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+type ExprNode = (
+    ParamRef | DataRef | ConstNode | BinOp | IndexOp | MatVecOp | UnaryOp | VectorScatterOp
+)
 type IndexSpec = ScalarIndex | FullSlice | IndexTuple
 type BinaryOperator = str
 type UnaryFunction = str
@@ -25,6 +27,7 @@ class Expression(Protocol):
     def __rmul__(self, other: object) -> BinOp: ...
     def __truediv__(self, other: object) -> BinOp: ...
     def __rtruediv__(self, other: object) -> BinOp: ...
+    def __matmul__(self, other: object) -> MatVecOp: ...
     def __neg__(self) -> UnaryOp: ...
     def __getitem__(self, index: object) -> IndexOp: ...
 
@@ -53,6 +56,9 @@ class ParamRef(SymbolicDistributionParameter):
     """Reference to a model parameter by name."""
 
     name: str
+
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
@@ -91,6 +97,9 @@ class DataRef(SymbolicDistributionParameter):
 
     name: str
 
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
+
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
 
@@ -127,6 +136,9 @@ class ConstNode(SymbolicDistributionParameter):
     """Literal scalar constant in a symbolic expression."""
 
     value: int | float
+
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
@@ -167,6 +179,9 @@ class BinOp(SymbolicDistributionParameter):
     left: ExprNode
     right: ExprNode
 
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
+
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
 
@@ -204,6 +219,9 @@ class UnaryOp(SymbolicDistributionParameter):
 
     function: UnaryFunction
     operand: ExprNode
+
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
@@ -243,6 +261,9 @@ class IndexOp(SymbolicDistributionParameter):
     base: ExprNode
     index: IndexSpec
 
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
+
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
 
@@ -275,6 +296,47 @@ class IndexOp(SymbolicDistributionParameter):
 
 
 @dataclass(frozen=True)
+class MatVecOp(SymbolicDistributionParameter):
+    """Rank-2 by rank-1 matrix-vector product."""
+
+    matrix: ExprNode
+    vector: ExprNode
+
+    def __add__(self, other: object) -> BinOp:
+        return BinOp("+", self, _to_expr(other))
+
+    def __radd__(self, other: object) -> BinOp:
+        return BinOp("+", _to_expr(other), self)
+
+    def __sub__(self, other: object) -> BinOp:
+        return BinOp("-", self, _to_expr(other))
+
+    def __rsub__(self, other: object) -> BinOp:
+        return BinOp("-", _to_expr(other), self)
+
+    def __mul__(self, other: object) -> BinOp:
+        return BinOp("*", self, _to_expr(other))
+
+    def __rmul__(self, other: object) -> BinOp:
+        return BinOp("*", _to_expr(other), self)
+
+    def __truediv__(self, other: object) -> BinOp:
+        return BinOp("/", self, _to_expr(other))
+
+    def __rtruediv__(self, other: object) -> BinOp:
+        return BinOp("/", _to_expr(other), self)
+
+    def __matmul__(self, other: object) -> MatVecOp:
+        return MatVecOp(self, _to_expr(other))
+
+    def __neg__(self) -> UnaryOp:
+        return UnaryOp("neg", self)
+
+    def __getitem__(self, index: object) -> IndexOp:
+        return IndexOp(self, _to_index_spec(index))
+
+
+@dataclass(frozen=True)
 class VectorScatterOp(SymbolicDistributionParameter):
     """Assemble one vector from fixed and free indexed coordinates."""
 
@@ -288,7 +350,8 @@ class VectorScatterOp(SymbolicDistributionParameter):
 def _to_expr(value: object) -> ExprNode:
     """Convert supported Python values to expression nodes."""
     if isinstance(
-        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+        value,
+        ParamRef | DataRef | ConstNode | BinOp | IndexOp | MatVecOp | UnaryOp | VectorScatterOp,
     ):
         return value
     if isinstance(value, int | float):
@@ -328,5 +391,6 @@ def _to_slice_index_spec(value: slice) -> FullSlice:
 def is_final_expr_node(value: object) -> bool:
     """Return whether ``value`` is resolved final expression IR."""
     return isinstance(
-        value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp | VectorScatterOp
+        value,
+        ParamRef | DataRef | ConstNode | BinOp | IndexOp | MatVecOp | UnaryOp | VectorScatterOp,
     )

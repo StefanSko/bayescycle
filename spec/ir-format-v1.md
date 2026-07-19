@@ -110,6 +110,28 @@ names, not hierarchical IR nodes.
 - `expressions` records named derived expressions for metadata, inspection,
   and validation; stochastic-site expressions are self-contained.
 
+## Expression operation semantics
+
+`BinOp` remains elementwise and supports only `+`, `-`, `*`, and `/` with
+backend array broadcasting. `MatVecOp` is deliberately narrower than a general
+matrix multiplication operation:
+
+- `matrix` must evaluate to an exact rank-2 value with logical shape `[m, n]`;
+- `vector` must evaluate to an exact rank-1 value with logical shape `[n]`;
+- the result has logical shape `[m]` and element `i` is
+  `sum(matrix[i, j] * vector[j] for j in 0..n)`;
+- no operand broadcasting, batch dimensions, implicit transposition,
+  vector-matrix product, or matrix-matrix product is defined;
+- zero-sized dimensions are valid under the same rules, including an empty
+  contraction `[m, 0] @ [0]` whose result is the length-`m` additive identity.
+
+Consumers validate these ranks and the shared contraction dimension during
+binding, before numerical evaluation. An incompatible shape is a bind error,
+not permission to inherit broader semantics from a backend array library.
+Logical indexing determines the operation; storage layout is not part of the
+wire contract. The conformance tolerance policy covers ordinary cross-language
+floating-point reduction differences.
+
 ## Canonical bytes and hashing
 
 The canonical serialization is:
@@ -199,6 +221,17 @@ fit to its exact model and data bytes is specified in
 [`model-data-fingerprint-v1.md`](model-data-fingerprint-v1.md).
 
 ## Changelog
+
+### 1 — narrow matrix-vector expression operation
+
+`bayeswire_ir` stays at 1: this is an additive built-in `MatVecOp` tag with the
+fields `matrix` and `vector`. Existing tags, field lists, and encoding rules are
+unchanged, and all previously committed corpus documents remain byte-identical.
+The operation is exactly rank-2 `[m, n]` by rank-1 `[n]` to rank-1 `[m]`; it does
+not introduce general matrix multiplication or broadcasting. Python producers
+may author it with `matrix @ vector`. Consumers predating the additive tag
+continue to reject documents that use it through `UnknownNodeTag` and must be
+upgraded before those documents are executed.
 
 ### 1 — authoring-time complete prior replacement
 

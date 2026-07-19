@@ -14,7 +14,7 @@ from bayeswire.distributions.core import DistributionParameter
 from bayeswire.ir import bindable_from_meta, register_distribution
 from bayeswire.model import model_meta
 from bayeswire.model._data_schema import DataDimRef, ResolvedDataShapeSchema
-from bayeswire.model.expr import BinOp, DataRef, ParamRef, VectorScatterOp
+from bayeswire.model.expr import BinOp, DataRef, MatVecOp, ParamRef, VectorScatterOp
 
 
 @dataclass(frozen=True)
@@ -131,6 +131,24 @@ def test_submodel_flattens_complete_model_under_closed_namespace() -> None:
         meta.expressions["effects.theta"],
         ParamRef("copied"),
     )
+
+
+def test_submodel_prefixes_matrix_vector_expression_operands() -> None:
+    @model
+    class CorrelatedEffects:
+        matrix = Data.matrix(2, 2)
+        z = Param(Normal(0.0, 1.0), size=2)
+        transformed = matrix @ z
+
+    @model
+    class Parent:
+        effects = Submodel(CorrelatedEffects)
+        y = Observed(Normal(effects.transformed, 1.0))
+
+    transformed = MatVecOp(DataRef("effects.matrix"), ParamRef("effects.z"))
+    meta = model_meta(Parent)
+    assert meta.expressions["effects.transformed"] == transformed
+    assert normal_fields(meta.observed_nodes[-1].distribution).loc == transformed
 
 
 def test_submodel_instances_are_independent_and_may_form_the_complete_parent() -> None:

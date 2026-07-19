@@ -33,6 +33,7 @@ from bayeswire.model.expr import (
     FullSlice,
     IndexOp,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -168,6 +169,10 @@ def _validate_index_expression(value: object, *, label: str) -> None:
             raise TypeError(error)
         _validate_index_expression(value.operand, label=label)
         return
+    if isinstance(value, MatVecOp):
+        _validate_index_expression(value.matrix, label=label)
+        _validate_index_expression(value.vector, label=label)
+        return
     if isinstance(value, IndexOp):
         _validate_index_expression(value.base, label=label)
         _validate_index_spec(value.index, label=label)
@@ -185,6 +190,10 @@ def _validate_data_only_expression(value: object, *, label: str) -> None:
         return
     if isinstance(value, UnaryOp):
         _validate_data_only_expression(value.operand, label=label)
+        return
+    if isinstance(value, MatVecOp):
+        _validate_data_only_expression(value.matrix, label=label)
+        _validate_data_only_expression(value.vector, label=label)
         return
     if isinstance(value, IndexOp):
         _validate_data_only_expression(value.base, label=label)
@@ -235,6 +244,10 @@ def _validate_expression_structure(value: object, *, label: str) -> None:
         if value.function not in _UNARY_FUNCTIONS:
             raise ValueError(f"{label} uses unknown unary function {value.function!r}")
         _validate_expression_structure(value.operand, label=label)
+        return
+    if isinstance(value, MatVecOp):
+        _validate_expression_structure(value.matrix, label=label)
+        _validate_expression_structure(value.vector, label=label)
         return
     if isinstance(value, IndexOp):
         _validate_expression_structure(value.base, label=label)
