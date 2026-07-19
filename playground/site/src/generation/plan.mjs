@@ -1,9 +1,13 @@
+import { MAX_POSTERIOR_RESPONSE_BYTES } from "../engine/types.mjs";
+import { MAX_GENERATION_INPUT_BYTES } from "./limits.mjs";
 import { parseStrictJson } from "./strict-json.mjs";
 
+export { MAX_GENERATION_INPUT_BYTES } from "./limits.mjs";
 export const MAX_GENERATION_COUNT = 1000;
-export const MAX_GENERATION_INPUT_BYTES = 8 * 1024 * 1024;
 export const MAX_GENERATION_PLAN_BYTES = 1024 * 1024;
+export const REQUESTED_FIT_ARTIFACT = Symbol("requested-fit-artifact");
 
+const SNAPSHOT_POSTERIOR_SOURCES = new WeakSet();
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 const MAX_DEPTH = 64;
 const HASH = /^sha256:[0-9a-f]{64}$/u;
@@ -38,7 +42,11 @@ export function modelPrior(modelIrBytes, authoredProvenance = null) {
 export function fitArtifact(modelIrBytes, dataBytes, posteriorBytes, association) {
   const model = copyBytes(modelIrBytes, "fit model IR");
   const data = copyBytes(dataBytes, "fit data");
-  const posterior = copyBytes(posteriorBytes, "fit posterior");
+  const posterior = copyBytes(
+    posteriorBytes,
+    "fit posterior",
+    MAX_POSTERIOR_RESPONSE_BYTES,
+  );
   if (association !== "runtime" && association !== "portable") {
     throw new GenerationPlanError("fit association must be runtime or portable");
   }
@@ -100,21 +108,21 @@ export function generateDatasets(modelIrBytes, options) {
 export function validateGenerationPlan(value) {
   exactKeys(value, ["kind", "count", "seed", "distribution"], "draw plan");
   if (value.kind !== "draw") throw new GenerationPlanError("plan kind must be draw");
-  integer(value.count, "count", 1, MAX_GENERATION_COUNT);
-  integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
-  validateJointPredict(value.distribution);
-  return value;
+  const count = integer(value.count, "count", 1, MAX_GENERATION_COUNT);
+  const seed = integer(value.seed, "seed", 0, MAX_SAFE_INTEGER);
+  const distribution = snapshotJointPredict(value.distribution);
+  return Object.freeze({ kind: "draw", count, seed, distribution });
 }
 
 export async function serializeGenerationPlan(plan) {
-  validateGenerationPlan(plan);
-  const parameters = await sourceDocument(plan.distribution.parameters);
-  const outcomes = plan.distribution.outcomes;
+  const validated = validateGenerationPlan(plan);
+  const parameters = await sourceDocument(validated.distribution.parameters);
+  const outcomes = validated.distribution.outcomes;
   const document = {
     generation_plan_format: "v0-provisional",
     kind: "draw",
-    count: plan.count,
-    seed: plan.seed,
+    count: validated.count,
+    seed: validated.seed,
     distribution: {
       kind: "joint-predict",
       parameters,
@@ -186,6 +194,70 @@ export async function generationInvalidationKey(plan) {
   ));
 }
 
+function snapshotParameterSource(source) {
+  if (!isObject(source)) throw new GenerationPlanError("parameter source must be an object");
+  if (source.kind === "fixed") {
+    exactKeys(source, ["kind", "parametersBytes"], "fixed source");
+    return fixed(source.parametersBytes);
+  }
+  if (source.kind === "model-prior") {
+    exactKeys(source, ["kind", "modelIrBytes", "authoredProvenance"], "model-prior source");
+    return modelPrior(source.modelIrBytes, source.authoredProvenance);
+  }
+  if (source.kind === "posterior") {
+    exactKeys(source, ["kind", "fitArtifact"], "posterior source");
+    const value = source.fitArtifact;
+    exactKeys(
+      value,
+      ["kind", "modelIrBytes", "dataBytes", "posteriorBytes", "association"],
+      "fit artifact",
+    );
+    if (value.kind !== "fit-artifact") {
+      throw new GenerationPlanError("fit artifact kind is invalid");
+    }
+    const snapshot = {
+      kind: "posterior",
+      fitArtifact: fitArtifact(
+        value.modelIrBytes,
+        value.dataBytes,
+        value.posteriorBytes,
+        value.association,
+      ),
+    };
+    const requestedFitArtifact = SNAPSHOT_POSTERIOR_SOURCES.has(source)
+      ? source[REQUESTED_FIT_ARTIFACT]
+      : value;
+    Object.defineProperty(snapshot, REQUESTED_FIT_ARTIFACT, {
+      value: requestedFitArtifact,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+    Object.freeze(snapshot);
+    SNAPSHOT_POSTERIOR_SOURCES.add(snapshot);
+    return snapshot;
+  }
+  throw new GenerationPlanError(`parameter source has unknown kind ${String(source.kind)}`);
+}
+
+function snapshotOutcomes(value) {
+  exactKeys(value, ["kind", "modelIrBytes", "designBytes"], "outcomes");
+  if (value.kind !== "model-outcomes") throw new GenerationPlanError("outcomes kind is invalid");
+  return outcomesOf(value.modelIrBytes, value.designBytes);
+}
+
+function snapshotJointPredict(value) {
+  exactKeys(value, ["kind", "parameters", "outcomes"], "joint prediction");
+  if (value.kind !== "joint-predict") throw new GenerationPlanError("distribution kind is invalid");
+  const parameters = snapshotParameterSource(value.parameters);
+  const outcomes = snapshotOutcomes(value.outcomes);
+  const sourceModel = sourceModelBytes(parameters);
+  if (sourceModel !== null && !equalBytes(sourceModel, outcomes.modelIrBytes)) {
+    throw new GenerationPlanError("parameter source model must equal the outcomes model bytes");
+  }
+  return Object.freeze({ kind: "joint-predict", parameters, outcomes });
+}
+
 function validateParameterSource(source) {
   if (!isObject(source)) throw new GenerationPlanError("parameter source must be an object");
   if (source.kind === "fixed") {
@@ -216,7 +288,11 @@ function validateFitArtifact(value) {
   if (value.kind !== "fit-artifact") throw new GenerationPlanError("fit artifact kind is invalid");
   copyBytes(value.modelIrBytes, "fit model IR");
   copyBytes(value.dataBytes, "fit data");
-  copyBytes(value.posteriorBytes, "fit posterior");
+  copyBytes(
+    value.posteriorBytes,
+    "fit posterior",
+    MAX_POSTERIOR_RESPONSE_BYTES,
+  );
   if (value.association !== "runtime" && value.association !== "portable") {
     throw new GenerationPlanError("fit association must be runtime or portable");
   }

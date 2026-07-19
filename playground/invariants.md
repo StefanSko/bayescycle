@@ -82,8 +82,10 @@ input to a later compilation.
    `generated_datasets.ndjson` artifact defined by
    [`spec/generated-datasets-v0.md`](../spec/generated-datasets-v0.md).
 5. Generation reaches the runtime through one immutable exact-key `generate`
-   plan. Application/UI modules do not select fixed, prior-predictive, or
-   posterior-predictive engine commands. `BrowserRuntime` may use a private
+   plan. `BrowserRuntime` snapshots every caller-supplied plan byte input during
+   validation and reuses only those owned bytes for hashing, dispatch,
+   verification, and publication. Application/UI modules do not select fixed,
+   prior-predictive, or posterior-predictive engine commands. `BrowserRuntime` may use a private
    compatibility command only when it implements the exact requested redraw
    law; otherwise it fails before dispatch until the native bounded generation
    operation is staged.
@@ -124,6 +126,22 @@ input to a later compilation.
 13. Capability failures are visible and bounded. The frontend never drops
     score factors or claims that every scoreable model is ancestrally
     sampleable.
+14. Each sampling-chain posterior response and the merged `posterior.ndjson`
+    are bounded to 64 MiB, independently of the 8 MiB generation-input bound.
+    An oversized chain is rejected in its engine worker before transfer and
+    again at the worker-message boundary; aggregate chain bytes are checked
+    before main-thread decode or merge, rather than rejecting only after
+    building the merged fit. Rejection fails the fit without publishing partial
+    posterior, diagnostics, or recovery artifacts. Fit artifacts therefore
+    accept posterior bytes through 64 MiB while their model IR and data remain
+    bounded to 8 MiB. Portable posterior sources remain bounded to 8 MiB.
+    Runtime-associated fits may generate without publishing their source; every
+    posterior-sourced generation path that does publish explicitly rechecks the
+    posterior against 8 MiB at the `source-posterior.ndjson` publication site.
+    This early sampling ceiling is scoped to the production `WorkerEngine`
+    sample path; aggregate handling by the test-only `InProcessEngine` and
+    generation output bounding remain follow-up work under the engine and
+    artifact limits.
 
 ## Browser application constraints
 
@@ -193,6 +211,13 @@ Tests must freeze these observable claims before implementation changes:
 - external-origin compiler requests are blocked in a real browser;
 - all corpus models still match native canonical IR bytes and hashes;
 - malformed compiler output cannot become a successful inference operation;
+- sampling posterior output has an independent 64 MiB limit: the worker
+  boundary accepts an exactly 64 MiB chain, while oversized chain and aggregate
+  output fails before main-thread decode, merge, follow-up diagnostics, or
+  artifact publication;
+- fit validation accepts posterior bytes above 8 MiB through 64 MiB while fit
+  model/data bytes and portable posterior sources retain the 8 MiB input bound,
+  and publication cannot emit an oversized `source-posterior.ndjson`;
 - project edits and stale completions obey the revisioned state contract;
 - empty schema-derived design defaults, non-empty pre-compile documents, source
   schema changes, and exact shared-authoring restores are separately covered

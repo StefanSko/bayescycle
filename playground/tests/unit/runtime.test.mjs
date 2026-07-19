@@ -1,6 +1,13 @@
-import { BrowserRuntime } from "/site/src/runtime/browser-runtime.mjs";
-import { EngineError } from "/site/src/engine/types.mjs";
 import {
+  BrowserRuntime,
+  requirePublishablePosteriorSource,
+} from "/site/src/runtime/browser-runtime.mjs";
+import {
+  EngineError,
+  MAX_POSTERIOR_RESPONSE_BYTES,
+} from "/site/src/engine/types.mjs";
+import {
+  MAX_GENERATION_INPUT_BYTES,
   fitArtifact,
   fixed,
   generateDatasets,
@@ -17,6 +24,38 @@ function bytes(value) { return new TextEncoder().encode(value); }
 async function hash(value) {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
   return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function posteriorBytesOfLength(byteLength) {
+  const documents = UTF8.decode(runtimePosteriorBytes()).trimEnd().split("\n")
+    .map((line) => JSON.parse(line));
+  documents[0].padding = "";
+  const encode = () => bytes(
+    documents.map((document) => JSON.stringify(document)).join("\n") + "\n",
+  );
+  const framingBytes = encode().byteLength;
+  assert(byteLength >= framingBytes, "posterior target is smaller than its framing");
+  documents[0].padding = "x".repeat(byteLength - framingBytes);
+  return encode();
+}
+
+class ReportedBytes extends Uint8Array {
+  constructor(byteLength) {
+    super(0);
+    this.reportedByteLength = byteLength;
+  }
+  get byteLength() { return this.reportedByteLength; }
+}
+
+function changingBytes(first, later) {
+  let reads = 0;
+  return {
+    read() {
+      reads += 1;
+      return Uint8Array.from(reads === 1 ? first : later);
+    },
+    get reads() { return reads; },
+  };
 }
 
 function runtimePosteriorBytes() {
@@ -304,6 +343,184 @@ export default [
     },
   },
   {
+    name: "runtime association uses the fit identity captured during snapshotting",
+    fn: async () => {
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const data = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const issuedPosterior = runtimePosteriorBytes();
+      const unissuedDocuments = UTF8.decode(issuedPosterior).trimEnd().split("\n")
+        .map((line) => JSON.parse(line));
+      unissuedDocuments[0].padding = "unissued-runtime-fit";
+      const unissuedPosterior = bytes(
+        unissuedDocuments.map((document) => JSON.stringify(document)).join("\n") + "\n",
+      );
+      let generationRequests = 0;
+      const runtime = new BrowserRuntime({
+        execute: async (request) => {
+          if (request.command === "sample") return { rawBytes: issuedPosterior };
+          if (request.command === "generate") {
+            generationRequests += 1;
+            return { rawBytes: generatedOutput(request) };
+          }
+          return { rawBytes: bytes("{}") };
+        },
+      });
+      const conditioned = await runtime.run({
+        operation: "condition",
+        modelIr: model,
+        data,
+        settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      });
+      const genuineFit = conditioned.fitArtifact;
+      const unissuedFit = {
+        kind: "fit-artifact",
+        modelIrBytes: model,
+        dataBytes: data,
+        posteriorBytes: unissuedPosterior,
+        association: "runtime",
+      };
+      let fitArtifactReads = 0;
+      const parameters = {
+        kind: "posterior",
+        get fitArtifact() {
+          fitArtifactReads += 1;
+          return fitArtifactReads === 1 ? unissuedFit : genuineFit;
+        },
+      };
+      const plan = {
+        kind: "draw",
+        count: 1,
+        seed: 0,
+        distribution: {
+          kind: "joint-predict",
+          parameters,
+          outcomes: {
+            kind: "model-outcomes",
+            modelIrBytes: model,
+            designBytes: design,
+          },
+        },
+      };
+      let error;
+      try {
+        await runtime.run({ operation: "generate", plan });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.kind === "InvalidFitAssociation",
+        `unissued snapshot fit was accepted: ${String(error)}`);
+      assert(generationRequests === 0,
+        `engine received the unissued posterior ${generationRequests} times`);
+      assert(fitArtifactReads === 1,
+        `fitArtifact getter was read ${fitArtifactReads} times`);
+    },
+  },
+  {
+    name: "runtime snapshots structural generation plan bytes before reuse",
+    fn: async () => {
+      const firstModel = bytes('{"bayeswire_ir":1,"model":{"name":"first"}}\n');
+      const laterModel = bytes('{"bayeswire_ir":1,"model":{"name":"later"}}\n');
+      const firstDesign = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const laterDesign = bytes('{"format":"bayescycle.data.json.v1","variables":{"x":{"dtype":"int64","shape":[],"values":[9]}}}\n');
+      const firstParameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
+      const laterParameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[9.0]}}}\n');
+      const modelInput = changingBytes(firstModel, laterModel);
+      const designInput = changingBytes(firstDesign, laterDesign);
+      const parameterInput = changingBytes(firstParameters, laterParameters);
+      const plan = {
+        kind: "draw",
+        count: 1,
+        seed: 0,
+        distribution: {
+          kind: "joint-predict",
+          parameters: {
+            kind: "fixed",
+            get parametersBytes() { return parameterInput.read(); },
+          },
+          outcomes: {
+            kind: "model-outcomes",
+            get modelIrBytes() { return modelInput.read(); },
+            get designBytes() { return designInput.read(); },
+          },
+        },
+      };
+      let engineRequest;
+      const result = await new BrowserRuntime({
+        execute: async (request) => {
+          engineRequest = request;
+          return { rawBytes: generatedOutput(request) };
+        },
+      }).run({ operation: "generate", plan });
+      assert(engineRequest.model === UTF8.decode(firstModel),
+        `engine received a later model snapshot: ${engineRequest.model}`);
+      assert(engineRequest.design === UTF8.decode(firstDesign),
+        `engine received a later design snapshot: ${engineRequest.design}`);
+      assert(engineRequest.parameter_source.parameters === UTF8.decode(firstParameters),
+        "engine received later fixed parameters");
+      const published = Object.fromEntries(
+        result.artifacts.map((entry) => [entry.name, UTF8.decode(entry.bytes)]),
+      );
+      assert(published["model.ir.json"] === UTF8.decode(firstModel),
+        "publication changed the validated model snapshot");
+      assert(published["design.json"] === UTF8.decode(firstDesign),
+        "publication changed the validated design snapshot");
+      assert(published["fixed-parameters.json"] === UTF8.decode(firstParameters),
+        "publication changed the validated parameter snapshot");
+      assert(modelInput.reads === 1 && designInput.reads === 1 && parameterInput.reads === 1,
+        `caller byte getters were reread: ${modelInput.reads}/${designInput.reads}/${parameterInput.reads}`);
+    },
+  },
+  {
+    name: "publication guard and portable validation enforce the 8 MiB source cap",
+    fn: async () => {
+      requirePublishablePosteriorSource(MAX_GENERATION_INPUT_BYTES);
+      let guardError;
+      try {
+        requirePublishablePosteriorSource(MAX_GENERATION_INPUT_BYTES + 1);
+      } catch (reason) {
+        guardError = reason;
+      }
+      assert(guardError?.kind === "PosteriorPublicationTooLarge",
+        `publication guard did not return its distinct error: ${String(guardError)}`);
+      assert(guardError.message ===
+        "PosteriorPublicationTooLarge: posterior source exceeds the 8 MiB generation-input limit and cannot be published",
+      `publication guard was not specific: ${guardError?.message}`);
+
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const posterior = posteriorBytesOfLength(MAX_GENERATION_INPUT_BYTES + 1);
+      let requests = 0;
+      let result;
+      let portableError;
+      try {
+        result = await new BrowserRuntime({
+          execute: async (request) => {
+            requests += 1;
+            return { rawBytes: generatedOutput(request) };
+          },
+        }).run({
+          operation: "generate",
+          plan: generateDatasets(model, {
+            design,
+            parameterSource: posteriorOf(
+              fitArtifact(model, fitData, posterior, "portable"),
+            ),
+            count: 1,
+            seed: 0,
+          }),
+        });
+      } catch (reason) {
+        portableError = reason;
+      }
+      assert(portableError?.message === "portable posterior source exceeds its byte bound",
+        `portable bound changed: ${String(portableError)}`);
+      assert(result === undefined, "oversized portable posterior source was published");
+      assert(requests === 0, `oversized portable source reached the engine ${requests} times`);
+    },
+  },
+  {
     name: "generation abort after engine output rejects before publication",
     fn: async () => {
       const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
@@ -587,6 +804,104 @@ export default [
         });
         assert(calls === expectedCalls, `${JSON.stringify(settings)} made ${calls} calls`);
       }
+    },
+  },
+  {
+    name: "runtime posterior limit option is bounded by 64 MiB",
+    fn: () => {
+      new BrowserRuntime({}, {}, MAX_POSTERIOR_RESPONSE_BYTES);
+      let error;
+      try {
+        new BrowserRuntime({}, {}, MAX_POSTERIOR_RESPONSE_BYTES + 1);
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.kind === "InvalidPosteriorLimit",
+        `oversized runtime posterior option was accepted: ${String(error)}`);
+      assert(error.message.includes(`1..${String(MAX_POSTERIOR_RESPONSE_BYTES)}`),
+        `runtime option error retained the old bound: ${error?.message}`);
+    },
+  },
+  {
+    name: "runtime accepts a posterior above the generation input limit end to end",
+    fn: async () => {
+      const posteriorByteLength = MAX_GENERATION_INPUT_BYTES + 1;
+      const posterior = posteriorBytesOfLength(posteriorByteLength);
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const data = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const calls = [];
+      const executor = {
+        execute: async (request) => {
+          calls.push(request.command);
+          if (request.command === "sample") return { rawBytes: posterior };
+          if (request.command === "generate") {
+            return { rawBytes: generatedOutput(request) };
+          }
+          return { rawBytes: bytes("{}") };
+        },
+      };
+      const runtime = new BrowserRuntime(executor);
+      const result = await runtime.run({
+        operation: "condition",
+        modelIr: model,
+        data,
+        settings: { chains: 1, num_warmup: 0, num_draws: 4 },
+      });
+      const published = result.artifacts.find((entry) => entry.name === "posterior.ndjson");
+      assert(published?.bytes.byteLength === posteriorByteLength,
+        `posterior publication changed: ${String(published?.bytes.byteLength)}`);
+      assert(result.fitArtifact.posteriorBytes.byteLength === posteriorByteLength,
+        "fit artifact retained the old generation-input ceiling");
+      const source = posteriorOf(result.fitArtifact);
+      const generated = await runtime.run({
+        operation: "generate",
+        plan: generateDatasets(model, {
+          design,
+          parameterSource: source,
+          count: 1,
+          seed: 0,
+        }),
+      });
+      assert(generated.artifacts.length === 1 &&
+        generated.artifacts[0].name === "generated_datasets.ndjson",
+      `runtime fit generation published its oversized source: ${JSON.stringify(
+        generated.artifacts.map((entry) => entry.name),
+      )}`);
+      assert(calls.join(",") === "sample,diagnose,generate",
+        `fit did not complete generation: ${calls.join(",")}`);
+    },
+  },
+  {
+    name: "runtime rejects aggregate posterior bytes above 64 MiB before decode",
+    fn: async () => {
+      const calls = [];
+      const executor = {
+        execute: async (request) => {
+          calls.push(request.command);
+          return {
+            rawBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES / 2 + 1),
+          };
+        },
+      };
+      const runtime = new BrowserRuntime(executor);
+      let result;
+      let error;
+      try {
+        result = await runtime.run({
+          operation: "condition",
+          modelIr: bytes('{"bayeswire_ir":1}'),
+          data: bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n'),
+          settings: { chains: 2, num_warmup: 0, num_draws: 4 },
+        });
+      } catch (reason) {
+        error = reason;
+      }
+      assert(error?.error === "PosteriorTooLarge", `aggregate response was not typed: ${String(error)}`);
+      assert(error.message === "Posterior exceeds the 64 MiB browser limit; reduce parameters or draws.",
+        `aggregate response was not actionable: ${error?.message}`);
+      assert(result === undefined, "oversized conditioning published a partial result");
+      assert(calls.join(",") === "sample,sample", `follow-up artifacts ran: ${calls.join(",")}`);
     },
   },
   {

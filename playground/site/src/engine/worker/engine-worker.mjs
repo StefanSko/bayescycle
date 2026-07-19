@@ -7,7 +7,10 @@ import {
   parseEngineMetadata,
 } from "../executor.mjs";
 import { artifactBytes, parseEngineOutput } from "../stream.mjs";
-import { EngineError } from "../types.mjs";
+import {
+  EngineError,
+  requirePosteriorResponseWithinLimit,
+} from "../types.mjs";
 
 self.onmessage = (event) => {
   void handle(event.data);
@@ -36,8 +39,12 @@ async function handle(message) {
     const metadata = parseEngineMetadata(metadataValue);
     await assertWasmHash(wasmBytes, metadata.wasm_sha256);
     const abi = await BayesiteAbi.instantiate(wasmBytes, metadata);
+    const rawBytes = artifactBytes(abi.run(message.request));
+    if (message.request.command === "sample") {
+      requirePosteriorResponseWithinLimit(rawBytes.byteLength);
+    }
     const output = parseEngineOutput(
-      artifactBytes(abi.run(message.request)),
+      rawBytes,
       message.chainId,
       isStreamCommand(message.request.command),
       message.request.command === "sample"

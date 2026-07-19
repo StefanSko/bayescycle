@@ -1,10 +1,15 @@
+import { MAX_POSTERIOR_RESPONSE_BYTES } from "/site/src/engine/types.mjs";
 import {
   MAX_GENERATED_ARTIFACT_BYTES,
   MAX_GENERATED_LINE_BYTES,
   parseGeneratedDatasets,
   verifyGeneratedDatasets,
 } from "/site/src/generation/artifact.mjs";
-import { validatePortablePosterior } from "/site/src/generation/posterior-source.mjs";
+import { MAX_GENERATION_INPUT_BYTES } from "/site/src/generation/limits.mjs";
+import {
+  validatePortablePosterior,
+  validateRuntimePosterior,
+} from "/site/src/generation/posterior-source.mjs";
 
 const UTF8 = new TextEncoder();
 const TEXT = new TextDecoder();
@@ -18,6 +23,26 @@ const DATASET_0 = '{"format":"bayescycle.data.json.v1","variables":{"x":{"dtype"
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+class ReportedBytes extends Uint8Array {
+  constructor(byteLength) {
+    super(0);
+    this.reportedByteLength = byteLength;
+  }
+  get byteLength() { return this.reportedByteLength; }
+}
+
+class ReportedRuntimeLines extends Uint8Array {
+  constructor() {
+    super(UTF8.encode("{}\n{}\n{}\n"));
+  }
+  slice(start, end) {
+    if (start === 0) return new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES + 1);
+    const output = new Uint8Array(end - start);
+    for (let index = start; index < end; index += 1) output[index - start] = this[index];
+    return output;
+  }
 }
 
 async function fixtureBytes() {
@@ -406,6 +431,48 @@ export default [
           modelBytes: model, dataBytes: data, posteriorBytes: UTF8.encode(changed),
         }), expected);
       }
+    },
+  },
+  {
+    name: "portable posterior source retains the 8 MiB generation input bound",
+    fn: async () => {
+      await rejects(() => validatePortablePosterior({
+        modelBytes: MODEL_BYTES,
+        dataBytes: FIT_DATA_BYTES,
+        posteriorBytes: new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1),
+      }), "portable posterior source exceeds its byte bound");
+    },
+  },
+  {
+    name: "runtime posterior bounds name the 64 MiB source and line ceilings",
+    fn: async () => {
+      let sourceError;
+      try {
+        await validateRuntimePosterior({
+          modelBytes: MODEL_BYTES,
+          dataBytes: FIT_DATA_BYTES,
+          posteriorBytes: new ReportedBytes(MAX_POSTERIOR_RESPONSE_BYTES + 1),
+        });
+      } catch (reason) {
+        sourceError = reason;
+      }
+      assert(sourceError?.message ===
+        "runtime posterior source exceeds the 64 MiB byte bound",
+      `runtime source bound was not actionable: ${String(sourceError)}`);
+
+      let lineError;
+      try {
+        await validateRuntimePosterior({
+          modelBytes: MODEL_BYTES,
+          dataBytes: FIT_DATA_BYTES,
+          posteriorBytes: new ReportedRuntimeLines(),
+        });
+      } catch (reason) {
+        lineError = reason;
+      }
+      assert(lineError?.message ===
+        "runtime posterior line 1 is empty or exceeds the 64 MiB byte bound",
+      `runtime line bound was not actionable: ${String(lineError)}`);
     },
   },
   {

@@ -7,6 +7,7 @@ import {
   ENGINE_VERSION,
   ENGINE_WASM_URL,
   EngineError,
+  requirePosteriorResponseWithinLimit,
 } from "./types.mjs";
 
 export class InProcessEngine {
@@ -37,6 +38,9 @@ export class InProcessEngine {
   async execute(request, options = {}) {
     await Promise.resolve();
     const bytes = artifactBytes(this.abi.run(request));
+    if (request.command === "sample") {
+      requirePosteriorResponseWithinLimit(bytes.byteLength);
+    }
     return parseEngineOutput(
       bytes,
       options.chainId ?? 0,
@@ -138,6 +142,14 @@ export class WorkerEngine {
         if (!validResult(response)) {
           malformed();
           return;
+        }
+        if (request.command === "sample") {
+          try {
+            requirePosteriorResponseWithinLimit(response.rawBytes.byteLength);
+          } catch (error) {
+            fail(error);
+            return;
+          }
         }
         succeed({
           rawBytes: response.rawBytes,
