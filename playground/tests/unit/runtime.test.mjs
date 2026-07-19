@@ -1,4 +1,7 @@
-import { BrowserRuntime } from "/site/src/runtime/browser-runtime.mjs";
+import {
+  BrowserRuntime,
+  requirePublishablePosteriorSource,
+} from "/site/src/runtime/browser-runtime.mjs";
 import {
   EngineError,
   MAX_POSTERIOR_RESPONSE_BYTES,
@@ -42,6 +45,17 @@ class ReportedBytes extends Uint8Array {
     this.reportedByteLength = byteLength;
   }
   get byteLength() { return this.reportedByteLength; }
+}
+
+function changingBytes(first, later) {
+  let reads = 0;
+  return {
+    read() {
+      reads += 1;
+      return Uint8Array.from(reads === 1 ? first : later);
+    },
+    get reads() { return reads; },
+  };
 }
 
 function runtimePosteriorBytes() {
@@ -98,23 +112,6 @@ function runtimePosteriorBytes() {
       },
     },
   ].map((document) => JSON.stringify(document)).join("\n") + "\n");
-}
-
-async function portableRuntimePosteriorBytes(modelBytes, dataBytes) {
-  const prefix = bytes("bayescycle-model-data-v1\n");
-  const framed = new Uint8Array(
-    prefix.byteLength + modelBytes.byteLength + 1 + dataBytes.byteLength,
-  );
-  framed.set(prefix);
-  framed.set(modelBytes, prefix.byteLength);
-  framed[prefix.byteLength + modelBytes.byteLength] = 0x0a;
-  framed.set(dataBytes, prefix.byteLength + modelBytes.byteLength + 1);
-  const fingerprint = await hash(framed);
-  const documents = UTF8.decode(runtimePosteriorBytes()).trimEnd().split("\n")
-    .map((line) => JSON.parse(line));
-  documents[0].model_data_fingerprint = fingerprint;
-  documents.at(-1).trailer.model_data_fingerprint = fingerprint;
-  return bytes(documents.map((document) => JSON.stringify(document)).join("\n") + "\n");
 }
 
 async function conditionWithCancelledFollowUp(command) {
@@ -346,60 +343,107 @@ export default [
     },
   },
   {
-    name: "runtime publication guard rejects oversized posterior sources distinctly",
+    name: "runtime snapshots structural generation plan bytes before reuse",
     fn: async () => {
-      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
-      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
-      const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
-      const posterior = await portableRuntimePosteriorBytes(model, fitData);
-      let posteriorReads = 0;
-      const fit = {
-        kind: "fit-artifact",
-        get modelIrBytes() { return Uint8Array.from(model); },
-        get dataBytes() { return Uint8Array.from(fitData); },
-        get posteriorBytes() {
-          posteriorReads += 1;
-          return posteriorReads <= 6
-            ? Uint8Array.from(posterior)
-            : new ReportedBytes(MAX_GENERATION_INPUT_BYTES + 1);
-        },
-        association: "portable",
-      };
+      const firstModel = bytes('{"bayeswire_ir":1,"model":{"name":"first"}}\n');
+      const laterModel = bytes('{"bayeswire_ir":1,"model":{"name":"later"}}\n');
+      const firstDesign = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const laterDesign = bytes('{"format":"bayescycle.data.json.v1","variables":{"x":{"dtype":"int64","shape":[],"values":[9]}}}\n');
+      const firstParameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[0.5]}}}\n');
+      const laterParameters = bytes('{"format":"bayescycle.data.json.v1","variables":{"theta":{"dtype":"float64","shape":[],"values":[9.0]}}}\n');
+      const modelInput = changingBytes(firstModel, laterModel);
+      const designInput = changingBytes(firstDesign, laterDesign);
+      const parameterInput = changingBytes(firstParameters, laterParameters);
       const plan = {
         kind: "draw",
         count: 1,
         seed: 0,
         distribution: {
           kind: "joint-predict",
-          parameters: { kind: "posterior", fitArtifact: fit },
+          parameters: {
+            kind: "fixed",
+            get parametersBytes() { return parameterInput.read(); },
+          },
           outcomes: {
             kind: "model-outcomes",
-            get modelIrBytes() { return Uint8Array.from(model); },
-            get designBytes() { return Uint8Array.from(design); },
+            get modelIrBytes() { return modelInput.read(); },
+            get designBytes() { return designInput.read(); },
           },
         },
       };
+      let engineRequest;
+      const result = await new BrowserRuntime({
+        execute: async (request) => {
+          engineRequest = request;
+          return { rawBytes: generatedOutput(request) };
+        },
+      }).run({ operation: "generate", plan });
+      assert(engineRequest.model === UTF8.decode(firstModel),
+        `engine received a later model snapshot: ${engineRequest.model}`);
+      assert(engineRequest.design === UTF8.decode(firstDesign),
+        `engine received a later design snapshot: ${engineRequest.design}`);
+      assert(engineRequest.parameter_source.parameters === UTF8.decode(firstParameters),
+        "engine received later fixed parameters");
+      const published = Object.fromEntries(
+        result.artifacts.map((entry) => [entry.name, UTF8.decode(entry.bytes)]),
+      );
+      assert(published["model.ir.json"] === UTF8.decode(firstModel),
+        "publication changed the validated model snapshot");
+      assert(published["design.json"] === UTF8.decode(firstDesign),
+        "publication changed the validated design snapshot");
+      assert(published["fixed-parameters.json"] === UTF8.decode(firstParameters),
+        "publication changed the validated parameter snapshot");
+      assert(modelInput.reads === 1 && designInput.reads === 1 && parameterInput.reads === 1,
+        `caller byte getters were reread: ${modelInput.reads}/${designInput.reads}/${parameterInput.reads}`);
+    },
+  },
+  {
+    name: "publication guard and portable validation enforce the 8 MiB source cap",
+    fn: async () => {
+      requirePublishablePosteriorSource(MAX_GENERATION_INPUT_BYTES);
+      let guardError;
+      try {
+        requirePublishablePosteriorSource(MAX_GENERATION_INPUT_BYTES + 1);
+      } catch (reason) {
+        guardError = reason;
+      }
+      assert(guardError?.kind === "PosteriorPublicationTooLarge",
+        `publication guard did not return its distinct error: ${String(guardError)}`);
+      assert(guardError.message ===
+        "PosteriorPublicationTooLarge: posterior source exceeds the 8 MiB generation-input limit and cannot be published",
+      `publication guard was not specific: ${guardError?.message}`);
+
+      const model = bytes('{"bayeswire_ir":1,"model":{}}\n');
+      const design = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const fitData = bytes('{"format":"bayescycle.data.json.v1","variables":{}}\n');
+      const posterior = posteriorBytesOfLength(MAX_GENERATION_INPUT_BYTES + 1);
       let requests = 0;
       let result;
-      let error;
+      let portableError;
       try {
         result = await new BrowserRuntime({
           execute: async (request) => {
             requests += 1;
             return { rawBytes: generatedOutput(request) };
           },
-        }).run({ operation: "generate", plan });
+        }).run({
+          operation: "generate",
+          plan: generateDatasets(model, {
+            design,
+            parameterSource: posteriorOf(
+              fitArtifact(model, fitData, posterior, "portable"),
+            ),
+            count: 1,
+            seed: 0,
+          }),
+        });
       } catch (reason) {
-        error = reason;
+        portableError = reason;
       }
-      assert(error?.kind === "PosteriorPublicationTooLarge",
-        `publication guard did not return its distinct error: ${String(error)}`);
-      assert(error.message ===
-        "PosteriorPublicationTooLarge: posterior source exceeds the 8 MiB generation-input limit and cannot be published",
-      `publication guard was not specific: ${error?.message}`);
-      assert(result === undefined, "oversized posterior source was published");
-      assert(requests === 1, `guard did not run at publication: ${requests} engine requests`);
-      assert(posteriorReads >= 7, `posterior source was not rechecked at publication: ${posteriorReads}`);
+      assert(portableError?.message === "portable posterior source exceeds its byte bound",
+        `portable bound changed: ${String(portableError)}`);
+      assert(result === undefined, "oversized portable posterior source was published");
+      assert(requests === 0, `oversized portable source reached the engine ${requests} times`);
     },
   },
   {

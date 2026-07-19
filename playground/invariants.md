@@ -82,8 +82,10 @@ input to a later compilation.
    `generated_datasets.ndjson` artifact defined by
    [`spec/generated-datasets-v0.md`](../spec/generated-datasets-v0.md).
 5. Generation reaches the runtime through one immutable exact-key `generate`
-   plan. Application/UI modules do not select fixed, prior-predictive, or
-   posterior-predictive engine commands. `BrowserRuntime` may use a private
+   plan. `BrowserRuntime` snapshots every caller-supplied plan byte input during
+   validation and reuses only those owned bytes for hashing, dispatch,
+   verification, and publication. Application/UI modules do not select fixed,
+   prior-predictive, or posterior-predictive engine commands. `BrowserRuntime` may use a private
    compatibility command only when it implements the exact requested redraw
    law; otherwise it fails before dispatch until the native bounded generation
    operation is staged.

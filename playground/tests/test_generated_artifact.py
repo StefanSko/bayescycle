@@ -11,6 +11,7 @@ CASES = [
     "resolver rejects output from the wrong generation plan",
     "portable posterior requires complete chain and trailer lineage",
     "portable posterior source retains the 8 MiB generation input bound",
+    "runtime posterior bounds name the 64 MiB source and line ceilings",
     "rejects malformed truncated nonfinite and oversized streams",
 ]
 
