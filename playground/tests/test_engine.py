@@ -7,6 +7,7 @@ CASES = [
     "golden diagnose is byte-identical",
     "streams per_draw_v2 in batches",
     "sample yields one output per chain and streams draws",
+    "sample preserves a zero-length MatVec free vector",
     "diagnose merges the two chain fits",
     "sampling posterior bound is independent of the generation input bound",
     "diagnose merge accepts above the generation cap and enforces the posterior cap",
