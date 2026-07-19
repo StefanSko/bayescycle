@@ -22,6 +22,7 @@ import {
 import { MAX_GENERATION_INPUT_BYTES } from "../generation/limits.mjs";
 import {
   GenerationPlanError,
+  REQUESTED_FIT_ARTIFACT,
   fitArtifact,
   serializeGenerationPlan,
   validateGenerationPlan,
@@ -139,7 +140,6 @@ export class BrowserRuntime {
       }
       throw error;
     }
-    const requestedParameters = request.plan.distribution.parameters;
     const parameters = plan.distribution.parameters;
     const outcomes = plan.distribution.outcomes;
     const modelBytes = outcomes.modelIrBytes;
@@ -181,7 +181,7 @@ export class BrowserRuntime {
       fitDataBytes = fit.dataBytes;
       posteriorBytes = fit.posteriorBytes;
       posteriorAssociation = fit.association;
-      requestedFitArtifact = requestedParameters.fitArtifact;
+      requestedFitArtifact = parameters[REQUESTED_FIT_ARTIFACT];
       identities.fit_hash = await sha256Bytes(posteriorBytes);
       identities.fit_model_hash = await sha256Bytes(fitModelBytes);
       identities.fit_data_hash = await sha256Bytes(fitDataBytes);

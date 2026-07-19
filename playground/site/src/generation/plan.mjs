@@ -5,7 +5,9 @@ import { parseStrictJson } from "./strict-json.mjs";
 export { MAX_GENERATION_INPUT_BYTES } from "./limits.mjs";
 export const MAX_GENERATION_COUNT = 1000;
 export const MAX_GENERATION_PLAN_BYTES = 1024 * 1024;
+export const REQUESTED_FIT_ARTIFACT = Symbol("requested-fit-artifact");
 
+const SNAPSHOT_POSTERIOR_SOURCES = new WeakSet();
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 const MAX_DEPTH = 64;
 const HASH = /^sha256:[0-9a-f]{64}$/u;
@@ -213,12 +215,27 @@ function snapshotParameterSource(source) {
     if (value.kind !== "fit-artifact") {
       throw new GenerationPlanError("fit artifact kind is invalid");
     }
-    return posteriorOf(fitArtifact(
-      value.modelIrBytes,
-      value.dataBytes,
-      value.posteriorBytes,
-      value.association,
-    ));
+    const snapshot = {
+      kind: "posterior",
+      fitArtifact: fitArtifact(
+        value.modelIrBytes,
+        value.dataBytes,
+        value.posteriorBytes,
+        value.association,
+      ),
+    };
+    const requestedFitArtifact = SNAPSHOT_POSTERIOR_SOURCES.has(source)
+      ? source[REQUESTED_FIT_ARTIFACT]
+      : value;
+    Object.defineProperty(snapshot, REQUESTED_FIT_ARTIFACT, {
+      value: requestedFitArtifact,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+    Object.freeze(snapshot);
+    SNAPSHOT_POSTERIOR_SOURCES.add(snapshot);
+    return snapshot;
   }
   throw new GenerationPlanError(`parameter source has unknown kind ${String(source.kind)}`);
 }
