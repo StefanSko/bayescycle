@@ -1,6 +1,6 @@
 [project]
 name = "bayesite-viz"
-version = "0.6.0"
+version = "0.7.0"
 description = "Agent-operable CLI that renders ArviZ Bayesian plots from an InferenceData fit."
 readme = "README.md"
 authors = [{ name = "StefanSko" }]
