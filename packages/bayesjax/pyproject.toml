@@ -1,6 +1,6 @@
 [project]
 name = "bayesjax"
-version = "0.6.0"
+version = "0.7.0"
 description = "A Python project built with the Astral stack: uv, ruff, and ty."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,7 +10,7 @@ dependencies = [
     # [tool.uv.sources] below still resolves this from the workspace path;
     # the exact pin is what published wheels carry. Bumped only by
     # scripts/bump_version.py.
-    "bayeswire==0.6.0",
+    "bayeswire==0.7.0",
     "jax>=0.6.0",
     "blackjax>=1.2.0",
 ]

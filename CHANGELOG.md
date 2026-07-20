@@ -10,6 +10,8 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-20
+
 ### Added
 
 - Add narrow Bayeswire `matrix @ vector` authoring and the additive `MatVecOp`
@@ -156,7 +158,8 @@ formats retain their own compatibility policies.
 Earlier package history lived in the predecessor repositories and is not
 reconstructed here.
 
-[Unreleased]: https://github.com/StefanSko/bayescycle/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/StefanSko/bayescycle/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/StefanSko/bayescycle/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/StefanSko/bayescycle/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/StefanSko/bayescycle/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/StefanSko/bayescycle/compare/v0.3.0...v0.4.0
