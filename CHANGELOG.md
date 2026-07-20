@@ -12,6 +12,8 @@ formats retain their own compatibility policies.
 
 ### Added
 
+- Add an experimental, non-executing Bayeswire `linear(...).apply(...)` typed
+  authoring scaffold for the existing `MatVecOp` expression.
 - Add narrow Bayeswire `matrix @ vector` authoring and the additive `MatVecOp`
   IR v1 tag, with exact `[m, n] @ [n] -> [m]` semantics, cross-backend
   log-density/gradient and simulation conformance, and a correlated
