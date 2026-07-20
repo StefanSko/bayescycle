@@ -11,6 +11,7 @@ from bayeswire import Data, Observed, Param, model
 from bayeswire.constraints import Positive
 from bayeswire.distributions import Bernoulli, Binomial, HalfNormal, Normal
 from bayeswire.distributions.core import DistributionValue, LogProbability
+from bayeswire.math import linear
 from bayeswire.model.decorator import ModelMeta, ResolvedObserved, ResolvedParam
 from bayeswire.model.expr import BinOp, ConstNode, DataRef, MatVecOp, ParamRef, UnaryOp
 
@@ -217,7 +218,7 @@ def test_authored_scaled_matrix_operand_remains_differentiable_end_to_end() -> N
         matrix = Data.matrix(2, 2)
         tau = Param(HalfNormal(1.0), constraint=Positive())
         z = Param(Normal(0.0, 1.0), size=2)
-        mean = (tau * matrix) @ z
+        mean = linear(tau * matrix).apply(z)
         y = Observed(Normal(mean, 0.5))
 
     bound = bind_model(

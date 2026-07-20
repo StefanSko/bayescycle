@@ -26,7 +26,6 @@ from bayeswire.model._deferred import (
     DeclarationSymbol,
     DeferredBinOp,
     DeferredIndexOp,
-    DeferredMatVecOp,
     DeferredUnaryOp,
 )
 from bayeswire.model.dimensions import Dim, normalize_dims
@@ -106,9 +105,6 @@ class _SubmodelMember(SymbolicDistributionParameter):
     """Typed declaration proxy for one member of a closed submodel namespace."""
 
     _bayeswire_state: _SubmodelMemberState
-
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
 
     def __getattr__(self, name: str) -> _SubmodelMember:
         state = _submodel_member_state(self)
@@ -288,9 +284,6 @@ def _resolve_submodel_member(
 class Param(SymbolicDistributionParameter):
     """Parameter declaration used inside ``@model`` class bodies."""
 
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
-
     distribution: Distribution
     constraint: Constraint | None
     size: Data | _SubmodelMember | int | None
@@ -353,9 +346,6 @@ class Param(SymbolicDistributionParameter):
 @dataclass(frozen=True, init=False)
 class Data(SymbolicDistributionParameter):
     """Data declaration used inside ``@model`` class bodies."""
-
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
 
     schema: DataSchema
     dims: tuple[Dim, ...] | None
@@ -525,9 +515,6 @@ class PartiallyObserved(SymbolicDistributionParameter):
     missing_lower: Data | _SubmodelMember | None
     missing_upper: Data | _SubmodelMember | None
     symbol: DeclarationSymbol = field(default_factory=_next_symbol, init=False, repr=False)
-
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
 
     def __init__(
         self,

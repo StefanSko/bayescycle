@@ -50,13 +50,14 @@ def test_param_and_data_arithmetic_builds_expression_tree() -> None:
     assert expr.right.right == x
 
 
-def test_matrix_vector_operator_builds_explicit_expression_node() -> None:
+def test_matrix_vector_node_supports_direct_construction() -> None:
     matrix = DataRef("matrix")
     vector = ParamRef("vector")
 
-    expr = matrix @ vector
+    expr = MatVecOp(matrix=matrix, vector=vector)
 
-    assert expr == MatVecOp(matrix=matrix, vector=vector)
+    assert expr.matrix is matrix
+    assert expr.vector is vector
 
 
 def test_scalar_constants_are_promoted_to_const_nodes() -> None:

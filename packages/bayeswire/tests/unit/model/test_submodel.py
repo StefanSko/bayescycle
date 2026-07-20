@@ -12,6 +12,7 @@ from bayeswire.constraints import Positive, VectorBounds
 from bayeswire.distributions import HalfNormal, Normal
 from bayeswire.distributions.core import DistributionParameter
 from bayeswire.ir import bindable_from_meta, register_distribution
+from bayeswire.math import linear
 from bayeswire.model import model_meta
 from bayeswire.model._data_schema import DataDimRef, ResolvedDataShapeSchema
 from bayeswire.model.expr import BinOp, DataRef, MatVecOp, ParamRef, VectorScatterOp
@@ -138,7 +139,7 @@ def test_submodel_prefixes_matrix_vector_expression_operands() -> None:
     class CorrelatedEffects:
         matrix = Data.matrix(2, 2)
         z = Param(Normal(0.0, 1.0), size=2)
-        transformed = matrix @ z
+        transformed = linear(matrix).apply(z)
 
     @model
     class Parent:

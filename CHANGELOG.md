@@ -10,6 +10,12 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+### Changed
+
+- Replace Bayeswire's broad `matrix @ vector` authoring convenience with the
+  explicit, immutable, and reusable `linear(matrix).apply(vector)` capability;
+  resolved `MatVecOp` IR and exact `[m, n] @ [n] -> [m]` semantics are unchanged.
+
 ## [0.7.0] - 2026-07-20
 
 ### Added

@@ -9,7 +9,7 @@ import pytest
 
 from bayeswire.distributions import Binomial, Normal, Poisson
 from bayeswire.distributions.core import DistributionParameter, DistributionValue, LogProbability
-from bayeswire.math import exp, sigmoid
+from bayeswire.math import exp, linear, sigmoid
 from bayeswire.model.core import Data, Observed, Param
 from bayeswire.model.decorator import (
     _collect_declaration_symbols,
@@ -151,7 +151,7 @@ def test_resolve_declaration_expr_builds_matrix_vector_product() -> None:
     vector = Param(Normal(0.0, 1.0), size=3)
 
     resolved = _resolve_declaration_expr(
-        matrix @ vector,
+        linear(matrix).apply(vector),
         {matrix.symbol: "matrix", vector.symbol: "vector"},
     )
 
@@ -164,7 +164,7 @@ def test_resolve_declaration_expr_builds_composed_matrix_operand() -> None:
     vector = Param(Normal(0.0, 1.0), size=3)
 
     resolved = _resolve_declaration_expr(
-        (scale * matrix) @ vector,
+        linear(scale * matrix).apply(vector),
         {
             scale.symbol: "scale",
             matrix.symbol: "matrix",

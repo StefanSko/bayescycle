@@ -27,7 +27,6 @@ class Expression(Protocol):
     def __rmul__(self, other: object) -> BinOp: ...
     def __truediv__(self, other: object) -> BinOp: ...
     def __rtruediv__(self, other: object) -> BinOp: ...
-    def __matmul__(self, other: object) -> MatVecOp: ...
     def __neg__(self) -> UnaryOp: ...
     def __getitem__(self, index: object) -> IndexOp: ...
 
@@ -56,9 +55,6 @@ class ParamRef(SymbolicDistributionParameter):
     """Reference to a model parameter by name."""
 
     name: str
-
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
@@ -97,9 +93,6 @@ class DataRef(SymbolicDistributionParameter):
 
     name: str
 
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
-
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
 
@@ -136,9 +129,6 @@ class ConstNode(SymbolicDistributionParameter):
     """Literal scalar constant in a symbolic expression."""
 
     value: int | float
-
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
@@ -179,9 +169,6 @@ class BinOp(SymbolicDistributionParameter):
     left: ExprNode
     right: ExprNode
 
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
-
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
 
@@ -220,9 +207,6 @@ class UnaryOp(SymbolicDistributionParameter):
     function: UnaryFunction
     operand: ExprNode
 
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
-
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
 
@@ -260,9 +244,6 @@ class IndexOp(SymbolicDistributionParameter):
 
     base: ExprNode
     index: IndexSpec
-
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
 
     def __add__(self, other: object) -> BinOp:
         return BinOp("+", self, _to_expr(other))
@@ -325,9 +306,6 @@ class MatVecOp(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> BinOp:
         return BinOp("/", _to_expr(other), self)
-
-    def __matmul__(self, other: object) -> MatVecOp:
-        return MatVecOp(self, _to_expr(other))
 
     def __neg__(self) -> UnaryOp:
         return UnaryOp("neg", self)

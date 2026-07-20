@@ -229,9 +229,10 @@ fields `matrix` and `vector`. Existing tags, field lists, and encoding rules are
 unchanged, and all previously committed corpus documents remain byte-identical.
 The operation is exactly rank-2 `[m, n]` by rank-1 `[n]` to rank-1 `[m]`; it does
 not introduce general matrix multiplication or broadcasting. Python producers
-may author it with `matrix @ vector`. Consumers predating the additive tag
-continue to reject documents that use it through `UnknownNodeTag` and must be
-upgraded before those documents are executed.
+may author it with `linear(matrix).apply(vector)`. The authoring-side map is not
+part of resolved metadata or this wire format. Consumers predating the additive
+tag continue to reject documents that use it through `UnknownNodeTag` and must
+be upgraded before those documents are executed.
 
 ### 1 — authoring-time complete prior replacement
 
