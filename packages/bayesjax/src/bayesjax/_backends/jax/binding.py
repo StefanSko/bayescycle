@@ -41,6 +41,7 @@ from bayeswire.model.expr import (
     IndexOp,
     IndexSpec,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -960,6 +961,10 @@ def _validate_index_expr(
         _validate_index_expr(node.right, data, param_shapes)
     elif isinstance(node, UnaryOp):
         _validate_index_expr(node.operand, data, param_shapes)
+    elif isinstance(node, MatVecOp):
+        _validate_index_expr(node.matrix, data, param_shapes)
+        _validate_index_expr(node.vector, data, param_shapes)
+        _infer_expr_shape(node, data, param_shapes)
     elif isinstance(node, IndexOp):
         _validate_index_expr(node.base, data, param_shapes)
         _validate_index_spec_exprs(node.index, data, param_shapes)
@@ -1084,6 +1089,23 @@ def _validate_single_index_op(
     _infer_indexed_shape(base_shape, node.index, data)
 
 
+def _infer_matvec_shape(
+    matrix_shape: tuple[int, ...],
+    vector_shape: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Validate the narrow MatVecOp rank contract and return its result shape."""
+    if len(matrix_shape) != 2:
+        raise ValueError(f"MatVecOp matrix must be rank 2, got shape {matrix_shape}")
+    if len(vector_shape) != 1:
+        raise ValueError(f"MatVecOp vector must be rank 1, got shape {vector_shape}")
+    if matrix_shape[1] != vector_shape[0]:
+        raise ValueError(
+            f"MatVecOp contraction dimensions must match: matrix shape {matrix_shape}, "
+            f"vector shape {vector_shape}"
+        )
+    return (matrix_shape[0],)
+
+
 def _infer_expr_shape(
     node: ExprNode,
     data: dict[str, jax.Array],
@@ -1102,6 +1124,10 @@ def _infer_expr_shape(
         return jnp.broadcast_shapes(left_shape, right_shape)
     if isinstance(node, UnaryOp):
         return _infer_expr_shape(node.operand, data, param_shapes)
+    if isinstance(node, MatVecOp):
+        matrix_shape = _infer_expr_shape(node.matrix, data, param_shapes)
+        vector_shape = _infer_expr_shape(node.vector, data, param_shapes)
+        return _infer_matvec_shape(matrix_shape, vector_shape)
     if isinstance(node, IndexOp):
         base_shape = _infer_expr_shape(node.base, data, param_shapes)
         return _infer_indexed_shape(base_shape, node.index, data)
@@ -1193,6 +1219,11 @@ def _evaluate_data_index_expr(node: ExprNode, data: dict[str, jax.Array]) -> jax
         if function is None:
             raise ValueError(f"Unknown unary function in index expression: {node.function!r}")
         return function(operand)
+    if isinstance(node, MatVecOp):
+        matrix = _evaluate_data_index_expr(node.matrix, data)
+        vector = _evaluate_data_index_expr(node.vector, data)
+        _infer_matvec_shape(matrix.shape, vector.shape)
+        return jnp.matmul(matrix, vector)
     if isinstance(node, IndexOp):
         base = _evaluate_data_index_expr(node.base, data)
         _infer_indexed_shape(base.shape, node.index, data)

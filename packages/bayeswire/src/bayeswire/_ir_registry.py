@@ -48,6 +48,7 @@ from bayeswire.model.expr import (
     FullSlice,
     IndexOp,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -162,6 +163,7 @@ _BUILTIN_NODE_CLASSES: tuple[type, ...] = (
     BinOp,
     UnaryOp,
     IndexOp,
+    MatVecOp,
     VectorScatterOp,
     # Index specifications
     ScalarIndex,

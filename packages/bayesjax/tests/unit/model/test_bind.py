@@ -29,7 +29,7 @@ from bayeswire.model.decorator import (
     ResolvedStochasticSite,
 )
 from bayeswire.model.dimensions import ResolvedModelDimensions, ResolvedVariableDims
-from bayeswire.model.expr import BinOp, ConstNode, DataRef, ParamRef, VectorScatterOp
+from bayeswire.model.expr import BinOp, ConstNode, DataRef, MatVecOp, ParamRef, VectorScatterOp
 
 from bayesjax._backends.jax.binding import _param_count, _resolve_param_shape
 from bayesjax.compiler import compile_log_density
@@ -125,6 +125,84 @@ def test_bind_rejects_wrong_data_shape() -> None:
 
     with pytest.raises(ValueError, match="Data 'chol' has wrong shape"):
         bind_meta(meta, n=3, chol=jnp.eye(2), y=0.0)
+
+
+def matvec_meta(*, matrix_schema: ResolvedDataShapeSchema, vector_size: int) -> ModelMeta:
+    mean = MatVecOp(DataRef("matrix"), ParamRef("vector"))
+    return ModelMeta(
+        params={
+            "vector": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=vector_size),
+        },
+        data={"matrix": ResolvedData(matrix_schema)},
+        observed_nodes=(ResolvedObserved("y", Normal(mean, 1.0)),),
+        expressions={"mean": mean},
+    )
+
+
+def test_bind_accepts_exact_matrix_vector_product_shapes() -> None:
+    bound = bind_meta(
+        matvec_meta(matrix_schema=ResolvedDataShapeSchema((2, 3)), vector_size=3),
+        matrix=jnp.ones((2, 3)),
+        y=jnp.zeros((2,)),
+    )
+
+    assert bound.param_shapes["vector"] == (3,)
+
+
+@pytest.mark.parametrize(
+    ("matrix_shape", "vector_size", "result_size"),
+    [
+        ((3, 0), 0, 3),
+        ((0, 3), 3, 0),
+        ((0, 0), 0, 0),
+    ],
+)
+def test_bind_accepts_zero_sized_matrix_vector_products(
+    matrix_shape: tuple[int, int],
+    vector_size: int,
+    result_size: int,
+) -> None:
+    bound = bind_meta(
+        matvec_meta(
+            matrix_schema=ResolvedDataShapeSchema(matrix_shape),
+            vector_size=vector_size,
+        ),
+        matrix=jnp.zeros(matrix_shape),
+        y=jnp.zeros((result_size,)),
+    )
+
+    assert bound.param_shapes["vector"] == (vector_size,)
+
+
+def test_bind_rejects_matvec_matrix_rank_other_than_two() -> None:
+    with pytest.raises(ValueError, match="MatVecOp matrix must be rank 2"):
+        bind_meta(
+            matvec_meta(matrix_schema=ResolvedDataShapeSchema((3,)), vector_size=3),
+            matrix=jnp.ones((3,)),
+            y=jnp.zeros((3,)),
+        )
+
+
+def test_bind_rejects_matvec_vector_rank_other_than_one() -> None:
+    mean = MatVecOp(DataRef("matrix"), ParamRef("vector"))
+    meta = ModelMeta(
+        params={"vector": ResolvedParam(Normal(0.0, 1.0), constraint=None, size=None)},
+        data={"matrix": ResolvedData(ResolvedDataShapeSchema((2, 2)))},
+        observed_nodes=(ResolvedObserved("y", Normal(mean, 1.0)),),
+        expressions={},
+    )
+
+    with pytest.raises(ValueError, match="MatVecOp vector must be rank 1"):
+        bind_meta(meta, matrix=jnp.eye(2), y=jnp.zeros((2,)))
+
+
+def test_bind_rejects_matvec_contraction_dimension_mismatch() -> None:
+    with pytest.raises(ValueError, match=r"matrix shape \(2, 3\).*vector shape \(4,\)"):
+        bind_meta(
+            matvec_meta(matrix_schema=ResolvedDataShapeSchema((2, 3)), vector_size=4),
+            matrix=jnp.ones((2, 3)),
+            y=jnp.zeros((2,)),
+        )
 
 
 def test_bind_rejects_non_scalar_dynamic_data_shape_dimension_source() -> None:

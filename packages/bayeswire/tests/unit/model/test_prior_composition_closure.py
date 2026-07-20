@@ -1247,6 +1247,25 @@ def test_composition_round_trip_detaches_nested_extension_maps() -> None:
     assert composed_distribution.parameters["location"] == 1.0
 
 
+def test_composition_accepts_data_only_matrix_vector_index_expression() -> None:
+    @model
+    class Target:
+        index_matrix = Data.matrix(1, 2)
+        index_vector = Data.vector(2)
+        values = Data.vector()
+        theta = Param(Normal(0.0, 1.0))
+        selected = values[(index_matrix @ index_vector)[0]]
+        y = Observed(Normal(theta + selected, 1.0))
+
+    @model
+    class Prior:
+        theta = Param(Normal(1.0, 0.5))
+
+    composed = with_prior(Target, prior=Prior)
+
+    assert "selected" in model_meta(composed).expressions
+
+
 @pytest.mark.parametrize("index", [1.5, "parameter"])
 def test_composition_rejects_non_integer_or_parameter_dependent_indexes(index: object) -> None:
     @model

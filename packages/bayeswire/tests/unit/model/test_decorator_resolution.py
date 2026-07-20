@@ -25,6 +25,7 @@ from bayeswire.model.expr import (
     FullSlice,
     IndexOp,
     IndexTuple,
+    MatVecOp,
     ParamRef,
     ScalarIndex,
     UnaryOp,
@@ -142,6 +143,38 @@ def test_resolve_declaration_expr_builds_final_tree_recursively() -> None:
         "+",
         IndexOp(ParamRef("alpha"), ScalarIndex(DataRef("group_idx"))),
         ConstNode(1.5),
+    )
+
+
+def test_resolve_declaration_expr_builds_matrix_vector_product() -> None:
+    matrix = Data.matrix()
+    vector = Param(Normal(0.0, 1.0), size=3)
+
+    resolved = _resolve_declaration_expr(
+        matrix @ vector,
+        {matrix.symbol: "matrix", vector.symbol: "vector"},
+    )
+
+    assert resolved == MatVecOp(DataRef("matrix"), ParamRef("vector"))
+
+
+def test_resolve_declaration_expr_builds_composed_matrix_operand() -> None:
+    scale = Param(Normal(0.0, 1.0))
+    matrix = Data.matrix()
+    vector = Param(Normal(0.0, 1.0), size=3)
+
+    resolved = _resolve_declaration_expr(
+        (scale * matrix) @ vector,
+        {
+            scale.symbol: "scale",
+            matrix.symbol: "matrix",
+            vector.symbol: "vector",
+        },
+    )
+
+    assert resolved == MatVecOp(
+        BinOp("*", ParamRef("scale"), DataRef("matrix")),
+        ParamRef("vector"),
     )
 
 

@@ -10,10 +10,16 @@ from __future__ import annotations
 import pytest
 
 from bayeswire.distributions import Normal
-from bayeswire.model._deferred import DeferredBinOp, DeferredExpr, DeferredIndexOp, DeferredUnaryOp
+from bayeswire.model._deferred import (
+    DeferredBinOp,
+    DeferredExpr,
+    DeferredIndexOp,
+    DeferredMatVecOp,
+    DeferredUnaryOp,
+)
 from bayeswire.model.core import Data, Param
 from bayeswire.model.decorator import _resolve_declaration_expr
-from bayeswire.model.expr import BinOp, ConstNode, DataRef, IndexOp, ParamRef, UnaryOp
+from bayeswire.model.expr import BinOp, ConstNode, DataRef, IndexOp, MatVecOp, ParamRef, UnaryOp
 
 
 def as_deferred_bin(value: object) -> DeferredBinOp:
@@ -31,9 +37,17 @@ def as_deferred_unary(value: object) -> DeferredUnaryOp:
     return value
 
 
+def as_deferred_matvec(value: object) -> DeferredMatVecOp:
+    assert isinstance(value, DeferredMatVecOp)
+    return value
+
+
 def assert_no_final_expr_nodes(value: object) -> None:
     """Deferred trees must not contain final/resolved expression nodes."""
-    assert not isinstance(value, ParamRef | DataRef | ConstNode | BinOp | IndexOp | UnaryOp)
+    assert not isinstance(
+        value,
+        ParamRef | DataRef | ConstNode | BinOp | IndexOp | MatVecOp | UnaryOp,
+    )
 
     if isinstance(value, DeferredBinOp):
         assert_no_final_expr_nodes(value.left)
@@ -41,6 +55,9 @@ def assert_no_final_expr_nodes(value: object) -> None:
     elif isinstance(value, DeferredIndexOp):
         assert_no_final_expr_nodes(value.base)
         assert_no_final_index_nodes(value.index)
+    elif isinstance(value, DeferredMatVecOp):
+        assert_no_final_expr_nodes(value.matrix)
+        assert_no_final_expr_nodes(value.vector)
     elif isinstance(value, DeferredUnaryOp):
         assert_no_final_expr_nodes(value.operand)
     else:
@@ -141,6 +158,17 @@ def test_declaration_indexing_and_reverse_ops_stay_deferred() -> None:
     assert beta_plus_two.right == 2.0
 
 
+def test_declaration_matrix_vector_product_stays_deferred_until_resolution() -> None:
+    matrix = Data.matrix()
+    vector = Param(Normal(0.0, 1.0), size=3)
+
+    product = as_deferred_matvec(matrix @ vector)
+
+    assert product.matrix is matrix
+    assert product.vector is vector
+    assert_no_final_expr_nodes(product)
+
+
 def test_declaration_tuple_indexing_stays_deferred_until_resolution() -> None:
     x = Data.matrix()
 
@@ -165,3 +193,7 @@ def test_deferred_expr_type_alias_covers_operator_results() -> None:
     expr: DeferredExpr = alpha + 1.0
 
     assert isinstance(expr, DeferredBinOp)
+
+    product: DeferredExpr = Data.matrix() @ alpha
+
+    assert isinstance(product, DeferredMatVecOp)

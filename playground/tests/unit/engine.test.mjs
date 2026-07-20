@@ -139,6 +139,38 @@ export default [
     },
   },
   {
+    name: "sample preserves a zero-length MatVec free vector",
+    fn: async () => {
+      const root = `${FIXTURE_ROOT}zero_matvec/`;
+      const [executor, modelText, dataText] = await Promise.all([
+        sharedExecutor(),
+        fetchText(`${root}model.ir.json`),
+        fetchText(`${root}data.json`),
+      ]);
+      const draws = [];
+      const result = await sample({
+        model: JSON.parse(modelText),
+        data: JSON.parse(dataText),
+        settings: {
+          num_warmup: 4,
+          num_draws: 4,
+          max_treedepth: 4,
+          target_accept: 0.8,
+        },
+        seed: 29,
+        chains: 1,
+        executor,
+        onDrawBatch: ({ draws: batch }) => draws.push(...batch),
+      });
+      assert(result.ok, `zero-length MatVec sample failed: ${JSON.stringify(result.error)}`);
+      assert(draws.length === 4, `expected 4 zero-length draws, got ${draws.length}`);
+      assert(
+        draws.every((draw) => Array.isArray(draw.values?.z) && draw.values.z.length === 0),
+        `zero-length z was not preserved: ${JSON.stringify(draws)}`,
+      );
+    },
+  },
+  {
     name: "diagnose merges the two chain fits",
     fn: async () => {
       const executor = await sharedExecutor();

@@ -12,6 +12,10 @@ formats retain their own compatibility policies.
 
 ### Added
 
+- Add narrow Bayeswire `matrix @ vector` authoring and the additive `MatVecOp`
+  IR v1 tag, with exact `[m, n] @ [n] -> [m]` semantics, cross-backend
+  log-density/gradient and simulation conformance, and a correlated
+  non-centered Playground example.
 - Add an **Another prior** Playground parameter source that composes a small
   prior-only model with the compiled model in a fresh disposable worker,
   rejects target divergence, data extension, and incompatible dimensions,

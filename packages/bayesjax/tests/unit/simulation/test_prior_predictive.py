@@ -96,6 +96,28 @@ class MultivariateNormalObserved:
 
 
 @model
+class NonCenteredMvnPriorPredictive:
+    """Correlated non-centered vector transformed by explicit matrix-vector IR."""
+
+    n = Data.scalar()
+    mean = Data.vector(n)
+    latent_chol = Data.matrix(n, n)
+    observation_chol = Data.matrix(n, n)
+    z = Param(Normal(0.0, 1.0), size=n)
+    theta = mean + latent_chol @ z
+    y = Observed(MultivariateNormal(theta, observation_chol))
+
+
+@model
+class InvalidMatVecPriorPredictive:
+    """Malformed contraction used to pin pre-JIT simulation validation."""
+
+    matrix = Data.matrix(2, 3)
+    z = Param(Normal(0.0, 1.0), size=2)
+    y = Observed(Normal(matrix @ z, 1.0))
+
+
+@model
 class FixedKernelGpPriorPredictive:
     """Fixed-kernel GP prior predictive model."""
 
@@ -251,6 +273,37 @@ def test_simulate_prior_predictive_draws_multivariate_normal_observed_event() ->
 
     assert result.parameters["mu"].shape == (5, 3)
     assert result.observed["y"].shape == (5, 3)
+
+
+def test_simulate_prior_predictive_evaluates_non_centered_matrix_vector_mean() -> None:
+    result = simulate_prior_predictive(
+        NonCenteredMvnPriorPredictive,
+        seed=47,
+        num_samples=5,
+        data={
+            "n": 2,
+            "mean": jnp.asarray([0.5, -0.25]),
+            "latent_chol": jnp.asarray([[1.0, 0.0], [0.6, 0.8]]),
+            "observation_chol": 0.2 * jnp.eye(2),
+        },
+    )
+
+    assert result.parameters["z"].shape == (5, 2)
+    assert result.observed["y"].shape == (5, 2)
+    assert jnp.all(jnp.isfinite(result.observed["y"]))
+
+
+def test_simulate_prior_predictive_rejects_invalid_matvec_before_jit() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"MatVecOp contraction dimensions.*matrix shape \(2, 3\).*vector shape \(2,\)",
+    ):
+        simulate_prior_predictive(
+            InvalidMatVecPriorPredictive,
+            seed=48,
+            num_samples=2,
+            data={"matrix": jnp.ones((2, 3))},
+        )
 
 
 def test_simulate_prior_predictive_draws_ordered_cutpoints_and_ordinal_observations() -> None:
