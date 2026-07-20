@@ -1,6 +1,6 @@
 // Source: src/engine/types.ts, bayesledger @ 7346d71.
 
-export const ENGINE_VERSION = "0.3.1";
+export const ENGINE_VERSION = "0.4.0";
 export const MAX_POSTERIOR_RESPONSE_BYTES = 64 * 1024 * 1024;
 export const ENGINE_WASM_URL = new URL(
   "../../vendor/bayesite/bayesite_core.wasm",

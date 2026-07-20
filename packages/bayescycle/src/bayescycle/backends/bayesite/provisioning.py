@@ -53,28 +53,28 @@ class EngineRelease:
 
 
 PINNED_ENGINE_RELEASE = EngineRelease(
-    version="v0.3.1",
+    version="v0.4.0",
     base_url="https://github.com/StefanSko/bayesite/releases/download",
     targets=(
         EngineTarget(
             target="x86_64-unknown-linux-musl",
             archive_format="tar.gz",
-            sha256="a1054465e820103909c165394d5073141443cc6144ade3effc939be30b7e5772",
+            sha256="075d69d363794895df1a21ef27f5985162f39bc1fde3f2179bed84901c23c79b",
         ),
         EngineTarget(
             target="x86_64-apple-darwin",
             archive_format="tar.gz",
-            sha256="4efbf237cab73a8d699931ab94c382d5ea3753f2e03202fe8a9ecce300d33443",
+            sha256="94fe0b3e65e6897de10176cb74865b5ff322f2e1b23960ce93632bf6519e528e",
         ),
         EngineTarget(
             target="aarch64-apple-darwin",
             archive_format="tar.gz",
-            sha256="c600f97988bbbc8c214df81594bd054f60e9416aee5b82e97979db1e1f303ce8",
+            sha256="dcbaaf14f1f9846cd4f6343e4388143a2e1484d125f44a0f6892b7f1c08f67cb",
         ),
         EngineTarget(
             target="x86_64-pc-windows-msvc",
             archive_format="zip",
-            sha256="57b08806f4dd1a1d0451bab23eaac275ad7793789787137697609fdb0057a39b",
+            sha256="ad3e8d1b932edcc024caf135894300ce5a43d3a8fee5c265f8d7c7b1024910d9",
         ),
     ),
 )
