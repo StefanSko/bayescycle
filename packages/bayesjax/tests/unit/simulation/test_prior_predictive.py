@@ -18,6 +18,7 @@ from bayeswire.distributions import (
 )
 from bayeswire.distributions.core import DistributionValue, LogProbability
 from bayeswire.ir import bindable_from_meta
+from bayeswire.math import linear
 from bayeswire.model.decorator import ResolvedStochasticSite, model_meta
 from bayeswire.model.expr import BinOp, ConstNode, ParamRef
 
@@ -104,7 +105,7 @@ class NonCenteredMvnPriorPredictive:
     latent_chol = Data.matrix(n, n)
     observation_chol = Data.matrix(n, n)
     z = Param(Normal(0.0, 1.0), size=n)
-    theta = mean + latent_chol @ z
+    theta = mean + linear(latent_chol).apply(z)
     y = Observed(MultivariateNormal(theta, observation_chol))
 
 
@@ -114,7 +115,7 @@ class InvalidMatVecPriorPredictive:
 
     matrix = Data.matrix(2, 3)
     z = Param(Normal(0.0, 1.0), size=2)
-    y = Observed(Normal(matrix @ z, 1.0))
+    y = Observed(Normal(linear(matrix).apply(z), 1.0))
 
 
 @model

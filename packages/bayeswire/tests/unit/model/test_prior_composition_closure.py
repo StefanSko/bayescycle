@@ -31,6 +31,7 @@ from bayeswire.ir import (
     meta_to_dict,
     register_distribution,
 )
+from bayeswire.math import linear
 from bayeswire.model import ModelMeta, model_meta
 from bayeswire.model._data_schema import (
     DataDimRef,
@@ -1254,7 +1255,7 @@ def test_composition_accepts_data_only_matrix_vector_index_expression() -> None:
         index_vector = Data.vector(2)
         values = Data.vector()
         theta = Param(Normal(0.0, 1.0))
-        selected = values[(index_matrix @ index_vector)[0]]
+        selected = values[linear(index_matrix).apply(index_vector)[0]]
         y = Observed(Normal(theta + selected, 1.0))
 
     @model

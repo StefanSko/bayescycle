@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from bayeswire.distributions import Normal
+from bayeswire.math import linear
 from bayeswire.model._deferred import (
     DeferredBinOp,
     DeferredExpr,
@@ -162,7 +163,7 @@ def test_declaration_matrix_vector_product_stays_deferred_until_resolution() -> 
     matrix = Data.matrix()
     vector = Param(Normal(0.0, 1.0), size=3)
 
-    product = as_deferred_matvec(matrix @ vector)
+    product = as_deferred_matvec(linear(matrix).apply(vector))
 
     assert product.matrix is matrix
     assert product.vector is vector
@@ -194,6 +195,6 @@ def test_deferred_expr_type_alias_covers_operator_results() -> None:
 
     assert isinstance(expr, DeferredBinOp)
 
-    product: DeferredExpr = Data.matrix() @ alpha
+    product: DeferredExpr = linear(Data.matrix()).apply(alpha)
 
     assert isinstance(product, DeferredMatVecOp)

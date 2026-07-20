@@ -8,7 +8,7 @@ def test_correlated_mvn_example_compiles_and_fits_with_wasm_engine(
     page.goto(f"{base_url}/site/")
     page.locator("#examples-menu").select_option("mvn-non-centered")
 
-    expect(page.locator("#model-source")).to_contain_text("latent_chol @ z")
+    expect(page.locator("#model-source")).to_contain_text("linear(latent_chol)")
     expect(page.locator("#observed-data")).to_contain_text('"latent_chol"')
     page.locator("#compile-button").click()
     expect(page.locator("#ir-hash")).to_have_text(

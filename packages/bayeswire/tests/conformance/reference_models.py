@@ -25,7 +25,7 @@ from bayeswire.distributions import (
     Poisson,
     Truncated,
 )
-from bayeswire.math import exp
+from bayeswire.math import exp, linear
 from bayeswire.model.decorator import ModelMeta, ResolvedStochasticSite
 
 
@@ -140,7 +140,7 @@ def _mvn_non_centered() -> ReferenceModelCase:
         observation_chol = Data.matrix(n, n)
 
         z = Param(Normal(0.0, 1.0), size=n)
-        theta = mean + latent_chol @ z
+        theta = mean + linear(latent_chol).apply(z)
         y = Observed(MultivariateNormal(theta, observation_chol))
 
     return ReferenceModelCase(
