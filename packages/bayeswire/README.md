@@ -47,6 +47,23 @@ Canonical bytes are stable input to model hashes and downstream conformance.
 Dimension labels and coordinates travel in a separate sidecar and do not change
 the model hash.
 
+## Linear maps
+
+Use the explicit `bayeswire.math.linear` capability for matrix-vector model
+expressions. A map is immutable, complete, and reusable:
+
+```python
+from bayeswire.math import linear
+
+transform = linear(latent_chol)
+theta = mean + transform.apply(z)
+```
+
+Only each application lowers to the existing `MatVecOp` expression. The map
+itself never enters `ModelMeta`, the dimension sidecar, or serialized IR. Its
+numerical contract is exactly rank-2 `[m, n]` applied to rank-1 `[n]`, producing
+rank-1 `[m]`; concrete shape validation belongs to backend binding.
+
 ## Composition
 
 `Submodel(Model)` reuses a complete model under an explicit namespace. It

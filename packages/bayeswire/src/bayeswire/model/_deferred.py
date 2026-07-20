@@ -55,9 +55,6 @@ class DeferredBinOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
 
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
-
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
 
@@ -95,9 +92,6 @@ class DeferredUnaryOp(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
-
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
 
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
@@ -137,9 +131,6 @@ class DeferredIndexOp(SymbolicDistributionParameter):
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
 
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
-
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
 
@@ -177,9 +168,6 @@ class DeferredMatVecOp(SymbolicDistributionParameter):
 
     def __rtruediv__(self, other: object) -> DeferredBinOp:
         return DeferredBinOp("/", other, self)
-
-    def __matmul__(self, other: object) -> DeferredMatVecOp:
-        return DeferredMatVecOp(self, other)
 
     def __neg__(self) -> DeferredUnaryOp:
         return DeferredUnaryOp("neg", self)
