@@ -95,6 +95,22 @@ bayescycle warmup              # pre-populates both uvx environments
 `bayesite-idata` owns NetCDF export and `bayesite-viz` owns plotting. Their
 ArviZ stack never enters the default Bayescycle environment.
 
+## Study state
+
+Initialize and validate optional study-level state without adopting any
+scientific phase policy in the runtime:
+
+```bash
+bayescycle study init example --study-id example --title "Example study"
+bayescycle study validate example
+bayescycle study apply example example/patches/0001.json --actor human
+```
+
+`study apply` accepts an RFC 6902 JSON Patch array, validates the resulting
+state, appends a hash-linked audit event, refuses duplicate patches, and leaves
+canonical files unchanged on validation failure. The optional repository study
+skill owns estimand, phase-gate, diagnostics-review, and reporting policy.
+
 ## Engine management
 
 ```bash

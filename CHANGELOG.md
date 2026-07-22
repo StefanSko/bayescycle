@@ -10,6 +10,12 @@ formats retain their own compatibility policies.
 
 ## [Unreleased]
 
+### Added
+
+- Add `bayescycle study init|validate|apply` for initializing and validating
+  optional study directories and atomically applying approved RFC 6902 state
+  patches with append-only audit events.
+
 ### Changed
 
 - Replace Bayeswire's broad `matrix @ vector` authoring convenience with the

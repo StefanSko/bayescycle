@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import cast
 
 from bayescycle._cli import main
-
-JsonObject = dict[str, object]
+from bayescycle._study.documents import JsonObject
 
 
 def _read_json(path: Path) -> JsonObject:

@@ -5,11 +5,14 @@
 Bayescycle is the Python workflow CLI between Bayeswire model files and either
 the Bayesite executable (default) or Bayesjax (`[inproc]`). It owns model-file
 loading, IR materialization, canonical workflow inputs, run-directory paths and
-provenance, backend planning, and backend invocation.
+provenance, backend planning, backend invocation, and the narrow study-state
+mechanism exposed under `bayescycle study`.
 
-It owns no model semantics, distribution math, sampler algorithms, plotting,
-reports, or artifact database. The optional root
-`.agents/skills/bayescycle-study/` protocol must not expand the runtime package.
+Study-state ownership is limited to initialization, structural validation,
+append-only events, and explicit approved-patch application. Bayescycle owns no
+scientific phase policy, model semantics, distribution math, sampler algorithms,
+plotting, reports, or interpretation of study artifacts. The optional root
+`.agents/skills/bayescycle-study/` protocol owns scientific policy.
 
 Keep [`docs/invariants.md`](docs/invariants.md) true.
 
@@ -18,6 +21,8 @@ Keep [`docs/invariants.md`](docs/invariants.md) true.
 - Normalize CLI input quickly into immutable typed requests and explicit plans.
 - Resolve complete backend intent before writing a run directory.
 - Run artifacts are append-only; never clear or overwrite an existing output.
+- Study events are append-only; study state changes only through an explicit,
+  validated patch application with an actor recorded.
 - Bayesite commands are data before execution. Preflight the engine before
   materializing workflow artifacts.
 - Backend adapters own backend options and sampler facts. Bayescycle serializes

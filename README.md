@@ -17,7 +17,7 @@ This repository publishes five lockstep Python distributions:
 | Distribution | Responsibility |
 |---|---|
 | [`bayeswire`](packages/bayeswire) | Stdlib-only model eDSL, resolved IR, normative [`spec/`](spec/), and conformance corpus |
-| [`bayescycle`](packages/bayescycle) | Workflow CLI, run directories, backend invocation, replay |
+| [`bayescycle`](packages/bayescycle) | Workflow CLI, run and optional study-state directories, backend invocation, replay |
 | [`bayesjax`](packages/bayesjax) | Optional JAX/BlackJAX NUTS backend and float64 oracle |
 | [`bayesite-idata`](packages/bayesite-idata) | Run directory to ArviZ DataTree/NetCDF |
 | [`bayesite-viz`](packages/bayesite-viz) | ArviZ plotting CLI |
@@ -46,8 +46,8 @@ bayescycle sample model.py --data data.json -o run-jax/ --backend bayesjax
 ```
 
 See [`packages/bayeswire`](packages/bayeswire) for model authoring and
-[`packages/bayescycle`](packages/bayescycle) for generation, replay, engine, and
-visualization commands. The browser Playground is documented in
+[`packages/bayescycle`](packages/bayescycle) for generation, replay, engine,
+study-state, and visualization commands. The browser Playground is documented in
 [`playground/README.md`](playground/README.md).
 
 ## Design constraints

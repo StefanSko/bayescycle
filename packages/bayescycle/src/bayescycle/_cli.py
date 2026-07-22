@@ -30,6 +30,8 @@ from bayescycle._errors import WorkflowError
 from bayescycle._model_loader import ModelLoadError
 from bayescycle._run_artifacts.run_metadata import RecordedRunMetadata
 from bayescycle._settings import SamplerSettings
+from bayescycle._study.documents import StudyDocumentError
+from bayescycle._study.storage import apply_patch, initialize_study, validate_study
 from bayescycle._workflow.backend_plan import (
     BackendPlanRequest,
     resolve_backend_plan,
@@ -169,6 +171,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _replay(namespace)
     if command == "workflow-plan":
         return _workflow_plan(namespace)
+    if command == "study":
+        return _study(namespace)
     if command == "engine":
         return _engine(namespace)
     if command == "idata":
@@ -432,6 +436,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     workflow_plan.add_argument("--engine", help="Bayesite executable for selected bayesite stages")
     workflow_plan.add_argument("--config", type=Path, help="TOML backend-plan config")
+
+    study = subparsers.add_parser(
+        "study",
+        description="Initialize, validate, and transition study-level workflow state.",
+    )
+    study_subparsers = study.add_subparsers(dest="study_command", required=True)
+
+    study_init = study_subparsers.add_parser("init", description="Initialize a study directory.")
+    study_init.add_argument("study_dir", type=Path)
+    study_init.add_argument("--study-id", required=True)
+    study_init.add_argument("--title", required=True)
+    study_init.add_argument("--actor", default="human")
+    study_init.add_argument("--toolchain-profile", default="bayesjax-bayesite-v1")
+
+    study_validate = study_subparsers.add_parser(
+        "validate", description="Validate state and append-only events."
+    )
+    study_validate.add_argument("study_dir", type=Path)
+
+    study_apply = study_subparsers.add_parser(
+        "apply", description="Validate and apply an RFC 6902 state patch."
+    )
+    study_apply.add_argument("study_dir", type=Path)
+    study_apply.add_argument("patch", type=Path)
+    study_apply.add_argument("--actor", required=True)
 
     engine = subparsers.add_parser(
         "engine",
@@ -1268,6 +1297,40 @@ def _workflow_plan(namespace: argparse.Namespace) -> int:
         print(json.dumps(resolved.as_json(), indent=2, sort_keys=True))
         return 0
     except WorkflowError as exc:
+        print(f"bayescycle: {exc}", file=sys.stderr)
+        return 2
+
+
+def _study(namespace: argparse.Namespace) -> int:
+    try:
+        _reject_forwarded_engine_args(tuple(cast(list[str], namespace.engine_args)))
+        subcommand = cast(str, namespace.study_command)
+        study_dir = cast(Path, namespace.study_dir)
+        if subcommand == "init":
+            study = initialize_study(
+                study_dir,
+                study_id=cast(str, namespace.study_id),
+                title=cast(str, namespace.title),
+                actor=cast(str, namespace.actor),
+                toolchain_profile=cast(str, namespace.toolchain_profile),
+            )
+            print(f"initialized study {study.state.study_id} at {study.root}")
+            return 0
+        if subcommand == "validate":
+            study = validate_study(study_dir)
+            print(
+                f"valid study {study.state.study_id}: "
+                f"{len(study.events)} event(s), phase={study.state.phase}"
+            )
+            return 0
+        study = apply_patch(
+            study_dir,
+            cast(Path, namespace.patch),
+            actor=cast(str, namespace.actor),
+        )
+        print(f"applied patch to {study.state.study_id}; latest event={study.events[-1].event_id}")
+        return 0
+    except (StudyDocumentError, OSError) as exc:
         print(f"bayescycle: {exc}", file=sys.stderr)
         return 2
 

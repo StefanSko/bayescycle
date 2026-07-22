@@ -8,8 +8,11 @@
 - Sampling is delegated to an engine backend such as the Bayesite CLI or an
   explicitly selected in-process backend.
 - Run-directory preparation, canonical data-artifact serialization, command
-  orchestration, and narrow run provenance metadata are the only core
-  responsibilities.
+  orchestration, narrow run provenance metadata, and structural study-state
+  transitions are the core responsibilities.
+- Study-state support is mechanism only: initialization, validation,
+  append-only audit events, and explicit approved RFC 6902 patch application.
+  Scientific phase policy remains outside the runtime.
 - Run-directory metadata sidecars are allowed only when they serialize command
   provenance, artifact paths and hashes, or metadata explicitly exposed by
   `bayeswire`; `bayescycle` must not invent model semantics such as dimension
@@ -40,6 +43,8 @@
 
 ## Non-goals
 
+- No scientific approval policy, estimand reasoning, phase progression policy,
+  diagnostics interpretation, or report generation.
 - No inference algorithms.
 - No distribution math.
 - No plotting, report generation, notebooks, or artifact product layer.
@@ -50,10 +55,20 @@
 This section is intentionally last. Update it whenever modules move so the source
 layout keeps matching the architecture.
 
-- `bayescycle._cli` parses CLI input, builds logical requests, and wires
-  capability-specific backend handles into workflow operations. It must not own
-  artifact schemas, sampler semantics, concrete backend construction, or backend
+- `bayescycle._cli` parses CLI input, builds logical requests, wires
+  capability-specific backend handles into workflow operations, and delegates
+  `study` commands to the study-state subsystem. It must not own artifact
+  schemas, sampler semantics, concrete backend construction, or backend
   execution details.
+- `bayescycle._study.documents` owns typed JSON boundaries and structural v1
+  validation for state and events. It must not define scientific completion
+  policy or inspect run internals.
+- `bayescycle._study.patches` owns strict RFC 6902 parsing and in-memory patch
+  application. It must not perform filesystem I/O.
+- `bayescycle._study.storage` owns study-directory initialization, path and
+  reference checks, append-only event writes, locking, and atomic state
+  replacement. It treats registered run directories as opaque paths and must
+  not interpret sampler output.
 - `bayescycle._backend_runtime` resolves concrete first-party runtime backend
   adapters from explicit backend selection into capability-specific backend
   protocol objects. It may import concrete backend adapters and run Bayesite
