@@ -1,15 +1,15 @@
-# Lockstep release: publishing all five distributions (bayeswire,
-# bayesjax, bayescycle, bayesite-viz, bayesite-idata) to PyPI on a tag
+# Lockstep release: publishing all six distributions (bayeswire,
+# bayesjax, bayescycle, bayescycle-study, bayesite-viz, bayesite-idata) to PyPI on a tag
 # (monorepo migration step 3, see docs/monorepo-migration.md).
 #
 # PyPI's PENDING trusted publishers are unique on the (owner, repository,
-# workflow, environment) tuple -- one repo cannot pre-register five
+# workflow, environment) tuple -- one repo cannot pre-register six
 # not-yet-existing project names against the same environment. Each
 # package therefore publishes from its own job with its own environment
-# (pypi-<name>), and the five pending publishers are registered as:
+# (pypi-<name>), and the six pending publishers are registered as:
 # owner StefanSko, repo bayescycle, workflow release.yml, environment
-# pypi-bayeswire / pypi-bayesjax / pypi-bayescycle / pypi-bayesite-viz /
-# pypi-bayesite-idata, one per matching distribution name. GitHub creates
+# pypi-bayeswire / pypi-bayesjax / pypi-bayescycle / pypi-bayescycle-study /
+# pypi-bayesite-viz / pypi-bayesite-idata, one per matching distribution name. GitHub creates
 # the environments automatically on first use. After the first publish,
 # each pending publisher converts to a normal per-project trusted
 # publisher bound to the same environment name.
@@ -25,7 +25,7 @@ on:
 jobs:
   # Confirms the tag names the lockstep version every pyproject.toml
   # actually carries, then runs the root guard tests (tests/) that assert
-  # all five versions and sibling pins agree -- a tag on a tree where they
+  # all six versions and sibling pins agree -- a tag on a tree where they
   # don't agree must never reach the publish jobs.
   check:
     runs-on: ubuntu-latest
@@ -62,6 +62,8 @@ jobs:
             build: uv build --package bayesjax --out-dir dist
           - name: bayescycle
             build: uv build --package bayescycle --out-dir dist
+          - name: bayescycle-study
+            build: uv build --package bayescycle-study --out-dir dist
           - name: bayesite-viz
             build: uv build packages/bayesite-viz --out-dir dist
           - name: bayesite-idata

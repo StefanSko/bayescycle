@@ -1,6 +1,6 @@
 # Releasing
 
-The five Python distributions are versioned and published together from one
+The six Python distributions are versioned and published together from one
 `main` commit and one `vX.Y.Z` tag. `bayesite` is released independently from
 its Rust repository.
 
@@ -27,7 +27,7 @@ its Rust repository.
    (cd packages/bayesite-idata && uv lock)
    ```
 
-   The script updates all five versions, exact sibling dependencies, runtime
+   The script updates all six versions, exact sibling dependencies, runtime
    version constants, and Bayescycle's `uvx` package pins.
 3. Run `uv run pytest tests -q`, commit the release as one commit, and tag it:
 
@@ -37,7 +37,7 @@ its Rust repository.
    ```
 
 4. `.github/workflows/release.yml` verifies the tag and root guards, then builds
-   and publishes all five distributions through their PyPI trusted-publishing
+   and publishes all six distributions through their PyPI trusted-publishing
    environments. Re-runs skip artifacts already present on PyPI.
 5. Create the GitHub Release from the matching changelog section.
 6. Verify a clean `uv tool install bayescycle` from PyPI and run a quick sample.

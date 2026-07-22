@@ -50,7 +50,15 @@ patches/
 runs/          # usually ignored by git; raw execution outputs live here
 ```
 
-Use the templates in `templates/` when initializing a new study.
+Initialize a study through the validated standalone CLI rather than copying
+or editing canonical JSON by hand:
+
+```bash
+uv run --package bayescycle-study bayescycle-study init <study> \
+  --study-id <slug> --title "<title>" --actor <actor>
+```
+
+Use the files in `templates/` only as documentation and proposal examples.
 
 ## Required reads
 
@@ -98,12 +106,19 @@ Do not silently edit canonical state while doing phase work.
 
 Allowed direct writes:
 
-- initialize a new study from templates when explicitly requested
 - write proposed artifacts under `<study>/artifacts/`
 - write proposed JSON patches under `<study>/patches/`
-- append proposed events to `<study>/events.jsonl` only when the user has asked
-  for logging or patch application
-- apply a patch only after explicit human approval
+
+Canonical state mutation must go through the standalone CLI. Initialize only
+when explicitly requested. Apply a patch only after explicit human approval:
+
+```bash
+uv run --package bayescycle-study bayescycle-study apply \
+  <study> <study>/patches/<patch>.json --actor <actor>
+```
+
+The CLI validates the resulting state and appends the audit event. Do not edit
+`state.json` or `events.jsonl` directly.
 
 For ordinary phase work, produce:
 

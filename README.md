@@ -12,12 +12,13 @@ produced each result.
 
 ## Toolchain
 
-This repository publishes five lockstep Python distributions:
+This repository publishes six lockstep Python distributions:
 
 | Distribution | Responsibility |
 |---|---|
 | [`bayeswire`](packages/bayeswire) | Stdlib-only model eDSL, resolved IR, normative [`spec/`](spec/), and conformance corpus |
 | [`bayescycle`](packages/bayescycle) | Workflow CLI, run directories, backend invocation, replay |
+| [`bayescycle-study`](packages/bayescycle-study) | Standalone study-state initialization, validation, and approved transitions |
 | [`bayesjax`](packages/bayesjax) | Optional JAX/BlackJAX NUTS backend and float64 oracle |
 | [`bayesite-idata`](packages/bayesite-idata) | Run directory to ArviZ DataTree/NetCDF |
 | [`bayesite-viz`](packages/bayesite-viz) | ArviZ plotting CLI |
@@ -61,8 +62,9 @@ visualization commands. The browser Playground is documented in
 
 ## Development
 
-The root uv workspace contains Bayeswire, Bayesjax, and Bayescycle. The two
-visualization projects are standalone uv projects with independent lock files.
+The root uv workspace contains Bayeswire, Bayesjax, Bayescycle, and the
+standalone Bayescycle Study CLI. The two visualization projects are standalone
+uv projects with independent lock files.
 
 ```bash
 uv run pytest tests -q

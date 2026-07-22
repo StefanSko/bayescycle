@@ -17,12 +17,13 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGES_DIR = ROOT / "packages"
 
-# All five packages that live under packages/, whether or not they are
+# All six packages that live under packages/, whether or not they are
 # workspace members.
 ALL_PACKAGES = (
     "bayeswire",
     "bayesjax",
     "bayescycle",
+    "bayescycle-study",
     "bayesite-viz",
     "bayesite-idata",
 )
@@ -31,6 +32,7 @@ WORKSPACE_MEMBERS = (
     "bayeswire",
     "bayesjax",
     "bayescycle",
+    "bayescycle-study",
 )
 
 _DEP_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -76,7 +78,7 @@ def _package_version(package: str) -> str:
     return version
 
 
-def test_all_five_package_versions_agree() -> None:
+def test_all_lockstep_package_versions_agree() -> None:
     versions = {package: _package_version(package) for package in ALL_PACKAGES}
     distinct = set(versions.values())
     assert len(distinct) == 1, (
@@ -98,6 +100,9 @@ _VERSION_CONSTANT_RE = re.compile(r'^__version__ = "([^"]*)"$', re.MULTILINE)
 # pyproject version, or `--version` output drifts from the published wheel.
 VERSION_CONSTANT_FILES = {
     "bayescycle": PACKAGES_DIR / "bayescycle" / "src" / "bayescycle" / "__init__.py",
+    "bayescycle-study": (
+        PACKAGES_DIR / "bayescycle-study" / "src" / "bayescycle_study" / "__init__.py"
+    ),
     "bayesite-viz": PACKAGES_DIR / "bayesite-viz" / "src" / "bayesite_viz" / "__init__.py",
 }
 
@@ -146,7 +151,7 @@ def test_bayesjax_depends_on_exact_bayeswire_pin() -> None:
     )
 
 
-def test_root_workspace_members_are_exactly_three() -> None:
+def test_root_workspace_members_match_the_lightweight_packages() -> None:
     root = _load_root_pyproject()
     members = root["tool"]["uv"]["workspace"]["members"]
     expected = {f"packages/{name}" for name in WORKSPACE_MEMBERS}

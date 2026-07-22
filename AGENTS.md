@@ -2,15 +2,17 @@
 
 ## Scope
 
-This monorepo publishes five lockstep Python distributions:
+This monorepo publishes six lockstep Python distributions:
 
 - `packages/bayeswire` — stdlib-only model language, IR codec, wire specs, and corpus.
 - `packages/bayesjax` — JAX/BlackJAX NUTS backend and float64 corpus oracle.
 - `packages/bayescycle` — workflow CLI and run-directory owner.
+- `packages/bayescycle-study` — stdlib-only study-state mechanism; it owns no
+  scientific phase policy or run execution.
 - `packages/bayesite-idata` and `packages/bayesite-viz` — standalone heavy
   projects invoked by Bayescycle through pinned `uvx` process boundaries.
 
-Only Bayeswire, Bayesjax, and Bayescycle are root uv-workspace members. The two
+Bayeswire, Bayesjax, Bayescycle, and Bayescycle Study are root uv-workspace members. The two
 visualization projects have independent locks so their ArviZ stack cannot enter
 Bayescycle's default dependency closure. Bayesite is a separate Rust repository;
 it vendors `spec/` and the Bayeswire corpus and is consumed as a pinned binary.

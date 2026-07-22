@@ -49,6 +49,12 @@ inproc = [
 ]
 """
 
+_BAYESCYCLE_STUDY_PYPROJECT = """\
+[project]
+name = "bayescycle-study"
+version = "0.1.0"
+"""
+
 _BAYESITE_VIZ_PYPROJECT = """\
 [project]
 name = "bayesite-viz"
@@ -74,6 +80,7 @@ def _write_fixture_repo(root: Path) -> None:
         "bayeswire": _BAYESWIRE_PYPROJECT,
         "bayesjax": _BAYESJAX_PYPROJECT,
         "bayescycle": _BAYESCYCLE_PYPROJECT,
+        "bayescycle-study": _BAYESCYCLE_STUDY_PYPROJECT,
         "bayesite-viz": _BAYESITE_VIZ_PYPROJECT,
         "bayesite-idata": _BAYESITE_IDATA_PYPROJECT,
     }
@@ -92,6 +99,9 @@ def _write_fixture_repo(root: Path) -> None:
     (root / "packages" / "bayescycle" / "src" / "bayescycle" / "__init__.py").write_text(
         version_constant
     )
+    study_src_dir = root / "packages" / "bayescycle-study" / "src" / "bayescycle_study"
+    study_src_dir.mkdir(parents=True)
+    (study_src_dir / "__init__.py").write_text(version_constant)
     viz_src_dir = root / "packages" / "bayesite-viz" / "src" / "bayesite_viz"
     viz_src_dir.mkdir(parents=True)
     (viz_src_dir / "__init__.py").write_text(version_constant)
@@ -106,7 +116,14 @@ def test_bump_rewrites_all_versions_and_sibling_pins(tmp_path: Path) -> None:
 
     bump("0.3.0", repo_root=tmp_path, exclude_newer="2030-05-01T12:00:00Z")
 
-    for package in ("bayeswire", "bayesjax", "bayescycle", "bayesite-viz", "bayesite-idata"):
+    for package in (
+        "bayeswire",
+        "bayesjax",
+        "bayescycle",
+        "bayescycle-study",
+        "bayesite-viz",
+        "bayesite-idata",
+    ):
         assert 'version = "0.3.0"' in _read(tmp_path, package, "pyproject.toml")
 
     bayescycle_text = _read(tmp_path, "bayescycle", "pyproject.toml")
@@ -129,6 +146,7 @@ def test_bump_rewrites_all_versions_and_sibling_pins(tmp_path: Path) -> None:
 
     for init_path in (
         ("bayescycle", "src", "bayescycle", "__init__.py"),
+        ("bayescycle-study", "src", "bayescycle_study", "__init__.py"),
         ("bayesite-viz", "src", "bayesite_viz", "__init__.py"),
     ):
         assert '__version__ = "0.3.0"' in _read(tmp_path, *init_path)

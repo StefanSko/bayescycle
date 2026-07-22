@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Rewrite the five lockstep package versions and their exact sibling pins.
+"""Rewrite the six lockstep package versions and their exact sibling pins.
 
 Given ``--version X.Y.Z``, this script rewrites, across the monorepo:
 
-- the ``[project] version`` field in each of the five package
-  ``pyproject.toml`` files (bayeswire, bayesjax, bayescycle, bayesite-viz,
-  bayesite-idata);
+- the ``[project] version`` field in each of the six package
+  ``pyproject.toml`` files (bayeswire, bayesjax, bayescycle, bayescycle-study,
+  bayesite-viz, bayesite-idata);
 - the exact sibling-version pins in ``[project.dependencies]`` /
   ``[project.optional-dependencies]`` that reference another workspace
   package (bayescycle -> bayeswire, bayescycle's inproc extra ->
@@ -39,11 +39,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# All five lockstep-versioned packages.
+# All six lockstep-versioned packages.
 PACKAGES: tuple[str, ...] = (
     "bayeswire",
     "bayesjax",
     "bayescycle",
+    "bayescycle-study",
     "bayesite-viz",
     "bayesite-idata",
 )
@@ -55,6 +56,7 @@ _VERSION_CONSTANT_RE = re.compile(r'^__version__ = "[^"]*"$', re.MULTILINE)
 # constant that must track the pyproject version, as (package, module dir).
 VERSION_CONSTANT_MODULES: tuple[tuple[str, str], ...] = (
     ("bayescycle", "bayescycle"),
+    ("bayescycle-study", "bayescycle_study"),
     ("bayesite-viz", "bayesite_viz"),
 )
 
@@ -143,7 +145,7 @@ def rfc3339_now() -> str:
 
 
 def bump(version: str, *, repo_root: Path = REPO_ROOT, exclude_newer: str | None = None) -> None:
-    """Rewrite all five package versions, their sibling pins, and the uvx pins.
+    """Rewrite all six package versions, their sibling pins, and the uvx pins.
 
     ``repo_root`` defaults to this script's own repo, and is overridable so
     tests can exercise real file rewrites against a temporary copy instead

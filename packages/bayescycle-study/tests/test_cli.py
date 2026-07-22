@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 from bayescycle_study._cli import main
+from bayescycle_study._documents import JsonObject
 
 
-def _read_json(path: Path) -> object:
-    return json.loads(path.read_text(encoding="utf-8"))
+def _read_json(path: Path) -> JsonObject:
+    return cast(JsonObject, json.loads(path.read_text(encoding="utf-8")))
 
 
 def _init(study: Path) -> None:
@@ -39,7 +41,9 @@ def test_init_creates_a_valid_minimal_study(tmp_path: Path) -> None:
     assert state["title"] == "Normal mean study"
     assert state["phase"] == "estimand"
     assert state["gate"] == "awaiting_human"
-    assert state["approved"]["report"] is None
+    approved = state["approved"]
+    assert isinstance(approved, dict)
+    assert approved["report"] is None
     assert (study / "artifacts").is_dir()
     assert (study / "patches").is_dir()
     assert (study / "runs").is_dir()
