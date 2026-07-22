@@ -312,15 +312,14 @@ def _read_bytes(path: Path) -> bytes:
 
 
 def _ensure_runs_ignored(path: Path) -> None:
-    line = "/runs/"
-    if not path.exists():
-        path.write_text(line + "\n", encoding="utf-8")
-        return
-    existing = path.read_text(encoding="utf-8")
-    if line in existing.splitlines():
+    required_lines = ("/runs/", "/.study.lock")
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    present = set(existing.splitlines())
+    missing = [line for line in required_lines if line not in present]
+    if not missing:
         return
     separator = "" if not existing or existing.endswith("\n") else "\n"
-    path.write_text(existing + separator + line + "\n", encoding="utf-8")
+    path.write_text(existing + separator + "\n".join(missing) + "\n", encoding="utf-8")
 
 
 @contextmanager
