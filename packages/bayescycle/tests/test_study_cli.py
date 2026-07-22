@@ -48,7 +48,7 @@ def test_init_creates_a_valid_minimal_study(tmp_path: Path) -> None:
     assert (study / "artifacts").is_dir()
     assert (study / "patches").is_dir()
     assert (study / "runs").is_dir()
-    assert (study / ".gitignore").read_text(encoding="utf-8") == "/runs/\n"
+    assert (study / ".gitignore").read_text(encoding="utf-8") == "/runs/\n/.study.lock\n"
 
     events = (study / "events.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(events) == 1
