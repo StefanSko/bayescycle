@@ -3,6 +3,7 @@ members = [
     "packages/bayeswire",
     "packages/bayesjax",
     "packages/bayescycle",
+    "packages/bayescycle-study",
 ]
 
 [dependency-groups]

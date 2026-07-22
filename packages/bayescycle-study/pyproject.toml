@@ -1,0 +1,33 @@
+[project]
+name = "bayescycle-study"
+version = "0.7.0"
+description = "Study-state CLI for agent-assisted Bayescycle workflows."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+bayescycle-study = "bayescycle_study._cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.13.0",
+    "ty==0.0.49",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.0,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ty.environment]
+python = "../../.venv"
+python-version = "3.12"
+root = ["./src", "./tests"]
