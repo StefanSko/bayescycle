@@ -1,0 +1,14 @@
+[
+  {
+    "tool": "bash",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "(no output)\n\nCommand exited with code 1"
+        }
+      ],
+      "details": {}
+    }
+  }
+]

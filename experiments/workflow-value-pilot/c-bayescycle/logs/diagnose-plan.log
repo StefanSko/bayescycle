@@ -1,0 +1,14 @@
+{
+  "backend": "bayesite",
+  "command": [
+    "bayesite",
+    "diagnose",
+    "--fit",
+    "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/posterior.ndjson",
+    "--out",
+    "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/diagnostics.json"
+  ],
+  "integration_mode": "external-command",
+  "output": "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/diagnostics.json",
+  "run": "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial"
+}

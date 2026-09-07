@@ -1,0 +1,11 @@
+{
+  "arm": "a-numpyro",
+  "stage": "handoff",
+  "started_at": "2026-09-04T20:45:06.408481+00:00",
+  "wall_seconds": 138.764,
+  "returncode": 0,
+  "timed_out": false,
+  "provider": "openai-codex",
+  "model": "gpt-6-astra",
+  "thinking": "medium"
+}

@@ -1,0 +1,121 @@
+{
+  "beta": {
+    "mean": 0.2634964241503019,
+    "sd": 0.055815396182752566,
+    "q025": 0.15277925989908972,
+    "q975": 0.37213862369159256,
+    "mcse_mean": 0.001092625728535143,
+    "rhat": 1.0044222372669132,
+    "ess_bulk": 2608.5212185740793,
+    "ess_tail": 2404.6803464798345
+  },
+  "divergences": 0,
+  "sampler": {
+    "chains": 4,
+    "warmup": 500,
+    "draws_per_chain": 1000,
+    "target_acceptance": 0.9,
+    "max_tree_depth": 10,
+    "chain_method": "parallel",
+    "backend": "NumPyro NUTS",
+    "float_dtype": "float64",
+    "seed": 4301,
+    "fit_wall_seconds": 0.8791194160003215,
+    "mean_accept_prob": 0.9459243658074301,
+    "max_num_steps": 79,
+    "steps_at_tree_limit": 0
+  },
+  "diagnostic_flags": [],
+  "diagnostic_pass": true,
+  "diagnostics_definition": "ArviZ 0.22 rank Rhat, bulk/tail ESS; flags: Rhat >1.01, ESS <400, any divergences",
+  "paths": {
+    "samples": "results/revised-recovery/posterior.npz",
+    "sampler_stats": "results/revised-recovery/sampler_stats.npz",
+    "diagnostics": "results/revised-recovery/diagnostics.csv",
+    "trace": "results/revised-recovery/trace.png"
+  },
+  "provenance": "results/revision-provenance.json",
+  "recovery": {
+    "alpha": {
+      "truth": 0.4,
+      "mean": 0.3717475059045905,
+      "q025": -0.10859282596303492,
+      "q975": 0.858023499662727,
+      "covered": true
+    },
+    "beta": {
+      "truth": 0.4,
+      "mean": 0.2634964241503019,
+      "q025": 0.15277925989908972,
+      "q975": 0.37213862369159256,
+      "covered": false
+    },
+    "tau": {
+      "truth": 0.45,
+      "mean": 0.6506583706241673,
+      "q025": 0.363122019273526,
+      "q975": 1.172025823896396,
+      "covered": true
+    },
+    "z": {
+      "truth": [
+        -0.18773484905044308,
+        1.477939675395358,
+        -1.2411180277349159,
+        -0.8584584006168807,
+        0.12552584987267906,
+        -0.9072062196474227,
+        -0.5808524046533271,
+        1.8224673945293226
+      ],
+      "mean": [
+        -0.1444326776471942,
+        1.1289461060625876,
+        -0.9325644616482703,
+        -0.48006125152291396,
+        0.39296541668330587,
+        -1.0625382878578955,
+        -0.23847535249753787,
+        1.399005050187699
+      ],
+      "q025": [
+        -1.004700991131446,
+        0.20728124032188136,
+        -1.934530187796006,
+        -1.3917869780888041,
+        -0.45464310534421065,
+        -2.1162386973267795,
+        -1.090515849614542,
+        0.3758964568999353
+      ],
+      "q975": [
+        0.6749031485491076,
+        2.1712574966731752,
+        -0.04057391596445434,
+        0.3677097215219652,
+        1.2570112684277523,
+        -0.12777770882342604,
+        0.5698973387455899,
+        2.585607419435794
+      ],
+      "covered": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "sigma": {
+      "truth": 0.7,
+      "mean": 0.679517182321363,
+      "q025": 0.6093120841811043,
+      "q975": 0.7571061280438423,
+      "covered": true
+    }
+  },
+  "recovery_interpretation": "One fixture; descriptive coverage, not a calibration pass/fail test."
+}

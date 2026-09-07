@@ -1,0 +1,52 @@
+{
+  "comparisons": [
+    {
+      "stage": "initial",
+      "left": "a-numpyro",
+      "right": "b-bayesjax",
+      "absolute_mean_difference": 0.0012026365294778296,
+      "tolerance": 0.005771381575105611,
+      "within_tolerance": true
+    },
+    {
+      "stage": "initial",
+      "left": "a-numpyro",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.0012026365294778296,
+      "tolerance": 0.005771381575105611,
+      "within_tolerance": true
+    },
+    {
+      "stage": "initial",
+      "left": "b-bayesjax",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.0,
+      "tolerance": 0.005941314336638149,
+      "within_tolerance": true
+    },
+    {
+      "stage": "revised",
+      "left": "a-numpyro",
+      "right": "b-bayesjax",
+      "absolute_mean_difference": 0.00015898122155000305,
+      "tolerance": 0.0061564244763844395,
+      "within_tolerance": true
+    },
+    {
+      "stage": "revised",
+      "left": "a-numpyro",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.00015898122155000305,
+      "tolerance": 0.0061564244763844395,
+      "within_tolerance": true
+    },
+    {
+      "stage": "revised",
+      "left": "b-bayesjax",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.0,
+      "tolerance": 0.00630500738831375,
+      "within_tolerance": true
+    }
+  ]
+}

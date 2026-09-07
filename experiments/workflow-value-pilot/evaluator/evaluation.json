@@ -1,0 +1,642 @@
+{
+  "arms": {
+    "a-numpyro": {
+      "initial": {
+        "beta": {
+          "mean": 0.5880398930661034,
+          "sd": 0.05765942464294413,
+          "q025": 0.4729374927711213,
+          "q975": 0.698431251731244,
+          "rhat": 1.0012992240477516,
+          "ess_bulk": 3395.771590033968,
+          "ess_tail": 2676.1942223882465,
+          "mcse_mean": 0.0009892938536557754
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0031243919895891,
+        "min_bulk_ess": 707.3701036893259,
+        "min_tail_ess": 731.1598597747899,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": true
+      },
+      "recovery": {
+        "beta": {
+          "mean": 0.275673764049208,
+          "sd": 0.057388591956662016,
+          "q025": 0.1624412185558727,
+          "q975": 0.38898744049291994,
+          "rhat": 1.002325063395303,
+          "ess_bulk": 2631.4438988911493,
+          "ess_tail": 2510.2828104123746,
+          "mcse_mean": 0.0011201081918781825
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0085761235430974,
+        "min_bulk_ess": 673.7464220494003,
+        "min_tail_ess": 1277.442797392759,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": false
+      },
+      "revised": {
+        "beta": {
+          "mean": 0.5613208509433069,
+          "sd": 0.057128674571364925,
+          "q025": 0.44791227303739845,
+          "q975": 0.6692952138207736,
+          "rhat": 1.0028415014241625,
+          "ess_bulk": 2905.4334765576864,
+          "ess_tail": 2336.3854408136567,
+          "mcse_mean": 0.0010613965814576546
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.006270680359159,
+        "min_bulk_ess": 730.7599689435318,
+        "min_tail_ess": 1072.588946215892,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": true
+      },
+      "revised-recovery": {
+        "beta": {
+          "mean": 0.2634964241503019,
+          "sd": 0.055815396182752566,
+          "q025": 0.15277925989908972,
+          "q975": 0.37213862369159256,
+          "rhat": 1.0044222372669132,
+          "ess_bulk": 2608.5212185740793,
+          "ess_tail": 2404.6803464798345,
+          "mcse_mean": 0.001092625728535143
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.005882542129983,
+        "min_bulk_ess": 832.383767609093,
+        "min_tail_ess": 1335.36836990294,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": false
+      },
+      "initial_files_changed_or_missing": [],
+      "handoff": {
+        "reported": {
+          "current_beta_prior_sd": 0.25,
+          "posterior_path": "results/revised/posterior.npz",
+          "human_approved": false,
+          "beta": {
+            "mean": 0.5613208509433069,
+            "sd": 0.057128674571364925,
+            "q025": 0.44791227303739845,
+            "q975": 0.6692952138207736,
+            "rhat": 1.0028415014241625,
+            "ess_bulk": 2905.4334765576864,
+            "ess_tail": 2336.3854408136567,
+            "mcse_mean": 0.0010613965814576546
+          },
+          "summary_matches": true,
+          "provenance_status": "All checked in-arm SHA256 entries match: 7 revised source/input entries, 5 original source/input entries, and 23 preserved initial files. External brief/protocol hashes were not checked under the arm-only restriction. Unsigned local manifests establish byte consistency, not deterministic execution or authenticated linkage of revised posterior outputs to execution; revised outputs have no recorded digest in these manifests. No refit performed."
+        },
+        "independent_beta_matches": true
+      },
+      "sessions": {
+        "initial": {
+          "arm": "a-numpyro",
+          "stage": "initial",
+          "started_at": "2026-09-04T20:35:54.849357+00:00",
+          "wall_seconds": 224.699,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 19,
+          "flagged_tool_errors": 0,
+          "usage": {
+            "input": 25159,
+            "output": 5704,
+            "cacheRead": 61056,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.5978460000000001
+        },
+        "revision": {
+          "arm": "a-numpyro",
+          "stage": "revision",
+          "started_at": "2026-09-04T20:41:16.058978+00:00",
+          "wall_seconds": 181.093,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 23,
+          "flagged_tool_errors": 1,
+          "usage": {
+            "input": 36081,
+            "output": 4542,
+            "cacheRead": 77312,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.665222
+        },
+        "handoff": {
+          "arm": "a-numpyro",
+          "stage": "handoff",
+          "started_at": "2026-09-04T20:45:06.408481+00:00",
+          "wall_seconds": 138.764,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 14,
+          "flagged_tool_errors": 0,
+          "usage": {
+            "input": 17613,
+            "output": 3603,
+            "cacheRead": 58368,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.41464799999999996
+        }
+      },
+      "initial_python_lines": 184,
+      "initial_source_files_changed_or_missing": []
+    },
+    "b-bayesjax": {
+      "initial": {
+        "beta": {
+          "mean": 0.5892425295955812,
+          "sd": 0.058340719745762014,
+          "q025": 0.47530003073024296,
+          "q975": 0.7047042248904726,
+          "rhat": 0.9999634613039449,
+          "ess_bulk": 3100.3081972256014,
+          "ess_tail": 2454.991586455963,
+          "mcse_mean": 0.0010502859141494224
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0063415275869607,
+        "min_bulk_ess": 655.268196801085,
+        "min_tail_ess": 1013.1804993197168,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": true
+      },
+      "recovery": {
+        "beta": {
+          "mean": 0.27318238240273285,
+          "sd": 0.0538336082817285,
+          "q025": 0.1687043691963964,
+          "q975": 0.3801174665056578,
+          "rhat": 1.0010289786550173,
+          "ess_bulk": 3167.7435188067143,
+          "ess_tail": 2437.0052530555276,
+          "mcse_mean": 0.0009597770680058719
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0057871311774353,
+        "min_bulk_ess": 588.393702491874,
+        "min_tail_ess": 889.6316720247944,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": false
+      },
+      "revised": {
+        "beta": {
+          "mean": 0.5611618697217569,
+          "sd": 0.056388976291427445,
+          "q025": 0.4498333725531566,
+          "q975": 0.6732247128279578,
+          "rhat": 1.0019683482042574,
+          "ess_bulk": 2562.207597703112,
+          "ess_tail": 2601.640881989224,
+          "mcse_mean": 0.001114578369926984
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0094024155178531,
+        "min_bulk_ess": 815.9820129868382,
+        "min_tail_ess": 1270.9463675133932,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": true
+      },
+      "revised-recovery": {
+        "beta": {
+          "mean": 0.26166023053285553,
+          "sd": 0.05374477947721433,
+          "q025": 0.15527494957648155,
+          "q975": 0.36553558860358537,
+          "rhat": 1.0004002818091506,
+          "ess_bulk": 2751.8310129349006,
+          "ess_tail": 2693.818737764159,
+          "mcse_mean": 0.0010261928747916078
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0063530941453502,
+        "min_bulk_ess": 819.7817932842997,
+        "min_tail_ess": 898.9127488880215,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": false
+      },
+      "initial_files_changed_or_missing": [],
+      "handoff": {
+        "reported": {
+          "current_beta_prior_sd": 0.25,
+          "posterior_path": "results/revised/posterior.npz",
+          "human_approved": false,
+          "beta": {
+            "mean": 0.5611618697217569,
+            "sd": 0.056388976291427445,
+            "q025": 0.4498333725531566,
+            "q975": 0.6732247128279578,
+            "rhat": 1.0019683482042574,
+            "ess_bulk": 2562.207597703112,
+            "ess_tail": 2601.640881989224,
+            "mcse_mean": 0.001114578369926984
+          },
+          "summary_matches": true,
+          "provenance_status": "Locally consistent: all 7 revised and 6 initial manifest SHA-256 entries match exact saved bytes; 37 non-log preservation entries match (3 logs deliberately not read). Embedded revised-stage provenance agrees. Source/IR hashes do not authenticate execution, establish deterministic Python behavior, or independently link current posterior bytes to a run; no refit performed."
+        },
+        "independent_beta_matches": true
+      },
+      "sessions": {
+        "initial": {
+          "arm": "b-bayesjax",
+          "stage": "initial",
+          "started_at": "2026-09-04T20:35:54.856361+00:00",
+          "wall_seconds": 301.968,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 35,
+          "flagged_tool_errors": 1,
+          "usage": {
+            "input": 55319,
+            "output": 6931,
+            "cacheRead": 285824,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 1.185564
+        },
+        "revision": {
+          "arm": "b-bayesjax",
+          "stage": "revision",
+          "started_at": "2026-09-04T20:41:16.804855+00:00",
+          "wall_seconds": 177.942,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 25,
+          "flagged_tool_errors": 0,
+          "usage": {
+            "input": 25522,
+            "output": 3879,
+            "cacheRead": 116352,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.5655220000000001
+        },
+        "handoff": {
+          "arm": "b-bayesjax",
+          "stage": "handoff",
+          "started_at": "2026-09-04T20:44:24.686960+00:00",
+          "wall_seconds": 139.534,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 13,
+          "flagged_tool_errors": 0,
+          "usage": {
+            "input": 17817,
+            "output": 3645,
+            "cacheRead": 42880,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.4033
+        }
+      },
+      "initial_python_lines": 187,
+      "initial_source_files_changed_or_missing": []
+    },
+    "c-bayescycle": {
+      "initial": {
+        "beta": {
+          "mean": 0.5892425295955812,
+          "sd": 0.058340719745762014,
+          "q025": 0.47530003073024296,
+          "q975": 0.7047042248904726,
+          "rhat": 0.9999634613039449,
+          "ess_bulk": 3100.3081972256014,
+          "ess_tail": 2454.991586455963,
+          "mcse_mean": 0.0010502859141494224
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0063415275869607,
+        "min_bulk_ess": 655.268196801085,
+        "min_tail_ess": 1013.1804993197168,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "native_fingerprint_matches": true,
+        "native_posterior_matches_npz": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": true
+      },
+      "recovery": {
+        "beta": {
+          "mean": 0.27318238240273285,
+          "sd": 0.0538336082817285,
+          "q025": 0.1687043691963964,
+          "q975": 0.3801174665056578,
+          "rhat": 1.0010289786550173,
+          "ess_bulk": 3167.7435188067143,
+          "ess_tail": 2437.0052530555276,
+          "mcse_mean": 0.0009597770680058719
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0057871311774353,
+        "min_bulk_ess": 588.393702491874,
+        "min_tail_ess": 889.6316720247944,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "native_fingerprint_matches": true,
+        "native_posterior_matches_npz": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": false
+      },
+      "revised": {
+        "beta": {
+          "mean": 0.5611618697217569,
+          "sd": 0.056388976291427445,
+          "q025": 0.4498333725531566,
+          "q975": 0.6732247128279578,
+          "rhat": 1.0019683482042574,
+          "ess_bulk": 2562.207597703112,
+          "ess_tail": 2601.640881989224,
+          "mcse_mean": 0.001114578369926984
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0094024155178531,
+        "min_bulk_ess": 815.9820129868382,
+        "min_tail_ess": 1270.9463675133932,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "native_fingerprint_matches": true,
+        "native_posterior_matches_npz": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": true
+      },
+      "revised-recovery": {
+        "beta": {
+          "mean": 0.26166023053285553,
+          "sd": 0.05374477947721433,
+          "q025": 0.15527494957648155,
+          "q975": 0.36553558860358537,
+          "rhat": 1.0004002818091506,
+          "ess_bulk": 2751.8310129349006,
+          "ess_tail": 2693.818737764159,
+          "mcse_mean": 0.0010261928747916078
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0063530941453502,
+        "min_bulk_ess": 819.7817932842997,
+        "min_tail_ess": 898.9127488880215,
+        "chain_diagnostics_pass": true,
+        "saved_summary_matches": true,
+        "reported_divergences": 0,
+        "native_divergences": 0,
+        "native_stats_shape_ok": true,
+        "native_fingerprint_matches": true,
+        "native_posterior_matches_npz": true,
+        "divergence_report_matches": true,
+        "truth_in_95_interval_descriptive_only": false
+      },
+      "initial_files_changed_or_missing": [],
+      "handoff": {
+        "reported": {
+          "current_beta_prior_sd": 0.25,
+          "posterior_path": "results/revised/posterior.npz",
+          "human_approved": false,
+          "beta": {
+            "mean": 0.5611618697217569,
+            "sd": 0.056388976291427445,
+            "q025": 0.4498333725531566,
+            "q975": 0.6732247128279578,
+            "rhat": 1.0019683482042574,
+            "ess_bulk": 2562.207597703112,
+            "ess_tail": 2601.640881989224,
+            "mcse_mean": 0.001114578369926984
+          },
+          "summary_matches": true,
+          "provenance_status": "Verified local exact-byte hashes: 42 initial inventory entries, 49 revision entries, and 60 preservation entries all match. Native model/input hashes, canonical input arrays, model/data fingerprints and NPZ-to-NDJSON draws agree; source and saved IR changes are restricted to beta prior SD (plus source status description). This establishes saved-artifact consistency only, not deterministic arbitrary Python execution, independently attested execution history, source-to-IR generation, replay reproducibility, or scientific validity. No refitting or regeneration performed."
+        },
+        "independent_beta_matches": true
+      },
+      "sessions": {
+        "initial": {
+          "arm": "c-bayescycle",
+          "stage": "initial",
+          "started_at": "2026-09-04T20:35:54.863905+00:00",
+          "wall_seconds": 425.035,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 51,
+          "flagged_tool_errors": 1,
+          "usage": {
+            "input": 66279,
+            "output": 8683,
+            "cacheRead": 986880,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 2.0838200000000002
+        },
+        "revision": {
+          "arm": "c-bayescycle",
+          "stage": "revision",
+          "started_at": "2026-09-04T20:43:19.507308+00:00",
+          "wall_seconds": 234.59,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 25,
+          "flagged_tool_errors": 0,
+          "usage": {
+            "input": 30061,
+            "output": 5656,
+            "cacheRead": 185216,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.7686259999999999
+        },
+        "handoff": {
+          "arm": "c-bayescycle",
+          "stage": "handoff",
+          "started_at": "2026-09-04T20:47:35.882934+00:00",
+          "wall_seconds": 144.969,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "openai-codex",
+          "model": "gpt-6-astra",
+          "thinking": "medium",
+          "tool_calls": 15,
+          "flagged_tool_errors": 0,
+          "usage": {
+            "input": 24831,
+            "output": 3681,
+            "cacheRead": 98048,
+            "cacheWrite": 0
+          },
+          "reported_list_price_usd": 0.5304080000000001
+        }
+      },
+      "initial_python_lines": 194,
+      "initial_source_files_changed_or_missing": []
+    }
+  },
+  "comparisons": [
+    {
+      "stage": "initial",
+      "left": "a-numpyro",
+      "right": "b-bayesjax",
+      "absolute_mean_difference": 0.0012026365294778296,
+      "tolerance": 0.005771381575105611,
+      "within_tolerance": true
+    },
+    {
+      "stage": "initial",
+      "left": "a-numpyro",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.0012026365294778296,
+      "tolerance": 0.005771381575105611,
+      "within_tolerance": true
+    },
+    {
+      "stage": "initial",
+      "left": "b-bayesjax",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.0,
+      "tolerance": 0.005941314336638149,
+      "within_tolerance": true
+    },
+    {
+      "stage": "revised",
+      "left": "a-numpyro",
+      "right": "b-bayesjax",
+      "absolute_mean_difference": 0.00015898122155000305,
+      "tolerance": 0.0061564244763844395,
+      "within_tolerance": true
+    },
+    {
+      "stage": "revised",
+      "left": "a-numpyro",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.00015898122155000305,
+      "tolerance": 0.0061564244763844395,
+      "within_tolerance": true
+    },
+    {
+      "stage": "revised",
+      "left": "b-bayesjax",
+      "right": "c-bayescycle",
+      "absolute_mean_difference": 0.0,
+      "tolerance": 0.00630500738831375,
+      "within_tolerance": true
+    }
+  ],
+  "limitations": [
+    "Single synthetic fixture and one agent per arm",
+    "Human control/understanding unmeasured; full skill not executed",
+    "Shared concurrent hardware/caches; not a sampler speed benchmark",
+    "Flagged tool errors can miss shell commands that mask exit status",
+    "LLM price is provider-reported list-price estimate, not a billed subscription cost"
+  ]
+}

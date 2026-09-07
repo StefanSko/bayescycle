@@ -1,0 +1,151 @@
+{
+  "beta": {
+    "mean": 0.27318238240273285,
+    "sd": 0.0538336082817285,
+    "q025": 0.1687043691963964,
+    "q975": 0.3801174665056578,
+    "mcse_mean": 0.0009597770680058719,
+    "ess_bulk": 3167.7435188067143,
+    "ess_tail": 2437.0052530555276,
+    "rhat": 1.0010289786550173
+  },
+  "divergences": 0,
+  "warmup_divergences": 23,
+  "sampler": {
+    "backend": "bayesjax / BlackJAX NUTS",
+    "seed": 4301,
+    "dtype": "float64",
+    "num_chains": 4,
+    "num_warmup": 500,
+    "num_samples": 1000,
+    "target_acceptance_rate": 0.9,
+    "max_tree_depth": 10
+  },
+  "sampling_wall_seconds": 1.7362738330848515,
+  "diagnostic_flags": {
+    "rank_rhat_gt_1.01": [],
+    "bulk_ess_lt_400": [],
+    "tail_ess_lt_400": []
+  },
+  "native_classic_split_rhat": {
+    "alpha": 1.0025475210761081,
+    "beta": 1.0010538160807545,
+    "sigma": 1.0028553661602213,
+    "tau": 1.0041998877457545,
+    "z": 1.0057875081059118
+  },
+  "native_split_geyer_ess": {
+    "alpha": 800.4592045077269,
+    "beta": 3146.0545010706273,
+    "sigma": 2541.573169349073,
+    "tau": 583.4373757724852,
+    "z": 673.5429359525632
+  },
+  "posterior_predictive": {
+    "seed": 4302,
+    "draws": 200,
+    "method": "NumPy conditional Normal draws; uniform posterior subsample without replacement"
+  },
+  "paths": {
+    "samples": "results/recovery/posterior.npz",
+    "figures": [
+      "results/recovery/trace.png",
+      "results/recovery/posterior_predictive.png"
+    ],
+    "native_diagnostics": "results/recovery/native_diagnostics.npz",
+    "prior_predictive": "results/prior/prior_predictive.png"
+  },
+  "provenance": {
+    "sha256": {
+      "model.py": "1850977eba4184dd8e027b41749c4137d647d6443087f180500d111ddf028cb1",
+      "analysis.py": "bc1679ef9d56a3e02e7a3ee7a1940f765c50c83b650eadde83dc0a1ca08f6611",
+      "input/data.json": "8a753a950786ff60f47747dd0176ff01619d2f958402e0d042299fcb4523018d",
+      "input/recovery.json": "edd93d9672190fe63b29312c58faa7e8f03dd70c0220dade8ed22177753c281b",
+      "input/recovery-truth.json": "b1f02352fcc4565268a145ac8239ec5f9ffa7ced999f45652c26332d960715cf",
+      "results/model-ir.json": "2da7c00eadf034cea33c7f10f0d98510233b1074653f619de9bd711097763f65"
+    },
+    "versions": {
+      "bayeswire": "0.7.0",
+      "bayesjax": "0.7.0",
+      "jax": "0.10.2",
+      "jaxlib": "0.10.2",
+      "blackjax": "1.5",
+      "arviz": "0.22.0",
+      "numpy": "2.5.2"
+    },
+    "jax_devices": [
+      "cpu:0",
+      "cpu:1",
+      "cpu:2",
+      "cpu:3"
+    ]
+  },
+  "recovery": {
+    "alpha": {
+      "truth": 0.4,
+      "q025": -0.12359479321013846,
+      "q975": 0.8193019632870626,
+      "covered": true
+    },
+    "beta": {
+      "truth": 0.4,
+      "q025": 0.1687043691963964,
+      "q975": 0.3801174665056578,
+      "covered": false
+    },
+    "sigma": {
+      "truth": 0.7,
+      "q025": 0.6058261594753247,
+      "q975": 0.7606508082732918,
+      "covered": true
+    },
+    "tau": {
+      "truth": 0.45,
+      "q025": 0.3708910183158882,
+      "q975": 1.2103850336498634,
+      "covered": true
+    },
+    "z": {
+      "truth": [
+        -0.18773484905044308,
+        1.477939675395358,
+        -1.2411180277349159,
+        -0.8584584006168807,
+        0.12552584987267906,
+        -0.9072062196474227,
+        -0.5808524046533271,
+        1.8224673945293226
+      ],
+      "q025": [
+        -0.9889156126153926,
+        0.2145320575804209,
+        -1.9067403834724523,
+        -1.330165227673123,
+        -0.3828682325597073,
+        -2.0912296370072903,
+        -1.076828744746642,
+        0.40386120025327127
+      ],
+      "q975": [
+        0.6825659732644975,
+        2.1921054643785784,
+        -0.04810299767775641,
+        0.3867955398654652,
+        1.2792693518597498,
+        -0.13894658330254744,
+        0.6197952079158668,
+        2.575318756183669
+      ],
+      "covered": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    }
+  }
+}

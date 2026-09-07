@@ -1,0 +1,11 @@
+{
+  "arm": "c-bayescycle",
+  "stage": "revision",
+  "started_at": "2026-09-04T20:43:19.507308+00:00",
+  "wall_seconds": 234.59,
+  "returncode": 0,
+  "timed_out": false,
+  "provider": "openai-codex",
+  "model": "gpt-6-astra",
+  "thinking": "medium"
+}

@@ -1,0 +1,17 @@
+{
+  "current_beta_prior_sd": 0.25,
+  "posterior_path": "results/revised/posterior.npz",
+  "human_approved": false,
+  "beta": {
+    "mean": 0.5611618697217569,
+    "sd": 0.056388976291427445,
+    "q025": 0.4498333725531566,
+    "q975": 0.6732247128279578,
+    "rhat": 1.0019683482042574,
+    "ess_bulk": 2562.207597703112,
+    "ess_tail": 2601.640881989224,
+    "mcse_mean": 0.001114578369926984
+  },
+  "summary_matches": true,
+  "provenance_status": "Locally consistent: all 7 revised and 6 initial manifest SHA-256 entries match exact saved bytes; 37 non-log preservation entries match (3 logs deliberately not read). Embedded revised-stage provenance agrees. Source/IR hashes do not authenticate execution, establish deterministic Python behavior, or independently link current posterior bytes to a run; no refit performed."
+}

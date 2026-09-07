@@ -1,0 +1,46 @@
+{
+  "beta": {
+    "mean": 0.5880398930661034,
+    "sd": 0.05765942464294413,
+    "q025": 0.4729374927711213,
+    "q975": 0.698431251731244,
+    "mcse_mean": 0.0009892938536557754,
+    "rhat": 1.0012992240477516,
+    "ess_bulk": 3395.771590033968,
+    "ess_tail": 2676.1942223882465
+  },
+  "divergences": 0,
+  "sampler": {
+    "chains": 4,
+    "warmup": 500,
+    "draws_per_chain": 1000,
+    "target_acceptance": 0.9,
+    "max_tree_depth": 10,
+    "chain_method": "parallel",
+    "backend": "NumPyro NUTS",
+    "float_dtype": "float64",
+    "seed": 4201,
+    "fit_wall_seconds": 0.8349415841512382,
+    "mean_accept_prob": 0.9273526501715578,
+    "max_num_steps": 95,
+    "steps_at_tree_limit": 0
+  },
+  "diagnostic_flags": [],
+  "diagnostic_pass": true,
+  "diagnostics_definition": "ArviZ 0.22 rank Rhat, bulk/tail ESS; flags: Rhat >1.01, ESS <400, any divergences",
+  "paths": {
+    "samples": "results/initial/posterior.npz",
+    "sampler_stats": "results/initial/sampler_stats.npz",
+    "diagnostics": "results/initial/diagnostics.csv",
+    "trace": "results/initial/trace.png",
+    "posterior_predictive": "results/initial/posterior_predictive.npz",
+    "posterior_predictive_figure": "results/initial/posterior_predictive.png",
+    "prior_predictive_figure": "results/prior/prior_predictive.png"
+  },
+  "provenance": "results/provenance.json",
+  "posterior_predictive": {
+    "seed": 4202,
+    "draws": 200,
+    "index_order": "chain-major flatten"
+  }
+}

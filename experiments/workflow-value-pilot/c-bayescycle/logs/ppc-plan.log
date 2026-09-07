@@ -1,0 +1,20 @@
+{
+  "backend": "bayesite",
+  "command": [
+    "bayesite",
+    "posterior-predictive",
+    "--model",
+    "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/model.ir.json",
+    "--data",
+    "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/data.json",
+    "--fit",
+    "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/posterior.ndjson",
+    "--seed",
+    "4202",
+    "--out",
+    "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/posterior_predictive.ndjson"
+  ],
+  "integration_mode": "external-command",
+  "output": "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial/posterior_predictive.ndjson",
+  "run": "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/initial"
+}

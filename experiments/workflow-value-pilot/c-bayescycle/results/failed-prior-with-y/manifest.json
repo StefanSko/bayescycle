@@ -1,0 +1,9 @@
+{
+  "manifest_format": "bayescycle.run-manifest.v1",
+  "artifacts": {
+    "data.json": {
+      "format": "bayescycle.data.json.v1",
+      "path": "data.json"
+    }
+  }
+}

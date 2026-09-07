@@ -1,0 +1,10 @@
+{
+  "coords": {},
+  "dims": {
+    "alpha": [],
+    "beta": [],
+    "sigma": [],
+    "tau": []
+  },
+  "dims_format": "bayescycle-dims-v1"
+}

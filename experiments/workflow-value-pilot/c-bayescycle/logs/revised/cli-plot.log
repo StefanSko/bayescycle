@@ -1,0 +1,7 @@
+warning: --bayesite bayesite binary not found at bayesite; pass a valid --bayesite path, set BAYESITE, or put bayesite on PATH
+/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/revised/fit.nc
+/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/results/revised/cli-trace.png
+
+real	0m1.629s
+user	0m1.277s
+sys	0m0.224s

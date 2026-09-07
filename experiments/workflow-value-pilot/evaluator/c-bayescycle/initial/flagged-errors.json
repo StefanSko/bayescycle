@@ -1,0 +1,14 @@
+[
+  {
+    "tool": "read",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "ENOENT: no such file or directory, access '/Users/stefansko/Projects/bayescycle/packages/bayeswire/src/bayeswire/core.py'"
+        }
+      ],
+      "details": {}
+    }
+  }
+]

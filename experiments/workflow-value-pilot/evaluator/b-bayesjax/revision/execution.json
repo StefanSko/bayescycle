@@ -1,0 +1,11 @@
+{
+  "arm": "b-bayesjax",
+  "stage": "revision",
+  "started_at": "2026-09-04T20:41:16.804855+00:00",
+  "wall_seconds": 177.942,
+  "returncode": 0,
+  "timed_out": false,
+  "provider": "openai-codex",
+  "model": "gpt-6-astra",
+  "thinking": "medium"
+}

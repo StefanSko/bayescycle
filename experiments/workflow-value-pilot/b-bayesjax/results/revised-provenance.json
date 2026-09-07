@@ -1,0 +1,26 @@
+{
+  "sha256": {
+    "model_revised.py": "9749391943f1c7d20d65d691df3caa9b3d6953f95c8b8bf91411c9de2f9a84a4",
+    "analysis_revised.py": "79f71898189cae7196ca614d007be2149dfd16e0fa3ba7e028a43245082fa5d8",
+    "input/data.json": "8a753a950786ff60f47747dd0176ff01619d2f958402e0d042299fcb4523018d",
+    "input/recovery.json": "edd93d9672190fe63b29312c58faa7e8f03dd70c0220dade8ed22177753c281b",
+    "input/recovery-truth.json": "b1f02352fcc4565268a145ac8239ec5f9ffa7ced999f45652c26332d960715cf",
+    "results/revised-model-ir.json": "64572ad19ff1bcc9607cdbce6adfab8ac15a2d444be27b2e414f48fdc3cd7911",
+    "revision-preservation.json": "8efde4a74b48d84d1f65783301eb06a15f199184179200433092f7098f5da06a"
+  },
+  "versions": {
+    "bayeswire": "0.7.0",
+    "bayesjax": "0.7.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "blackjax": "1.5",
+    "arviz": "0.22.0",
+    "numpy": "2.5.2"
+  },
+  "jax_devices": [
+    "cpu:0",
+    "cpu:1",
+    "cpu:2",
+    "cpu:3"
+  ]
+}

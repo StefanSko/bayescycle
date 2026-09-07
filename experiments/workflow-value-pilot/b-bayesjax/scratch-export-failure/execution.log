@@ -1,0 +1,14 @@
+prior prediction complete
+Traceback (most recent call last):
+  File "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/b-bayesjax/analysis.py", line 136, in <module>
+    main()
+    ~~~~^^
+  File "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/b-bayesjax/analysis.py", line 131, in main
+    fit('recovery','input/recovery.json',4301,provenance)
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/b-bayesjax/analysis.py", line 59, in fit
+    for f in dataclasses.fields(getattr(result.diagnostics, phase)):
+             ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/stefansko/.local/share/uv/python/cpython-3.13.7-macos-aarch64-none/lib/python3.13/dataclasses.py", line 1319, in fields
+    raise TypeError('must be called with a dataclass type or instance') from None
+TypeError: must be called with a dataclass type or instance

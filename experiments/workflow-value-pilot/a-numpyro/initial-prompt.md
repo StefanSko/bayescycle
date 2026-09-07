@@ -1,0 +1,1 @@
+You are arm A: NumPyro + ArviZ, ordinary Python scripts. Implement the model in NumPyro; do not use Bayeswire, Bayesjax or Bayescycle. Read ../INITIAL-BRIEF.md and ../PROTOCOL.md, then execute the initial stage now. Your writable workspace is the current a-numpyro directory only.

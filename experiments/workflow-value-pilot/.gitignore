@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Retained locally as evidence; do not accidentally commit bulky raw artifacts.
+*.npz
+*.png
+*.nc
+*.ndjson
+evaluator/**/events.jsonl
+evaluator/**/session.jsonl

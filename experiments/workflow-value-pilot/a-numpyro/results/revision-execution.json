@@ -1,0 +1,11 @@
+{
+  "total_wall_seconds": 3.1237028748728335,
+  "stage_order": [
+    "revised-prior",
+    "revised-recovery",
+    "revised"
+  ],
+  "fit_attempts": 2,
+  "retries": 0,
+  "initial_preservation_verified": true
+}

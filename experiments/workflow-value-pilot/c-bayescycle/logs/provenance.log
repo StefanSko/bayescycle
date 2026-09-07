@@ -1,0 +1,35 @@
+{
+  "stage": "initial only; awaits human scientific review",
+  "versions": {
+    "bayeswire": "0.7.0",
+    "bayesjax": "0.7.0",
+    "bayescycle": "0.7.0",
+    "jax": "0.10.2",
+    "jaxlib": "0.10.2",
+    "blackjax": "1.5",
+    "arviz": "0.22.0",
+    "numpy": "2.5.2",
+    "matplotlib": "3.11.1"
+  },
+  "python": "3.13.7",
+  "devices": [
+    "cpu:0",
+    "cpu:1",
+    "cpu:2",
+    "cpu:3"
+  ],
+  "environment": {
+    "JAX_ENABLE_X64": "true",
+    "XLA_FLAGS": "--xla_force_host_platform_device_count=4",
+    "MPLBACKEND": "Agg",
+    "OMP_NUM_THREADS": "1"
+  },
+  "checks": [
+    "native source hashes match original bytes",
+    "canonical fit arrays equal original input arrays",
+    "float64 data; 4 CPU devices; x64 enabled",
+    "identical initial/recovery/prior model IR",
+    "8 one-hot clinics, 20 observations each"
+  ],
+  "notes": "NDJSON fingerprint/header/trailer and draw uniqueness checked by analysis.py. Native diagnostics retained in posterior.ndjson trailers; distinct from ArviZ rank diagnostics."
+}

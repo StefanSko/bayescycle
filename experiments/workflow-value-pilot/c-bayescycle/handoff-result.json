@@ -1,0 +1,17 @@
+{
+  "current_beta_prior_sd": 0.25,
+  "posterior_path": "results/revised/posterior.npz",
+  "human_approved": false,
+  "beta": {
+    "mean": 0.5611618697217569,
+    "sd": 0.056388976291427445,
+    "q025": 0.4498333725531566,
+    "q975": 0.6732247128279578,
+    "rhat": 1.0019683482042574,
+    "ess_bulk": 2562.207597703112,
+    "ess_tail": 2601.640881989224,
+    "mcse_mean": 0.001114578369926984
+  },
+  "summary_matches": true,
+  "provenance_status": "Verified local exact-byte hashes: 42 initial inventory entries, 49 revision entries, and 60 preservation entries all match. Native model/input hashes, canonical input arrays, model/data fingerprints and NPZ-to-NDJSON draws agree; source and saved IR changes are restricted to beta prior SD (plus source status description). This establishes saved-artifact consistency only, not deterministic arbitrary Python execution, independently attested execution history, source-to-IR generation, replay reproducibility, or scientific validity. No refitting or regeneration performed."
+}

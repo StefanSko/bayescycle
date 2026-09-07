@@ -1,0 +1,33 @@
+{
+  "sha256": {
+    "model.py": "87a1a39f12a98dd743b449ac1b788f780f1307ce08671e08e1e679d383a21f4d",
+    "analysis.py": "1f2dadead93bffe91f5ed0443687381149c4a9fe75c51c85b7fddfaf6bd61d34",
+    "input/data.json": "8a753a950786ff60f47747dd0176ff01619d2f958402e0d042299fcb4523018d",
+    "input/recovery.json": "edd93d9672190fe63b29312c58faa7e8f03dd70c0220dade8ed22177753c281b",
+    "input/recovery-truth.json": "b1f02352fcc4565268a145ac8239ec5f9ffa7ced999f45652c26332d960715cf",
+    "../INITIAL-BRIEF.md": "a5adbc2cbc0b5456ccf9a185a0c50a4d95c7d7967e0398ae20e77dcd8f3032a4",
+    "../PROTOCOL.md": "77e23cb7bd57d16668814fc50b1ae5492eba62b6ec9fef3dc8c474a7b3c69af2"
+  },
+  "versions": {
+    "python": "3.13.7",
+    "jax": "0.10.2",
+    "numpyro": "0.21.0",
+    "arviz": "0.22.0",
+    "numpy": "2.5.2"
+  },
+  "devices": [
+    "cpu:0",
+    "cpu:1",
+    "cpu:2",
+    "cpu:3"
+  ],
+  "environment": {
+    "JAX_ENABLE_X64": "true",
+    "MPLBACKEND": "Agg",
+    "OMP_NUM_THREADS": "1",
+    "XLA_FLAGS": "--xla_force_host_platform_device_count=4"
+  },
+  "command": "uv run --project .. python analysis.py",
+  "model_stage": "initial",
+  "status": "Engineering fixture; awaits human scientific review"
+}

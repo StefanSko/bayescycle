@@ -1,0 +1,11 @@
+{
+  "total_script_wall_seconds": 6.38639675010927,
+  "order": [
+    "revised-prior",
+    "revised-recovery",
+    "revised"
+  ],
+  "fit_attempts_this_invocation": 2,
+  "prior_failed_invocations": 0,
+  "recovery_same_seed_repair_retries": 0
+}

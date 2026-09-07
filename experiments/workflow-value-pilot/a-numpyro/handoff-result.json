@@ -1,0 +1,17 @@
+{
+  "current_beta_prior_sd": 0.25,
+  "posterior_path": "results/revised/posterior.npz",
+  "human_approved": false,
+  "beta": {
+    "mean": 0.5613208509433069,
+    "sd": 0.057128674571364925,
+    "q025": 0.44791227303739845,
+    "q975": 0.6692952138207736,
+    "rhat": 1.0028415014241625,
+    "ess_bulk": 2905.4334765576864,
+    "ess_tail": 2336.3854408136567,
+    "mcse_mean": 0.0010613965814576546
+  },
+  "summary_matches": true,
+  "provenance_status": "All checked in-arm SHA256 entries match: 7 revised source/input entries, 5 original source/input entries, and 23 preserved initial files. External brief/protocol hashes were not checked under the arm-only restriction. Unsigned local manifests establish byte consistency, not deterministic execution or authenticated linkage of revised posterior outputs to execution; revised outputs have no recorded digest in these manifests. No refit performed."
+}

@@ -1,0 +1,30 @@
+{
+  "format": "bayescycle.run.v1",
+  "kind": "prior-predictive",
+  "backend": "bayesjax",
+  "settings": {
+    "seed": "4200",
+    "draws": "200"
+  },
+  "model": {
+    "name": "ClinicModel",
+    "source_path": "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/model_revised.py",
+    "sha256": "sha256:77cc13070f6bcbdcface3af3f14e8bc3b284c98311c8cc63a8345636b0f82c6c",
+    "ir_path": "model.ir.json"
+  },
+  "inputs": [
+    {
+      "role": "data",
+      "source_path": "/Users/stefansko/Projects/bayescycle/experiments/workflow-value-pilot/c-bayescycle/design.json",
+      "sha256": "sha256:e6298372727f6596539c96842fe9d0c3fd03b2029127cf1bfea4991df33bb353",
+      "path": "data.json",
+      "format": "bayescycle.data.json.v1"
+    }
+  ],
+  "outputs": [
+    {
+      "role": "prior_predictive",
+      "path": "prior_predictive.ndjson"
+    }
+  ]
+}

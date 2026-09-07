@@ -1,0 +1,61 @@
+{
+  "preserved_initial_sha256": {
+    "model.py": "87a1a39f12a98dd743b449ac1b788f780f1307ce08671e08e1e679d383a21f4d",
+    "analysis.py": "1f2dadead93bffe91f5ed0443687381149c4a9fe75c51c85b7fddfaf6bd61d34",
+    "results/COMPLETE": "666099fbd9825c3ae4779442a1a1fbb8373341b1c3720c28f0fe7cd56ff8bef7",
+    "results/execution.json": "d8df36b6f6ce30bdeb4a0c81663e3ada0a43d1ffb8f69d6d21b8f6cf2a684b61",
+    "results/initial/COMPLETE": "0e0ff744d1ad7b6a56e36e0fe31ec01e980b65ac6b54fd7e12f78a13b6394428",
+    "results/initial/diagnostics.csv": "969acfa7698c9a9c73b72dfdefa6e1c5efe97bb6dd2e8e56c0661ff5332536c5",
+    "results/initial/posterior.npz": "1fa21d45fa47f2a9cc17f5d49ab1d044b80da447def796b95763c682ea7d3fba",
+    "results/initial/posterior_predictive.npz": "4304b3129ff0e19a6926e91ad5a39acba2ea2c4ebf978dfac5b626afc4255b2b",
+    "results/initial/posterior_predictive.png": "72089cc53b1b9bf6f87e70bebf00b8e09510a14cd813ceda24a1005d77c30f5b",
+    "results/initial/result.json": "1ec065d9d9fcf4197c6419f8889a80a8274dccf560a36e6e9d6422b37d39037f",
+    "results/initial/sampler_stats.npz": "ae8b6158936304fa709d41c426ec56eb409ffbfa36d847b7c11c669418d9ab30",
+    "results/initial/trace.png": "db20716625daedcf6e5b95389d0097eb539c6afa962727f3d78f42f298e10845",
+    "results/prior/COMPLETE": "989c5674abc6a2769be0896324de405fbd19d6d3b798b2c512bf08dd7918ba17",
+    "results/prior/prior_predictive.npz": "9fcdaa0f17d640b1e4bb8f0ff1cc5a813701b05dd442c63c24b2c24f21c9eddf",
+    "results/prior/prior_predictive.png": "d5f23a95c66b93874d7f7594f4b36325127d368e056d80e461ed0b56131d1670",
+    "results/prior/result.json": "3a551193da12598e6897eee46fa110d13ee3c7d8d09a95ef9bd8bcd8ca7503ca",
+    "results/provenance.json": "bade35b82355d9ee95ce12f442b8a7e959add30b0911d5af5e793ca35af20d87",
+    "results/recovery/COMPLETE": "0e0ff744d1ad7b6a56e36e0fe31ec01e980b65ac6b54fd7e12f78a13b6394428",
+    "results/recovery/diagnostics.csv": "d554c8680f79bd4816251c2eb87b3a01d01c651d0355eef72a314a6490ed8b0f",
+    "results/recovery/posterior.npz": "b4e5646239fdadd2c4eb823ef513aeb74f30641102cb226cb7c7e0758d059e67",
+    "results/recovery/result.json": "cc1cf8c989a4a63165b096396e6ba005b0ef5e3fdffb4983703f3e6f90d42ebd",
+    "results/recovery/sampler_stats.npz": "8aef0ee19dd7a7cf177c0059aa5b61bcef28e6a908c0df02f24fdbead746b8d3",
+    "results/recovery/trace.png": "ca765d964fdf42b08839eb04a36b2c29462388260bfa60686b94c18636e37c2b"
+  },
+  "change": "Only beta prior SD: 1 -> 0.25; initial source and artifacts retained",
+  "sha256": {
+    "model_revised.py": "5ae8f48b5cc24122be60c5818525bd0c2b03848dad92b6321f910423e56ac961",
+    "analysis_revised.py": "6b54d8b6a6b2bb4e3f43a5c38d7882cac3314911654439139ea912a92b37e230",
+    "model.py": "87a1a39f12a98dd743b449ac1b788f780f1307ce08671e08e1e679d383a21f4d",
+    "analysis.py": "1f2dadead93bffe91f5ed0443687381149c4a9fe75c51c85b7fddfaf6bd61d34",
+    "input/data.json": "8a753a950786ff60f47747dd0176ff01619d2f958402e0d042299fcb4523018d",
+    "input/recovery.json": "edd93d9672190fe63b29312c58faa7e8f03dd70c0220dade8ed22177753c281b",
+    "input/recovery-truth.json": "b1f02352fcc4565268a145ac8239ec5f9ffa7ced999f45652c26332d960715cf",
+    "../REVISION-BRIEF.md": "550c4fbf672c4e3f2654313f8279984a6e83427ac43c459966dc7863b10ef42d",
+    "../PROTOCOL.md": "77e23cb7bd57d16668814fc50b1ae5492eba62b6ec9fef3dc8c474a7b3c69af2"
+  },
+  "versions": {
+    "python": "3.13.7",
+    "jax": "0.10.2",
+    "numpyro": "0.21.0",
+    "arviz": "0.22.0",
+    "numpy": "2.5.2"
+  },
+  "devices": [
+    "cpu:0",
+    "cpu:1",
+    "cpu:2",
+    "cpu:3"
+  ],
+  "environment": {
+    "JAX_ENABLE_X64": "true",
+    "MPLBACKEND": "Agg",
+    "OMP_NUM_THREADS": "1",
+    "XLA_FLAGS": "--xla_force_host_platform_device_count=4"
+  },
+  "command": "uv run --project .. python analysis_revised.py",
+  "model_stage": "revised",
+  "status": "Engineering fixture; awaits human scientific review"
+}
