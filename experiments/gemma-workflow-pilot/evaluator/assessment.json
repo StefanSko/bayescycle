@@ -1,0 +1,334 @@
+{
+  "arms": {
+    "a-numpyro": {
+      "sessions": {
+        "initial": {
+          "arm": "a-numpyro",
+          "stage": "initial",
+          "started_at": "2026-09-04T21:16:28.955042+00:00",
+          "wall_seconds": 630.948,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "ollama",
+          "model": "gemma4-pi:12b",
+          "thinking_requested": "medium",
+          "context_window": 32768,
+          "max_output_tokens": 4096,
+          "finished": true,
+          "status": "finished",
+          "tool_calls": 10,
+          "flagged_errors": 1,
+          "errors": [
+            {
+              "kind": "tool",
+              "tool": "bash",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import jax; import numpyro; import arviz; print(f'jax={jax.__version__}, numpyro={numpyro.__version__}, arviz={arviz.__version__}')\n                ^^^^^^^^^^^^^^\nModuleNotFoundError: No module named 'numpyro'\n\n\nCommand exited with code 1"
+                  }
+                ],
+                "details": {}
+              }
+            }
+          ],
+          "output_tokens_reported": 4349,
+          "max_input_tokens_reported": 32215,
+          "length_terminations": 1,
+          "compactions_observed": 0,
+          "assistant_text_messages": []
+        },
+        "revision": {
+          "finished": false,
+          "status": "not_run"
+        },
+        "handoff": {
+          "finished": false,
+          "status": "not_run"
+        }
+      },
+      "fits": {
+        "initial": {
+          "present": false
+        },
+        "recovery": {
+          "present": false
+        },
+        "revised": {
+          "present": false
+        },
+        "revised-recovery": {
+          "present": false
+        }
+      },
+      "study_record_present": false,
+      "authored_python_files": [],
+      "numeric_or_figure_artifacts": [],
+      "input_hashes_unchanged": true
+    },
+    "b-bayesjax": {
+      "sessions": {
+        "initial": {
+          "arm": "b-bayesjax",
+          "stage": "initial",
+          "started_at": "2026-09-04T21:30:41.064364+00:00",
+          "wall_seconds": 286.943,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "ollama",
+          "model": "gemma4-pi:12b",
+          "thinking_requested": "medium",
+          "context_window": 32768,
+          "max_output_tokens": 4096,
+          "finished": true,
+          "status": "finished",
+          "tool_calls": 9,
+          "flagged_errors": 0,
+          "errors": [],
+          "output_tokens_reported": 2588,
+          "max_input_tokens_reported": 32065,
+          "length_terminations": 1,
+          "compactions_observed": 0,
+          "assistant_text_messages": []
+        },
+        "revision": {
+          "finished": false,
+          "status": "not_run"
+        },
+        "handoff": {
+          "finished": false,
+          "status": "not_run"
+        }
+      },
+      "fits": {
+        "initial": {
+          "present": false
+        },
+        "recovery": {
+          "present": false
+        },
+        "revised": {
+          "present": false
+        },
+        "revised-recovery": {
+          "present": false
+        }
+      },
+      "study_record_present": false,
+      "authored_python_files": [],
+      "numeric_or_figure_artifacts": [],
+      "input_hashes_unchanged": true
+    },
+    "c-bayescycle": {
+      "sessions": {
+        "initial": {
+          "arm": "c-bayescycle",
+          "stage": "initial",
+          "started_at": "2026-09-04T21:27:00.041341+00:00",
+          "wall_seconds": 220.944,
+          "returncode": 0,
+          "timed_out": false,
+          "provider": "ollama",
+          "model": "gemma4-pi:12b",
+          "thinking_requested": "medium",
+          "context_window": 32768,
+          "max_output_tokens": 4096,
+          "finished": true,
+          "status": "finished",
+          "tool_calls": 8,
+          "flagged_errors": 1,
+          "errors": [
+            {
+              "kind": "tool",
+              "tool": "bash",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "ls: ../../packages/bayeswire/README.md: No such file or directory\n\n\nCommand exited with code 1"
+                  }
+                ],
+                "details": {}
+              }
+            }
+          ],
+          "output_tokens_reported": 1185,
+          "max_input_tokens_reported": 30980,
+          "length_terminations": 1,
+          "compactions_observed": 0,
+          "assistant_text_messages": []
+        },
+        "revision": {
+          "finished": false,
+          "status": "not_run"
+        },
+        "handoff": {
+          "finished": false,
+          "status": "not_run"
+        }
+      },
+      "fits": {
+        "initial": {
+          "present": false
+        },
+        "recovery": {
+          "present": false
+        },
+        "revised": {
+          "present": false
+        },
+        "revised-recovery": {
+          "present": false
+        }
+      },
+      "study_record_present": false,
+      "authored_python_files": [],
+      "numeric_or_figure_artifacts": [],
+      "input_hashes_unchanged": true
+    }
+  },
+  "exploratory_authoring_probe": {
+    "a-model": {
+      "session": {
+        "arm": "a-model",
+        "stage": "authoring",
+        "started_at": "2026-09-04T21:37:11.245585+00:00",
+        "wall_seconds": 199.313,
+        "returncode": 0,
+        "timed_out": false,
+        "provider": "ollama",
+        "model": "gemma4-pi:12b",
+        "thinking_requested": "medium",
+        "context_window": 32768,
+        "max_output_tokens": 4096,
+        "finished": true,
+        "status": "finished",
+        "tool_calls": 6,
+        "flagged_errors": 3,
+        "errors": [
+          {
+            "kind": "tool",
+            "tool": "read",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ENOENT: no such file or directory, access '/Users/stefansko/Projects/bayescycle/experiments/gemma-workflow-pilot/API.md'"
+                }
+              ],
+              "details": {}
+            }
+          },
+          {
+            "kind": "tool",
+            "tool": "read",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "EISDIR: illegal operation on a directory, read"
+                }
+              ],
+              "details": {}
+            }
+          },
+          {
+            "kind": "tool",
+            "tool": "read",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ENOENT: no such file or directory, access '/Users/stefansko/Projects/bayescycle/experiments/gemma-workflow-pilot/API.md'"
+                }
+              ],
+              "details": {}
+            }
+          }
+        ],
+        "output_tokens_reported": 4727,
+        "max_input_tokens_reported": 6269,
+        "length_terminations": 0,
+        "compactions_observed": 0,
+        "assistant_text_messages": [
+          "I have authored the `model.py` file according to the `AUTHORING-BRIEF.md` and `API.md` specifications.\n\n```python\nimport numpyro\nimport numpyro.distributions as dist\n\ndef model(x, clinic_design, y=None):\n    alpha = numpyro.sample(\"alpha\", dist.Normal(0, 2))\n    beta = numpyro.sample(\"beta\", dist.Normal(0, 1))\n    tau = numpyro.sample(\"tau\", dist.HalfNormal(1))\n    z = numpyro.sample(\"z\", dist.Normal(0, 1).expand((8,)).to_event(1))\n    sigma = numpyro.sample(\"sigma\", dist.HalfNormal(1))\n\n    mu = alpha + tau * (clinic_design @ z) + beta * x\n\n    numpyro.sample(\"y\", dist.Normal(mu, sigma), obs=y)\n```"
+        ]
+      },
+      "model_present": true,
+      "model_sha256": "1f6d316a6c04d9ef13ab17bba08161b795e439cd69519bd4fc3eb2a433b48a82",
+      "evaluator_validation": {
+        "beta": {
+          "mean": 0.5880398930661034,
+          "sd": 0.05765942464294413,
+          "q025": 0.4729374927711213,
+          "q975": 0.698431251731244,
+          "rhat": 1.0012992240477516,
+          "ess_bulk": 3395.771590033968,
+          "ess_tail": 2676.1942223882465,
+          "mcse_mean": 0.0009892938536557754
+        },
+        "shapes_ok": true,
+        "finite": true,
+        "float64": true,
+        "positive_scales": true,
+        "max_rank_rhat": 1.0031243919895891,
+        "min_bulk_ess": 707.3701036893259,
+        "min_tail_ess": 731.1598597747899,
+        "chain_diagnostics_pass": true,
+        "divergences": 0,
+        "hosted_reference_mean_check": {
+          "absolute_difference": 0.0,
+          "tolerance": 0.005596291140049367,
+          "within_tolerance": true
+        },
+        "execution_succeeded": true,
+        "wall_seconds_including_import_binding_fit_checks": 1.277346417075023
+      }
+    },
+    "b-model": {
+      "session": {
+        "arm": "b-model",
+        "stage": "authoring",
+        "started_at": "2026-09-04T21:40:30.622178+00:00",
+        "wall_seconds": 240.029,
+        "returncode": 143,
+        "timed_out": true,
+        "provider": "ollama",
+        "model": "gemma4-pi:12b",
+        "thinking_requested": "medium",
+        "context_window": 32768,
+        "max_output_tokens": 4096,
+        "finished": true,
+        "status": "finished",
+        "tool_calls": 3,
+        "flagged_errors": 1,
+        "errors": [
+          {
+            "kind": "tool",
+            "tool": "read",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Tool call \"read\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments."
+                }
+              ],
+              "details": {}
+            }
+          }
+        ],
+        "output_tokens_reported": 4765,
+        "max_input_tokens_reported": 2596,
+        "length_terminations": 1,
+        "compactions_observed": 0,
+        "assistant_text_messages": []
+      },
+      "model_present": false,
+      "model_sha256": null,
+      "evaluator_validation": null
+    }
+  },
+  "scope": "Partial evidence is not success; model/settings require source review before accepting a fit.",
+  "supervision": "Hosted assistant prepared and evaluates the experiment; no hosted code repairs supplied to local agents."
+}

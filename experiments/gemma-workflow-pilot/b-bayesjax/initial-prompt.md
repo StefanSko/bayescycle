@@ -1,0 +1,1 @@
+You are arm B: Bayeswire model declarations + direct public Bayesjax APIs + ArviZ, ordinary Python scripts. Do not invoke the Bayescycle CLI or import Bayescycle internals. Read ../INITIAL-BRIEF.md and ../PROTOCOL.md, then execute the initial stage now. Your writable workspace is the current b-bayesjax directory only.

@@ -1,0 +1,14 @@
+{
+  "executor": "evaluator-owned fixed driver; local agent did not run inference",
+  "source_reviewed": true,
+  "model_sha256": "1f6d316a6c04d9ef13ab17bba08161b795e439cd69519bd4fc3eb2a433b48a82",
+  "data_sha256": "8a753a950786ff60f47747dd0176ff01619d2f958402e0d042299fcb4523018d",
+  "seed": 4201,
+  "settings": {
+    "num_chains": 4,
+    "num_warmup": 500,
+    "num_samples": 1000,
+    "target_acceptance_rate": 0.9,
+    "max_tree_depth": 10
+  }
+}

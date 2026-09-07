@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Gemma: Bayesian workflow pilot</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f5f0;color:#242a29;font:17px/1.6 system-ui,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:48px 24px}h1{font-size:clamp(32px,5vw,52px);line-height:1.1}
+h2{margin-top:36px;font-size:25px}.eyebrow,.path{font-size:13px;color:#53605b}.lede{font-size:21px}
+.box{padding:20px 24px;background:white;border:1px solid #d8ddd8;border-radius:12px;margin:22px 0}
+.warning{border-left:5px solid #a75020}.success{border-left:5px solid #24785b}.table{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:15px}th,td{text-align:left;padding:12px;border-bottom:1px solid #ddd}
+summary{cursor:pointer;padding:16px 0;font-weight:650}details{border-top:1px solid #ced5ce}
+pre{font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;padding:20px}
+small{color:#53605b}code{overflow-wrap:anywhere}footer{margin:40px 0;color:#53605b;font-size:14px}
+</style><main>
+<p class="eyebrow">LOCAL MODEL FOLLOW-UP · 4 SEPTEMBER 2026 · EXPLORATORY, ONE ATTEMPT PER ARM</p>
+<h1>Where the local agent got stuck.</h1>
+<p class="lede">Does a narrower modeling interface help a smaller local agent do reliable Bayesian work?</p>
+<div class="box warning"><strong>Not demonstrated in this test.</strong> All three full-study attempts
+stopped before producing code. In a smaller follow-up, NumPyro produced a correct model;
+Bayeswire did not deliver one within the fixed budget. These are agent-execution failures,
+not evidence of incorrect Bayesian inference code.</div>
+<p><code>ollama/gemma4-pi:12b</code> · existing Q4_K_M model · 32K context · 4096 response tokens.
+No downloads or configuration tuning. Actual read-tool integration check passed.</p>
+<h2>1. Full study: 0 of 3 completed</h2>
+<p>Same study fixture as the hosted pilot; 15 minutes per arm, sequential A → C → B.
+Raw numeric JSON consumed large contexts. No scientific API was actually used, and no
+revision or handoff was attempted.</p>
+<div class="box table"><table><thead><tr><th>Setup</th><th>Time</th><th>Calls</th>
+<th>Max input tokens</th><th>Outcome</th></tr></thead><tbody><tr><td>NumPyro + ArviZ</td><td>10m 31s</td><td>10</td><td>32,215</td><td>Length stop; no model or fit</td></tr>
+<tr><td>Direct Bayesjax</td><td>4m 47s</td><td>9</td><td>32,065</td><td>Length stop; no model or fit</td></tr>
+<tr><td>Bayescycle CLI</td><td>3m 41s</td><td>8</td><td>30,980</td><td>Length stop; no model or fit</td></tr></tbody></table></div>
+<p><small>Failed-session duration is not a speed ranking. No compaction-start event was observed.
+Near-context-limit length stops do not identify every internal Ollama/Pi cause.</small></p>
+<h2>2. Compact authoring probe: 1 of 2 delivered</h2>
+<p>A separate, openly post-hoc probe: one model file, compact data shapes, short API cards,
+read/write/edit tools, four minutes each. No raw arrays, plotting or workflow glue.</p>
+<div class="box success"><strong>NumPyro: correct model, 3m 19s.</strong>
+<p>The <em>evaluator</em> then fitted Gemma's unchanged model. Every retained parameter array
+exactly matched the hosted NumPyro reference.</p>
+<p>β = <strong>0.588040</strong>; 95% interval [0.472937, 0.698431].<br>
+Max rank Rhat 1.0031 · min bulk/tail ESS 707/731 · zero retained divergences.</p>
+<small>Gemma authored the model. It did not perform this fitting or diagnostic validation.</small></div>
+<div class="box warning"><strong>Bayeswire: no model after four minutes.</strong>
+<p>After reading the brief and API card, it reached a response-token limit while attempting
+<code>read(path=".")</code>. Pi refused the potentially truncated call. The deadline then ended
+the session. Its max reported input was only 2,596 tokens—not the large-context pattern above.</p>
+<small>No model existed to compile. The evaluator did not supply or repair one.</small></div>
+<h2>What to keep from this</h2>
+<p>Focus next on <strong>small agent tasks, compact evidence and executable checks</strong>,
+not merely swapping the LLM provider. This is consistent with valuing explicit phases;
+it does not establish a need for five distributions or multiple process boundaries.</p>
+<p>One attempt per interface does not establish an error rate. Familiarity, API cards,
+stochastic decoding and budgets matter. The compact probe changed several things at once.
+Human scientific control remains untested.</p>
+<h2>Inspect the evidence</h2><p>Expand any item. Everything below is embedded in this offline file.</p>
+<details><summary>Full findings and limitations</summary><p class='path'>README.md</p><pre># Does the narrower interface help the installed local agent?
+
+**Result: this pilot did not support that hypothesis.** The full-study trials
+never reached model authoring or inference. A smaller, exploratory authoring probe
+succeeded with NumPyro but not with Bayeswire within its fixed budget. This is not
+a claim that the custom inference code is incorrect or that Gemma can never use it.
+
+Run on 2026-09-04. The hosted pilot and its HTML are preserved separately.
+
+## Installation actually tested
+
+- Existing `ollama/gemma4-pi:12b`: Gemma 4 11.9B, Q4_K_M; Ollama 0.32.15.
+- Existing Pi model configuration: 32,768-token context, 4,096 maximum response.
+- Existing model parameters: temperature 1, top_k 64, top_p 0.95.
+- Pi requested medium thinking, but this provider disables `reasoning_effort`;
+  it is not equivalent to the hosted model&#x27;s reasoning budget.
+- 24 GiB unified memory, 12 logical CPUs. Analysis requests used loopback Ollama.
+- No model downloads, global configuration edits or package source changes.
+- Same locked scientific environment and exact input bytes as the hosted pilot.
+
+A real read-tool smoke test passed first. The current hosted assistant prepared
+and evaluated the experiment but did not repair the local agents&#x27; code. This
+is not a claim that the entire supervisory workflow ran locally.
+
+## 1. Full-study replication: zero completed studies
+
+The [protocol](PROTOCOL.md) was written before the study agents started. Same
+hierarchical Gaussian fixture and numerical settings as the hosted pilot:
+160 observations, eight clinics, a fixed associational estimand beta, float64,
+four chains, 500 warmup and 1000 retained draws. Each initial session had 15 minutes.
+Initial runs were sequential, in seeded order A → C → B, to avoid Ollama contention.
+
+| Setup | Session duration | Tool calls | Highest reported input tokens | Outcome |
+|---|---:|---:|---:|---|
+| A: NumPyro + ArviZ | 10m 31s | 10 | 32,215 | Length termination; no code, fit or report |
+| B: direct Bayesjax | 4m 47s | 9 | 32,065 | Length termination; no code, fit or report |
+| C: Bayescycle CLI | 3m 41s | 8 | 30,980 | Length termination; no code, fit or report |
+
+All three repeatedly inspected directories and raw numerical JSON. A and B read
+the main data more than once (A also printed the complete one-line file through
+grep); C read both main and recovery data. No scientific API was actually used.
+No compaction-start event was observed in any trial. A `length` stop near the
+configured context limit is evidence of a context/length bottleneck; it does not
+by itself identify every internal Ollama/Pi cause.
+
+Additional errors:
+
+- A used bare `python3`, ignoring the supplied `uv`/shared-environment instruction,
+  and got `ModuleNotFoundError: numpyro`. NumPyro was present in the specified
+  scientific environment; this was not evidence that its installation was broken.
+- C tried an incorrect relative package-doc path and got a filesystem error.
+- B had no flagged tool error, but still produced nothing. Process exit code zero
+  was not counted as scientific success.
+
+There were no accepted initial outputs to revise or hand off, so those stages
+were **not run**, not silently passed. The shorter failed-session durations do
+not make B/C faster or better. These failures happened before library interaction,
+so this part did not isolate the value of the scientific interfaces.
+
+## 2. Exploratory compact authoring probe
+
+After observing the broad-task failures, a [separate probe](AUTHORING-PROTOCOL.md)
+was registered before either new probe session. This is an openly post-hoc
+refinement, not a replacement for the failed primary experiment.
+
+Each fresh session got the same model mathematics and compact data shapes, a
+short assigned-library API card with a scalar example, and one task: write
+`model.py`. No raw data or hosted solutions were available in these workspaces.
+Only read/write/edit tools were enabled, and each session had four minutes.
+There was no CLI authoring arm because B and C share the Bayeswire declaration API.
+
+| Interface | Duration | Tool calls | Outcome |
+|---|---:|---:|---|
+| NumPyro | 3m 19s | 6 | Model file produced; source and numerical checks passed |
+| Bayeswire | 4m 00s | 3 attempted | No model; response-length limit, then deadline |
+
+NumPyro&#x27;s actual file is [a-model/model.py](a-model/model.py). It implements the
+specified priors and non-centered likelihood without evaluator edits.
+
+**The evaluator, not Gemma, ran the numerical validation.** The separate
+`validate_authoring.py` driver bound the fixed main data and ran the original
+NUTS settings. All saved parameter arrays exactly match the hosted NumPyro
+reference, not just the displayed beta summary:
+
+- beta mean: **0.5880398931**
+- equal-tailed 95% interval: **[0.4729374928, 0.6984312517]**
+- maximum all-parameter rank Rhat: **1.0031244**
+- minimum bulk / tail ESS: **707.37 / 731.16**
+- retained divergences: **0**
+
+Bayeswire&#x27;s probe read the brief and API card, then generated an attempted
+`read(path=&quot;.&quot;)` tool call at a response-length limit. Pi refused to execute that
+potentially truncated call. No model file existed at the four-minute deadline.
+Its highest reported input count was only 2,596 tokens: this was **not** the same
+large-input/context-pressure pattern as the full-study trials. It exhausted a
+response budget and then the wall-time budget without delivering the file.
+There was no model to compile or validate; the evaluator did not write one for it.
+
+The compact probe changed task size, information presentation and available tools
+at once. It shows that this supported local model could author the NumPyro model;
+it cannot establish which change enabled success or an intrinsic API error rate.
+Agent familiarity with NumPyro, stochastic decoding, the particular reference
+cards, and the chosen budgets are important limitations.
+
+## What this means for the project
+
+1. **Simply replacing the hosted model with the installed local one did not make
+   the existing workflow reliable.** All full tasks stopped before doing science.
+2. **We still have no observed local-agent advantage for the custom interface.**
+   NumPyro was the only successful compact authoring attempt. Do not retry or
+   selectively change budgets until the preferred library wins.
+3. **This does not invalidate the custom inference implementation.** The hosted
+   comparison already exercised it successfully; the local failures did not even
+   reach its sampler. Here the failures were agent execution and budget failures.
+4. **The next useful design pressure is on the agent-facing task boundary:**
+   compact schema/data summaries instead of raw arrays, small phases, executable
+   checks, and honest stopping states. This is consistent with valuing explicit
+   phases, not proof that the five-package/process architecture is necessary.
+5. **Human control remains unmeasured.** Neither a prescribed-model task nor an
+   evaluator-run fit establishes a successful human-led research experience.
+
+No Tau, PydanticAI or MCP integration was built or tested, and no inference
+algorithm, model configuration or library implementation was tuned after failures.
+
+## Inspect the evidence
+
+- [PROTOCOL.md](PROTOCOL.md): full-study replication and fixed budgets.
+- [AUTHORING-PROTOCOL.md](AUTHORING-PROTOCOL.md): follow-up scope and confounds.
+- [AUTHORING-BRIEF.md](AUTHORING-BRIEF.md): shared compact model specification.
+- [NumPyro API card](a-model/API.md) / [Bayeswire API card](b-model/API.md).
+- `evaluator/assessment.json`: session statuses, failed calls, length stops,
+  missing outputs and the separately labeled authoring validation.
+- `evaluator/local-environment.json`: installed model digest/configuration metadata.
+- `evaluator/&lt;arm&gt;/&lt;stage&gt;/tool-calls.json`: actual calls, without thinking text.
+- `evaluator/&lt;arm&gt;/&lt;stage&gt;/execution.json`: measured duration and process outcome.
+- `evaluator/a-model/validation/`: evaluator-owned fit, original source/input
+  hashes, retained draws, sampling statistics and recomputed diagnostics.
+- Raw session/event streams are retained locally and gitignored; they are not
+  bundled into the human-facing report.
+
+Recompute the assessment without inference:
+
+```bash
+uv run --project experiments/workflow-value-pilot python \
+  experiments/gemma-workflow-pilot/assess.py
+```
+
+The validation driver refuses existing output directories and requires an explicit
+source-review flag. Do not overwrite evidence to rerun a failed attempt.
+</pre></details>
+<details><summary>Original replication protocol</summary><p class='path'>PROTOCOL.md</p><pre># Local-model replication — registered before study agents run
+
+## Hypothesis
+
+Does the narrower Bayeswire/Bayesjax interface, or its Bayescycle CLI, help the
+installed smaller local agent conduct this Bayesian analysis more reliably than
+NumPyro? This is a replication of the hosted-model fixture, not a new inference
+algorithm or harness implementation.
+
+## Fixed local agent
+
+Use the already configured `ollama/gemma4-pi:12b`: Gemma 4 11.9B, Q4_K_M,
+32,768-token configured context, 4,096-token maximum response. Existing Ollama
+parameters: temperature 1, top_k 64, top_p 0.95. Pi requests medium thinking;
+the installed OpenAI-compatible provider disables reasoning_effort support, so
+this is NOT a claim of equal reasoning budget to the hosted model. No model
+download, quantization change, context enlargement, custom scaffold or global
+configuration modification is permitted during the trial.
+
+The machine has 24 GiB unified memory and 12 logical CPUs. All model requests
+use the configured loopback Ollama endpoint. Scientific Python uses the previous
+pilot&#x27;s locked environment (JAX 0.10.2, BlackJAX 1.5, NumPyro 0.21.0, ArviZ 0.22).
+Root/provider/version metadata is recorded separately by the evaluator.
+
+## Arms and unchanged scientific fixture
+
+- A: NumPyro + ArviZ + ordinary scripts.
+- B: Bayeswire + direct public Bayesjax APIs + ArviZ.
+- C: Bayeswire + Bayescycle CLI, explicitly Bayesjax for fitting. Native artifacts
+  remain required; supplementary unsupported operations must be identified.
+
+All arms use Pi&#x27;s ordinary read/write/edit/bash tools. This tests usability of
+existing scientific APIs, not a newly constrained tool schema, sandbox or enforced
+permission system. No Rust fallback, MCP server or new harness integration.
+
+Eight clinics, 20 observations each. Use the byte-identical main and separate
+recovery fixtures from the hosted pilot, copied into each workspace. Main truth
+and hosted solutions/results are evaluator-only; local agents must not inspect
+any earlier pilot report, code, figure, session or numerical result. A common
+scientific environment is not permission to read its neighboring study outputs.
+
+Model, with non-centered clinic intercepts:
+
+- alpha ~ Normal(0, 2)
+- beta ~ Normal(0, 1)
+- tau ~ HalfNormal(1)
+- z_j ~ Normal(0, 1), j=0,...,7
+- sigma ~ HalfNormal(1)
+- y_i ~ Normal(alpha + tau * (clinic_design @ z)_i + beta*x_i, sigma)
+
+Estimand: within-clinic expected outcome difference for x -&gt; x+1, beta.
+Associational, not an identified causal effect. No missingness. Treat design as fixed.
+Use float64; 4 chains; 500 warmup and 1000 retained draws per chain; target
+acceptance 0.9; max tree depth 10. Seeds: 4200 for 200 prior predictions, 4301 for
+recovery fitting, 4201 for main fitting, 4202 for 200 main posterior predictions.
+Do not alter scientific settings, hunt for seeds or silently change backends.
+
+## Procedure and budgets
+
+1. A read-only, non-scientific tool-calling smoke test, separately logged, verifies
+   that the installed Ollama/Pi integration can perform a tool call. Failure here
+   is an integration blocker, not evidence against a Bayesian package.
+2. Execute initial A/B/C sessions sequentially in a seeded shuffled order, with
+   fresh workspaces/context. Each has the same 15-minute initial budget as the
+   hosted pilot. Budget includes reasoning, code, tools and analysis; slow local
+   decoding can cause noncompletion without demonstrating an API flaw.
+3. If an arm has genuinely completed the initial fixture, snapshot its original
+   source/results and request the same beta-prior revision: Normal(0,0.25), in a
+   fresh session (10-minute budget). Preserve original artifacts.
+4. Only for arms with completed revised work, perform the same file-only fresh
+   handoff, no refitting (5 minutes).
+5. Partial/failed arms retain all evidence. Do not repair their code with the
+   hosted evaluator, secretly supply solved templates, or declare missing stages
+   passed. Ordinary self-repairs within the budget are allowed and counted.
+
+No agent may fabricate human approval. Actual human understanding, trust and
+scientific decision quality remain unmeasured; the full gated study skill is not
+invoked. This evaluates engineering capability, not the finished product idea.
+
+## Outputs and assessment
+
+Use the same output paths/schema as the hosted fixture: separate initial and
+recovery posterior NPZs (alpha/beta/tau/z/sigma, chain-by-draw), summaries with
+beta mean/SD/95% equal-tailed interval/MCSE/rank Rhat/bulk and tail ESS, native
+divergences/settings, predictive figures and STUDY.md. Revised outputs and any
+handoff must remain separate and explicitly proposed, never human-approved.
+
+Primary endpoints: completion of the specified task within budget, equivalence of
+model/settings to the fixture, and correctly interpreted numerical diagnostics.
+Check shapes/finiteness/positive scales; recompute ArviZ rank Rhat &lt;=1.01, bulk and
+tail ESS &gt;=400, and zero retained divergences across parameter coordinates.
+For equivalent models compare main beta means to the matching hosted-arm
+reference using 4*hypot(local MCSE, reference MCSE). Posterior agreement alone
+cannot establish that the implemented model was correct. One recovery interval&#x27;s
+truth coverage is descriptive, not a calibration verdict.
+
+Record failed operations, self-repairs, fabricated success/approval claims,
+API misunderstandings, source/result preservation and handoff. Separately identify
+provider/tool-parser/context/output-budget failures. Record actual wall time and
+provider token telemetry where available; zero API price is not zero hardware cost.
+
+One attempt per arm, one model, one fixture: this is a qualitative screening test,
+not an intrinsic error-rate estimate. The LLM has its existing stochastic decoding
+parameters and no claim of seed-identical text generation. Sequential local runs
+are not directly speed-comparable to the hosted pilot&#x27;s concurrent runs. A finding
+that all arms fail would motivate a smaller capability test, not establish that
+all scientific libraries are unusable or that more infrastructure is needed.
+</pre></details>
+<details><summary>Exploratory authoring protocol</summary><p class='path'>AUTHORING-PROTOCOL.md</p><pre># Matched compact authoring probe — registered before either probe session
+
+## Why a separate probe
+
+The full NumPyro and CLI trials terminated with `length` after near-32K input
+contexts, before creating a model or fit. The direct-Bayesjax trial is still
+running at registration and is also repeatedly reading inputs. Those results
+are retained unchanged. The broad task has not isolated scientific API usability.
+
+This follow-up asks whether the same installed local model can author the fixed
+hierarchical model when the task is limited to that phase. It does not count as
+full workflow completion, human approval, model criticism or self-directed inference.
+The decision to run this narrower probe was made after observing the broad-task
+failures; it is exploratory, not a previously registered primary endpoint.
+
+## Comparison
+
+- A-model: NumPyro model function.
+- B-model: Bayeswire declarative model, subsequently evaluated by Bayesjax.
+
+No third authoring arm is needed: the CLI and direct backend use the same
+Bayeswire declaration interface. This probe does not test CLI orchestration.
+
+Same installed `ollama/gemma4-pi:12b`, unchanged 32K/4096 configuration and existing
+decoding settings. Fresh sessions, sequential A-model then B-model; four-minute
+budget each. Only read/write/edit tools: authoring needs no shell, installed
+packages, data inspection or numerical execution. Each receives the same model
+math/data schema and a short API reference for its assigned library. The cards
+contain public syntax and a scalar-location example, not a solved hierarchical
+model. No raw data, hosted solution or expected posterior result is supplied.
+This changes task size, information presentation and tool surface relative to the
+broad trial; improvement cannot be attributed to any one of these factors alone.
+
+## Deliverable and checks
+
+Author exactly one model.py. No estimator/report/predictive script. No claim of
+human approval or successful fitting. No hosted repairs or hidden source fixes.
+
+The evaluator reviews the actual source against the identical fixture and may
+run a separate fixed sampling driver in the shared scientific environment to
+check compatibility and posterior agreement. The driver, not the local agent,
+executes inference and diagnostics. Keep that distinction explicit in the report.
+
+Check imports/public API validity, exact prior/likelihood structure, non-centered
+clinic intercepts, requested vector dimensions and shape-compatible binding.
+For correct executable models, use the original float64/4 chains/500 warmup/1000
+retained draws, seed 4201, target acceptance 0.9 and depth 10. Compare to the
+corresponding hosted main-data result with the same 4*hypot(MCSEs) screen. Review
+all-parameter rank Rhat/bulk and tail ESS and divergences. Numerical agreement
+alone is not proof of model equivalence. No outcome-dependent retuning.
+
+One attempt per interface is a capability probe, not a reliable comparative error
+rate. Both succeeding means the local model can author both with this support;
+it would not establish a unique advantage for the custom library. A narrow
+interface failure is retained rather than fixed by the evaluator.
+</pre></details>
+<details><summary>Shared compact task</summary><p class='path'>AUTHORING-BRIEF.md</p><pre># One small task: author the specified model
+
+Read your local API.md, then WRITE model.py using the write tool. Do not run an
+analysis. You have four minutes and only need this one Python file.
+
+Do not read raw data, other arm directories, previous reports, other solutions or
+any other files. Everything needed is here and in API.md. No shell, installation,
+plots, diagnostics, saved results, study reports or approvals are required.
+Do not merely paste code in chat: create the file, then briefly state it was written.
+The evaluator will separately check and execute the model; do not claim a fit ran.
+
+Data schema (actual arrays are supplied by the evaluator later):
+- x: float64 vector of length N
+- clinic_design: float64 matrix, shape (N, 8), one-hot clinic indicators
+- y: observed float64 vector of length N
+
+Exact model, with a non-centered clinic intercept:
+- alpha ~ Normal(0, 2)
+- beta ~ Normal(0, 1)
+- tau ~ HalfNormal(1)
+- z: vector of 8 independent Normal(0, 1) variables
+- sigma ~ HalfNormal(1)
+- mu = alpha + tau * (clinic_design @ z) + beta * x
+- y ~ Normal(mu, sigma)
+
+Normal&#x27;s second argument is a standard deviation. Preserve the parameter names
+alpha, beta, tau, z, sigma and the data names x, clinic_design, y.
+The estimand beta is an associational within-clinic contrast, not a causal claim.
+
+Use your assigned API, not a different modeling library. Do not add extra priors,
+latent variables, constraints, inference code, main blocks or data-loading code.
+</pre></details>
+<details><summary>NumPyro API card</summary><p class='path'>a-model/API.md</p><pre># NumPyro authoring reference
+
+Imports:
+```python
+import numpyro
+import numpyro.distributions as dist
+```
+
+Required public interface: `def model(x, clinic_design, y=None): ...`
+Each latent is a named sample site: `value = numpyro.sample(&quot;name&quot;, distribution)`.
+Distributions: `dist.Normal(location, scale)` and `dist.HalfNormal(scale)`.
+For an eight-element iid latent vector, a Normal can use
+`.expand((8,)).to_event(1)`. Ordinary array multiplication, addition and matrix
+multiplication `matrix @ vector` work inside the function.
+An observed site uses `numpyro.sample(&quot;y&quot;, distribution, obs=y)`.
+Normal accepts vector locations, broadcasting a scalar scale.
+
+Unrelated scalar-location example (not the target hierarchical model):
+```python
+def example(observation=None):
+    location = numpyro.sample(&quot;location&quot;, dist.Normal(0.0, 1.0))
+    numpyro.sample(&quot;observation&quot;, dist.Normal(location, 1.0), obs=observation)
+```
+
+Do not import or run MCMC, NUTS, Predictive or ArviZ. The evaluator owns execution.
+</pre></details>
+<details><summary>Bayeswire API card</summary><p class='path'>b-model/API.md</p><pre># Bayeswire authoring reference
+
+Imports:
+```python
+from bayeswire import Data, Observed, Param, model
+from bayeswire.constraints import Positive
+from bayeswire.distributions import HalfNormal, Normal
+from bayeswire.math import linear
+```
+
+Required public interface: `@model` decorating `class ClinicModel: ...`.
+Latents are class attributes: `name = Param(distribution)`.
+Distributions: `Normal(location, scale)` and `HalfNormal(scale)`.
+An eight-element iid latent uses `Param(distribution, size=8)`.
+A positive-scale HalfNormal parameter must declare `constraint=Positive()`.
+Inputs are class attributes `Data.vector()` or `Data.matrix()`.
+Matrix-vector expressions use `linear(matrix).apply(vector)`, NOT Python `@`.
+Symbolic parameter/data attributes support ordinary addition and multiplication.
+Observed outcome: `y = Observed(Normal(mu, sigma))`.
+
+Unrelated scalar-location example (not the target hierarchical model):
+```python
+@model
+class Example:
+    location = Param(Normal(0.0, 1.0))
+    observation = Observed(Normal(location, 1.0))
+```
+
+Do not import or run Bayesjax binding/sampling or ArviZ. The evaluator owns execution.
+</pre></details>
+<details><summary>Gemma&#x27;s actual NumPyro model</summary><p class='path'>a-model/model.py</p><pre>import numpyro
+import numpyro.distributions as dist
+
+def model(x, clinic_design, y=None):
+    alpha = numpyro.sample(&quot;alpha&quot;, dist.Normal(0, 2))
+    beta = numpyro.sample(&quot;beta&quot;, dist.Normal(0, 1))
+    tau = numpyro.sample(&quot;tau&quot;, dist.HalfNormal(1))
+    z = numpyro.sample(&quot;z&quot;, dist.Normal(0, 1).expand((8,)).to_event(1))
+    sigma = numpyro.sample(&quot;sigma&quot;, dist.HalfNormal(1))
+
+    mu = alpha + tau * (clinic_design @ z) + beta * x
+
+    numpyro.sample(&quot;y&quot;, dist.Normal(mu, sigma), obs=y)
+</pre></details>
+<details><summary>Evaluator&#x27;s numerical validation</summary><p class='path'>evaluator/a-model/validation/result.json</p><pre>{
+  &quot;beta&quot;: {
+    &quot;mean&quot;: 0.5880398930661034,
+    &quot;sd&quot;: 0.05765942464294413,
+    &quot;q025&quot;: 0.4729374927711213,
+    &quot;q975&quot;: 0.698431251731244,
+    &quot;rhat&quot;: 1.0012992240477516,
+    &quot;ess_bulk&quot;: 3395.771590033968,
+    &quot;ess_tail&quot;: 2676.1942223882465,
+    &quot;mcse_mean&quot;: 0.0009892938536557754
+  },
+  &quot;shapes_ok&quot;: true,
+  &quot;finite&quot;: true,
+  &quot;float64&quot;: true,
+  &quot;positive_scales&quot;: true,
+  &quot;max_rank_rhat&quot;: 1.0031243919895891,
+  &quot;min_bulk_ess&quot;: 707.3701036893259,
+  &quot;min_tail_ess&quot;: 731.1598597747899,
+  &quot;chain_diagnostics_pass&quot;: true,
+  &quot;divergences&quot;: 0,
+  &quot;hosted_reference_mean_check&quot;: {
+    &quot;absolute_difference&quot;: 0.0,
+    &quot;tolerance&quot;: 0.005596291140049367,
+    &quot;within_tolerance&quot;: true
+  },
+  &quot;execution_succeeded&quot;: true,
+  &quot;wall_seconds_including_import_binding_fit_checks&quot;: 1.277346417075023
+}
+</pre></details>
+<details><summary>Exact retained-array comparison</summary><p class='path'>evaluator/a-model/validation/exact-reference-comparison.json</p><pre>{
+  &quot;alpha&quot;: true,
+  &quot;beta&quot;: true,
+  &quot;sigma&quot;: true,
+  &quot;tau&quot;: true,
+  &quot;z&quot;: true
+}
+</pre></details>
+<details><summary>Session outcomes and errors (no thinking)</summary><p class='path'>evaluator/assessment.json</p><pre>{
+  &quot;arms&quot;: {
+    &quot;a-numpyro&quot;: {
+      &quot;sessions&quot;: {
+        &quot;initial&quot;: {
+          &quot;arm&quot;: &quot;a-numpyro&quot;,
+          &quot;stage&quot;: &quot;initial&quot;,
+          &quot;started_at&quot;: &quot;2026-09-04T21:16:28.955042+00:00&quot;,
+          &quot;wall_seconds&quot;: 630.948,
+          &quot;returncode&quot;: 0,
+          &quot;timed_out&quot;: false,
+          &quot;provider&quot;: &quot;ollama&quot;,
+          &quot;model&quot;: &quot;gemma4-pi:12b&quot;,
+          &quot;thinking_requested&quot;: &quot;medium&quot;,
+          &quot;context_window&quot;: 32768,
+          &quot;max_output_tokens&quot;: 4096,
+          &quot;finished&quot;: true,
+          &quot;status&quot;: &quot;finished&quot;,
+          &quot;tool_calls&quot;: 10,
+          &quot;flagged_errors&quot;: 1,
+          &quot;errors&quot;: [
+            {
+              &quot;kind&quot;: &quot;tool&quot;,
+              &quot;tool&quot;: &quot;bash&quot;,
+              &quot;result&quot;: {
+                &quot;content&quot;: [
+                  {
+                    &quot;type&quot;: &quot;text&quot;,
+                    &quot;text&quot;: &quot;Traceback (most recent call last):\n  File \&quot;&lt;string&gt;\&quot;, line 1, in &lt;module&gt;\n    import jax; import numpyro; import arviz; print(f&#x27;jax={jax.__version__}, numpyro={numpyro.__version__}, arviz={arviz.__version__}&#x27;)\n                ^^^^^^^^^^^^^^\nModuleNotFoundError: No module named &#x27;numpyro&#x27;\n\n\nCommand exited with code 1&quot;
+                  }
+                ],
+                &quot;details&quot;: {}
+              }
+            }
+          ],
+          &quot;output_tokens_reported&quot;: 4349,
+          &quot;max_input_tokens_reported&quot;: 32215,
+          &quot;length_terminations&quot;: 1,
+          &quot;compactions_observed&quot;: 0,
+          &quot;assistant_text_messages&quot;: []
+        },
+        &quot;revision&quot;: {
+          &quot;finished&quot;: false,
+          &quot;status&quot;: &quot;not_run&quot;
+        },
+        &quot;handoff&quot;: {
+          &quot;finished&quot;: false,
+          &quot;status&quot;: &quot;not_run&quot;
+        }
+      },
+      &quot;fits&quot;: {
+        &quot;initial&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;recovery&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;revised&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;revised-recovery&quot;: {
+          &quot;present&quot;: false
+        }
+      },
+      &quot;study_record_present&quot;: false,
+      &quot;authored_python_files&quot;: [],
+      &quot;numeric_or_figure_artifacts&quot;: [],
+      &quot;input_hashes_unchanged&quot;: true
+    },
+    &quot;b-bayesjax&quot;: {
+      &quot;sessions&quot;: {
+        &quot;initial&quot;: {
+          &quot;arm&quot;: &quot;b-bayesjax&quot;,
+          &quot;stage&quot;: &quot;initial&quot;,
+          &quot;started_at&quot;: &quot;2026-09-04T21:30:41.064364+00:00&quot;,
+          &quot;wall_seconds&quot;: 286.943,
+          &quot;returncode&quot;: 0,
+          &quot;timed_out&quot;: false,
+          &quot;provider&quot;: &quot;ollama&quot;,
+          &quot;model&quot;: &quot;gemma4-pi:12b&quot;,
+          &quot;thinking_requested&quot;: &quot;medium&quot;,
+          &quot;context_window&quot;: 32768,
+          &quot;max_output_tokens&quot;: 4096,
+          &quot;finished&quot;: true,
+          &quot;status&quot;: &quot;finished&quot;,
+          &quot;tool_calls&quot;: 9,
+          &quot;flagged_errors&quot;: 0,
+          &quot;errors&quot;: [],
+          &quot;output_tokens_reported&quot;: 2588,
+          &quot;max_input_tokens_reported&quot;: 32065,
+          &quot;length_terminations&quot;: 1,
+          &quot;compactions_observed&quot;: 0,
+          &quot;assistant_text_messages&quot;: []
+        },
+        &quot;revision&quot;: {
+          &quot;finished&quot;: false,
+          &quot;status&quot;: &quot;not_run&quot;
+        },
+        &quot;handoff&quot;: {
+          &quot;finished&quot;: false,
+          &quot;status&quot;: &quot;not_run&quot;
+        }
+      },
+      &quot;fits&quot;: {
+        &quot;initial&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;recovery&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;revised&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;revised-recovery&quot;: {
+          &quot;present&quot;: false
+        }
+      },
+      &quot;study_record_present&quot;: false,
+      &quot;authored_python_files&quot;: [],
+      &quot;numeric_or_figure_artifacts&quot;: [],
+      &quot;input_hashes_unchanged&quot;: true
+    },
+    &quot;c-bayescycle&quot;: {
+      &quot;sessions&quot;: {
+        &quot;initial&quot;: {
+          &quot;arm&quot;: &quot;c-bayescycle&quot;,
+          &quot;stage&quot;: &quot;initial&quot;,
+          &quot;started_at&quot;: &quot;2026-09-04T21:27:00.041341+00:00&quot;,
+          &quot;wall_seconds&quot;: 220.944,
+          &quot;returncode&quot;: 0,
+          &quot;timed_out&quot;: false,
+          &quot;provider&quot;: &quot;ollama&quot;,
+          &quot;model&quot;: &quot;gemma4-pi:12b&quot;,
+          &quot;thinking_requested&quot;: &quot;medium&quot;,
+          &quot;context_window&quot;: 32768,
+          &quot;max_output_tokens&quot;: 4096,
+          &quot;finished&quot;: true,
+          &quot;status&quot;: &quot;finished&quot;,
+          &quot;tool_calls&quot;: 8,
+          &quot;flagged_errors&quot;: 1,
+          &quot;errors&quot;: [
+            {
+              &quot;kind&quot;: &quot;tool&quot;,
+              &quot;tool&quot;: &quot;bash&quot;,
+              &quot;result&quot;: {
+                &quot;content&quot;: [
+                  {
+                    &quot;type&quot;: &quot;text&quot;,
+                    &quot;text&quot;: &quot;ls: ../../packages/bayeswire/README.md: No such file or directory\n\n\nCommand exited with code 1&quot;
+                  }
+                ],
+                &quot;details&quot;: {}
+              }
+            }
+          ],
+          &quot;output_tokens_reported&quot;: 1185,
+          &quot;max_input_tokens_reported&quot;: 30980,
+          &quot;length_terminations&quot;: 1,
+          &quot;compactions_observed&quot;: 0,
+          &quot;assistant_text_messages&quot;: []
+        },
+        &quot;revision&quot;: {
+          &quot;finished&quot;: false,
+          &quot;status&quot;: &quot;not_run&quot;
+        },
+        &quot;handoff&quot;: {
+          &quot;finished&quot;: false,
+          &quot;status&quot;: &quot;not_run&quot;
+        }
+      },
+      &quot;fits&quot;: {
+        &quot;initial&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;recovery&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;revised&quot;: {
+          &quot;present&quot;: false
+        },
+        &quot;revised-recovery&quot;: {
+          &quot;present&quot;: false
+        }
+      },
+      &quot;study_record_present&quot;: false,
+      &quot;authored_python_files&quot;: [],
+      &quot;numeric_or_figure_artifacts&quot;: [],
+      &quot;input_hashes_unchanged&quot;: true
+    }
+  },
+  &quot;exploratory_authoring_probe&quot;: {
+    &quot;a-model&quot;: {
+      &quot;session&quot;: {
+        &quot;arm&quot;: &quot;a-model&quot;,
+        &quot;stage&quot;: &quot;authoring&quot;,
+        &quot;started_at&quot;: &quot;2026-09-04T21:37:11.245585+00:00&quot;,
+        &quot;wall_seconds&quot;: 199.313,
+        &quot;returncode&quot;: 0,
+        &quot;timed_out&quot;: false,
+        &quot;provider&quot;: &quot;ollama&quot;,
+        &quot;model&quot;: &quot;gemma4-pi:12b&quot;,
+        &quot;thinking_requested&quot;: &quot;medium&quot;,
+        &quot;context_window&quot;: 32768,
+        &quot;max_output_tokens&quot;: 4096,
+        &quot;finished&quot;: true,
+        &quot;status&quot;: &quot;finished&quot;,
+        &quot;tool_calls&quot;: 6,
+        &quot;flagged_errors&quot;: 3,
+        &quot;errors&quot;: [
+          {
+            &quot;kind&quot;: &quot;tool&quot;,
+            &quot;tool&quot;: &quot;read&quot;,
+            &quot;result&quot;: {
+              &quot;content&quot;: [
+                {
+                  &quot;type&quot;: &quot;text&quot;,
+                  &quot;text&quot;: &quot;ENOENT: no such file or directory, access &#x27;/Users/stefansko/Projects/bayescycle/experiments/gemma-workflow-pilot/API.md&#x27;&quot;
+                }
+              ],
+              &quot;details&quot;: {}
+            }
+          },
+          {
+            &quot;kind&quot;: &quot;tool&quot;,
+            &quot;tool&quot;: &quot;read&quot;,
+            &quot;result&quot;: {
+              &quot;content&quot;: [
+                {
+                  &quot;type&quot;: &quot;text&quot;,
+                  &quot;text&quot;: &quot;EISDIR: illegal operation on a directory, read&quot;
+                }
+              ],
+              &quot;details&quot;: {}
+            }
+          },
+          {
+            &quot;kind&quot;: &quot;tool&quot;,
+            &quot;tool&quot;: &quot;read&quot;,
+            &quot;result&quot;: {
+              &quot;content&quot;: [
+                {
+                  &quot;type&quot;: &quot;text&quot;,
+                  &quot;text&quot;: &quot;ENOENT: no such file or directory, access &#x27;/Users/stefansko/Projects/bayescycle/experiments/gemma-workflow-pilot/API.md&#x27;&quot;
+                }
+              ],
+              &quot;details&quot;: {}
+            }
+          }
+        ],
+        &quot;output_tokens_reported&quot;: 4727,
+        &quot;max_input_tokens_reported&quot;: 6269,
+        &quot;length_terminations&quot;: 0,
+        &quot;compactions_observed&quot;: 0,
+        &quot;assistant_text_messages&quot;: [
+          &quot;I have authored the `model.py` file according to the `AUTHORING-BRIEF.md` and `API.md` specifications.\n\n```python\nimport numpyro\nimport numpyro.distributions as dist\n\ndef model(x, clinic_design, y=None):\n    alpha = numpyro.sample(\&quot;alpha\&quot;, dist.Normal(0, 2))\n    beta = numpyro.sample(\&quot;beta\&quot;, dist.Normal(0, 1))\n    tau = numpyro.sample(\&quot;tau\&quot;, dist.HalfNormal(1))\n    z = numpyro.sample(\&quot;z\&quot;, dist.Normal(0, 1).expand((8,)).to_event(1))\n    sigma = numpyro.sample(\&quot;sigma\&quot;, dist.HalfNormal(1))\n\n    mu = alpha + tau * (clinic_design @ z) + beta * x\n\n    numpyro.sample(\&quot;y\&quot;, dist.Normal(mu, sigma), obs=y)\n```&quot;
+        ]
+      },
+      &quot;model_present&quot;: true,
+      &quot;model_sha256&quot;: &quot;1f6d316a6c04d9ef13ab17bba08161b795e439cd69519bd4fc3eb2a433b48a82&quot;,
+      &quot;evaluator_validation&quot;: {
+        &quot;beta&quot;: {
+          &quot;mean&quot;: 0.5880398930661034,
+          &quot;sd&quot;: 0.05765942464294413,
+          &quot;q025&quot;: 0.4729374927711213,
+          &quot;q975&quot;: 0.698431251731244,
+          &quot;rhat&quot;: 1.0012992240477516,
+          &quot;ess_bulk&quot;: 3395.771590033968,
+          &quot;ess_tail&quot;: 2676.1942223882465,
+          &quot;mcse_mean&quot;: 0.0009892938536557754
+        },
+        &quot;shapes_ok&quot;: true,
+        &quot;finite&quot;: true,
+        &quot;float64&quot;: true,
+        &quot;positive_scales&quot;: true,
+        &quot;max_rank_rhat&quot;: 1.0031243919895891,
+        &quot;min_bulk_ess&quot;: 707.3701036893259,
+        &quot;min_tail_ess&quot;: 731.1598597747899,
+        &quot;chain_diagnostics_pass&quot;: true,
+        &quot;divergences&quot;: 0,
+        &quot;hosted_reference_mean_check&quot;: {
+          &quot;absolute_difference&quot;: 0.0,
+          &quot;tolerance&quot;: 0.005596291140049367,
+          &quot;within_tolerance&quot;: true
+        },
+        &quot;execution_succeeded&quot;: true,
+        &quot;wall_seconds_including_import_binding_fit_checks&quot;: 1.277346417075023
+      }
+    },
+    &quot;b-model&quot;: {
+      &quot;session&quot;: {
+        &quot;arm&quot;: &quot;b-model&quot;,
+        &quot;stage&quot;: &quot;authoring&quot;,
+        &quot;started_at&quot;: &quot;2026-09-04T21:40:30.622178+00:00&quot;,
+        &quot;wall_seconds&quot;: 240.029,
+        &quot;returncode&quot;: 143,
+        &quot;timed_out&quot;: true,
+        &quot;provider&quot;: &quot;ollama&quot;,
+        &quot;model&quot;: &quot;gemma4-pi:12b&quot;,
+        &quot;thinking_requested&quot;: &quot;medium&quot;,
+        &quot;context_window&quot;: 32768,
+        &quot;max_output_tokens&quot;: 4096,
+        &quot;finished&quot;: true,
+        &quot;status&quot;: &quot;finished&quot;,
+        &quot;tool_calls&quot;: 3,
+        &quot;flagged_errors&quot;: 1,
+        &quot;errors&quot;: [
+          {
+            &quot;kind&quot;: &quot;tool&quot;,
+            &quot;tool&quot;: &quot;read&quot;,
+            &quot;result&quot;: {
+              &quot;content&quot;: [
+                {
+                  &quot;type&quot;: &quot;text&quot;,
+                  &quot;text&quot;: &quot;Tool call \&quot;read\&quot; was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.&quot;
+                }
+              ],
+              &quot;details&quot;: {}
+            }
+          }
+        ],
+        &quot;output_tokens_reported&quot;: 4765,
+        &quot;max_input_tokens_reported&quot;: 2596,
+        &quot;length_terminations&quot;: 1,
+        &quot;compactions_observed&quot;: 0,
+        &quot;assistant_text_messages&quot;: []
+      },
+      &quot;model_present&quot;: false,
+      &quot;model_sha256&quot;: null,
+      &quot;evaluator_validation&quot;: null
+    }
+  },
+  &quot;scope&quot;: &quot;Partial evidence is not success; model/settings require source review before accepting a fit.&quot;,
+  &quot;supervision&quot;: &quot;Hosted assistant prepared and evaluates the experiment; no hosted code repairs supplied to local agents.&quot;
+}
+</pre></details>
+<footer>Analysis agents: local Ollama. Preparation/evaluation/reporting: current hosted assistant.
+No hosted repairs to agent implementations. Full raw event/session logs remain local and are
+not embedded here. The original hosted pilot report is unchanged.</footer>
+</main></html>

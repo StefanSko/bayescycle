@@ -1,0 +1,9 @@
+
+START a-numpyro 2026-09-04T21:16:28Z
+{"arm": "a-numpyro", "stage": "initial", "started_at": "2026-09-04T21:16:28.955042+00:00", "wall_seconds": 630.948, "returncode": 0, "timed_out": false, "provider": "ollama", "model": "gemma4-pi:12b", "thinking_requested": "medium", "context_window": 32768, "max_output_tokens": 4096}
+
+START c-bayescycle 2026-09-04T21:26:59Z
+{"arm": "c-bayescycle", "stage": "initial", "started_at": "2026-09-04T21:27:00.041341+00:00", "wall_seconds": 220.944, "returncode": 0, "timed_out": false, "provider": "ollama", "model": "gemma4-pi:12b", "thinking_requested": "medium", "context_window": 32768, "max_output_tokens": 4096}
+
+START b-bayesjax 2026-09-04T21:30:41Z
+{"arm": "b-bayesjax", "stage": "initial", "started_at": "2026-09-04T21:30:41.064364+00:00", "wall_seconds": 286.943, "returncode": 0, "timed_out": false, "provider": "ollama", "model": "gemma4-pi:12b", "thinking_requested": "medium", "context_window": 32768, "max_output_tokens": 4096}

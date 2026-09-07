@@ -1,0 +1,13 @@
+{
+  "arm": "smoke",
+  "stage": "smoke",
+  "started_at": "2026-09-04T21:15:47.821552+00:00",
+  "wall_seconds": 13.893,
+  "returncode": 0,
+  "timed_out": false,
+  "provider": "ollama",
+  "model": "gemma4-pi:12b",
+  "thinking_requested": "medium",
+  "context_window": 32768,
+  "max_output_tokens": 4096
+}

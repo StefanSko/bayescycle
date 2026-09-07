@@ -1,0 +1,28 @@
+{
+  "beta": {
+    "mean": 0.5880398930661034,
+    "sd": 0.05765942464294413,
+    "q025": 0.4729374927711213,
+    "q975": 0.698431251731244,
+    "rhat": 1.0012992240477516,
+    "ess_bulk": 3395.771590033968,
+    "ess_tail": 2676.1942223882465,
+    "mcse_mean": 0.0009892938536557754
+  },
+  "shapes_ok": true,
+  "finite": true,
+  "float64": true,
+  "positive_scales": true,
+  "max_rank_rhat": 1.0031243919895891,
+  "min_bulk_ess": 707.3701036893259,
+  "min_tail_ess": 731.1598597747899,
+  "chain_diagnostics_pass": true,
+  "divergences": 0,
+  "hosted_reference_mean_check": {
+    "absolute_difference": 0.0,
+    "tolerance": 0.005596291140049367,
+    "within_tolerance": true
+  },
+  "execution_succeeded": true,
+  "wall_seconds_including_import_binding_fit_checks": 1.277346417075023
+}

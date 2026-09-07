@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.npz
+*.png
+*.nc
+*.ndjson
+evaluator/**/events.jsonl
+evaluator/**/session.jsonl

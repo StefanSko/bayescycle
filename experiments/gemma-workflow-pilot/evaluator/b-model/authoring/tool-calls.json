@@ -1,0 +1,20 @@
+[
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../AUTHORING-BRIEF.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "API.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "."
+    }
+  }
+]

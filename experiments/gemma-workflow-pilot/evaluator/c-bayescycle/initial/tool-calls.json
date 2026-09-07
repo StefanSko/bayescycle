@@ -1,0 +1,50 @@
+[
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls .."
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../INITIAL-BRIEF.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../PROTOCOL.md"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -R ."
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -R input/"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "input/data.json"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "input/recovery.json"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls ../../packages/bayeswire/README.md"
+    }
+  }
+]

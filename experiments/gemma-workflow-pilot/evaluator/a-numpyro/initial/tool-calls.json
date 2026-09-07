@@ -1,0 +1,62 @@
+[
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F .."
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../INITIAL-BRIEF.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../PROTOCOL.md"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F input/"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "input/data.json"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F input/"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -l input/data.json"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "grep -E \"x|y\" input/data.json"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "python3 -c \"import jax; import numpyro; import arviz; print(f'jax={jax.__version__}, numpyro={numpyro.__version__}, arviz={arviz.__version__}')\""
+    }
+  }
+]

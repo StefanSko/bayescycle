@@ -1,0 +1,56 @@
+[
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F . .."
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../INITIAL-BRIEF.md"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F -R ."
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "input/data.json"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -F"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -la"
+    }
+  },
+  {
+    "name": "bash",
+    "arguments": {
+      "command": "ls -la input/"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../PROTOCOL.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "input/data.json"
+    }
+  }
+]

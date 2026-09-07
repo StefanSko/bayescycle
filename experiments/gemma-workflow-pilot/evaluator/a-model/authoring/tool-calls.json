@@ -1,0 +1,39 @@
+[
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../AUTHORING-BRIEF.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../API.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "../API.md"
+    }
+  },
+  {
+    "name": "read",
+    "arguments": {
+      "path": "API.md"
+    }
+  },
+  {
+    "name": "write",
+    "arguments": {
+      "content": "import numpyro\nimport numpyro.distributions as dist\n\ndef model(x, clinic_design, y=None):\n    alpha = numpyro.sample(\"alpha\", dist.Normal(0, 2))\n    beta = numpyro.sample(\"beta\", dist.Normal(0, 1))\n    tau = numpyro.sample(\"tau\", dist.HalfNormal(1))\n    z = numpyro.sample(\"z\", dist.Normal(0, 1).expand((8,)).to_event(1))\n    sigma = numpyro.sample(\"sigma\", dist.HalfNormal(1))\n\n    mu = alpha + tau * (clinic_design @ z) + beta * x\n\n    numpyro.sample(\"y\", dist.Normal(mu, sigma), obs=y)\n",
+      "path": "model.py"
+    }
+  }
+]
