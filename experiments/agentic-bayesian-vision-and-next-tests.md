@@ -1,8 +1,10 @@
 # Agentic Bayesian vision: evidence, diagnosis, and the MVP test
 
-**Status:** working document. Revised 2026-09-09. It consolidates the earlier
-retrospective, the five-test agenda, and the separate portable-execution
-protocol draft into one plan. The earlier text is retained in the appendices
+**Status:** working document. Revised 2026-09-09, twice: first to consolidate
+the earlier retrospective, the five-test agenda, and the separate
+portable-execution protocol draft into one plan; then to apply the review in
+Appendix D, which split the claim into two hypotheses, added an end-to-end
+completion rule, and staged the sessions. The earlier text is retained in the appendices
 so nothing from those discussions is lost. The deleted
 `experiments/portable-execution-pilot/PROTOCOL.md` is recoverable from git
 history at commit `7d29faf`; its reusable specifics are folded in below.
@@ -25,6 +27,7 @@ saved IR artifacts recorded in [Diagnosis](#diagnosis).
 9. [Appendix A: original conversation (2026-09-05)](#appendix-a-original-conversation-2026-09-05)
 10. [Appendix B: previous five-test agenda (superseded)](#appendix-b-previous-five-test-agenda-superseded)
 11. [Appendix C: complexity assessment (2026-09-09)](#appendix-c-complexity-assessment-2026-09-09)
+12. [Appendix D: review of the MVP plan (2026-09-09)](#appendix-d-review-of-the-mvp-plan-2026-09-09)
 
 ## Evidence consulted
 
@@ -136,9 +139,10 @@ not as a stable estimate.
 
 The user's conclusion on 2026-09-09: the approach was well intended but too
 complex, and the vision needs an MVP-scale test. The evidence supports that,
-with one refinement about where the complexity lives.
+with one refinement about where the observed friction was, and one caution
+about what the evidence does not say.
 
-### The Python layers are the heavy part, and they are what was tested
+### The observed friction was in the Python layers, which are what was tested
 
 Every layer stacked on top of the engine cost the agent effort. The ordering in
 the hosted pilot was NumPyro, then direct Bayesjax, then Bayescycle CLI. The
@@ -147,6 +151,12 @@ the agent's work, and needed pinned `uvx` environments for plotting and export.
 The five-package lockstep governance, process-boundary firewalls, and
 run-directory specifications are all built for a hypothesis that has not been
 validated yet.
+
+This is a statement about interface friction, not a causal allocation of
+complexity. Python line counts and a Rust executable size are not comparable
+complexity measures, and the Rust source has not been audited. What the
+evidence supports is: the user-facing layers have not earned their complexity,
+and the engine has not been tested at all.
 
 The experiment design inherited the same weight. The portable-execution
 protocol drafted after the retrospective had 282 lines of pre-run gates
@@ -175,49 +185,77 @@ diagnose and posterior-predictive but the protocol prohibited executing it.
 
 ### The IR is a codec target, not yet an authoring surface
 
-The saved clinic model IR is 4,170 bytes of nested node JSON for seven
-parameters: every constant is a `ConstNode` object, every parameter a
-`ResolvedParam` wrapper. It is unambiguous and decodes without executing code,
-which is the property the vision needs. It is also verbose. Whether an agent can
-author it directly from a short card, or whether a Python eDSL step is required
-on the producer side, is the open question the MVP must answer. The vision
-explicitly allows both: "a readable Python eDSL (or an agent, or any conformant
-producer) emits" the IR.
+The saved clinic model IR is 4,170 bytes of nested node JSON for five parameter
+declarations covering twelve scalar unknowns (`alpha`, `beta`, `tau`, `sigma`,
+and `z` of size 8). Every constant is a `ConstNode` object and every parameter
+a `ResolvedParam` wrapper. It is unambiguous and decodes without executing
+code, which is the property the vision needs.
 
-### The irreducible claim
+It is also redundant in a way that matters for authoring. The parameter list is
+repeated across `params`, `free_values`, and `stochastic_sites`; the observed
+node appears again in `stochastic_sites`; the mean is a named expression
+referenced from the likelihood. A producer library keeps these consistent
+automatically. An agent writing the IR by hand must keep derived
+representations consistent with the declarations. The challenge is not 4 KB of
+JSON; it is maintaining consistency among derived fields.
 
-Strip the vision to the one claim everything else depends on:
+### Two hypotheses, not one
 
-> An agent with nothing installed but one small binary can go from a modeling
-> problem and data to a fitted, diagnosed, predicted, and revised model by
-> writing the model as data and running stateless verbs.
+The earlier revision reduced the vision to a single "irreducible claim" that
+made direct raw-IR authoring foundational. The review of 2026-09-09
+(Appendix D) is right that this over-reaches. The vision explicitly permits any
+conformant producer; "an agent drafts the model server-side as data" could
+equally describe a smaller declarative representation that emits the existing
+IR without changing the execution boundary. Two separate hypotheses:
+
+- **H1, execution.** A standalone engine can execute and reuse a transported
+  model artifact: prior prediction, sampling, diagnostics, and posterior
+  prediction from one model document, without any reimplementation of the
+  model's mathematics.
+- **H2, authoring.** Agents can produce that artifact correctly, and the open
+  variable is how much authoring assistance they need: a card, a normalizing
+  step, a compact declarative surface, or a Python eDSL.
+
+Failure of H2 for one interface does not invalidate H1. Raw IR is tested first
+because it already exists and is the cheapest interface to try, not because
+model-as-data requires this particular serialization.
+
+The question the MVP asks, in the review's framing:
+
+> Can agents correctly operate a useful Bayesian workflow through a standalone
+> data-only execution interface, and how much authoring assistance do they need?
 
 Run directories, fingerprints, relocated replay, revision integrity,
-visualization, WASM, and the human approval workflow are downstream of this. If
-it holds, they are worth building around what the agent actually needed. If it
-fails, they are premature regardless of how well engineered they are.
+visualization, WASM, and the human approval workflow are downstream of both
+hypotheses and stay in the backlog.
 
 ## The MVP test
 
-**Question:** Given only the Bayesite executable, a one-page authoring card, a
-data file, and a prose problem statement, can a capable hosted agent complete
-prior prediction, sampling, diagnostics, posterior prediction, and one prior
-revision on the clinic fixture without Python and without hand-writing any
-model equation?
+A staged feasibility experiment. Each stage has its own frozen protocol and
+its own recorded outcome; later stages run only if the earlier ones say they
+are worth paying for.
 
-This collapses the earlier Test 1 (portable execution), Test 2 (agent
-authoring and repair), and Test 3 (model reuse) into one session design. It is
-an agent trial, not a deployment audit; the deployment rigor is deferred to the
-backlog.
+| Stage | What runs | Sessions | Runs when |
+|---|---|---:|---|
+| A. Engine check | The full loop on the evaluator-owned reference IR, plus reference-loop timing | 0 agent sessions | After prerequisites |
+| B. Raw-IR authoring | Five agents, three IR-direct sessions each, in the sandbox | 15 | After A passes |
+| C. Failure review | Classify every B failure by cause; decide the next investment | 0 | After B |
+| D. Comparisons | eDSL-producer arm, fresh NumPyro reference per agent | up to 20 | Only if C says the authoring question warrants them |
 
-### Environment
+Stage B is the MVP proper. Three repetitions per agent are exploratory
+evidence, enough to separate a single lucky or unlucky run from a pattern, and
+not a reliable estimate of agent capability or a principled operability
+threshold.
+
+### Environment (Stage B)
 
 - A fresh working directory containing: the `bayesite` executable, `CARD.md`,
   `data.json`, `design.json`, and `TASK.md`. Nothing else.
-- `PATH` restricted so that only `bayesite` and basic shell utilities resolve.
-  `python`, `python3`, `uv`, and `uvx` must not resolve; record the check.
-  A plain restricted shell is sufficient for the MVP. No container, dropped
-  capabilities, or network telemetry.
+- `PATH` restricted so that `python`, `python3`, `uv`, and `uvx` do not
+  resolve, and the harness's tool set restricted where it allows. This is a
+  convenience, not isolation: absolute-path executables and harness file tools
+  can still reach the host. The result is therefore stated as **no Python
+  used, verified by transcript inspection**, never as "Python unavailable".
 - No repository checkout, no Bayeswire, no Bayescycle, no eDSL.
 - Agent harnesses: Pi for the four OpenAI models, Claude Code for Fable 5.1.
   See [Agents](#agents) for the roster, settings, and the confound this
@@ -240,11 +278,11 @@ backlog.
   uses the design document, posterior prediction uses the exact fit data.
 - **Model IR is not supplied.** The agent must produce it. The reference IR is
   held by the evaluator as the answer key and must not be in the sandbox.
-- **`TASK.md`:** the model in words and mathematics, the estimand beta, the
-  numerical settings (float64, 4 chains, 500 warmup, 1000 retained draws,
-  seeds), the required outputs, and the scripted revision (beta prior SD from 1
-  to 0.25). Same specification as the hosted pilot's brief, reduced to the
-  workflow loop.
+- **`TASK.md`:** the model in words and mathematics including its
+  parameterization, the estimand beta, the numerical settings (float64, 4
+  chains, 500 warmup, 1000 retained draws, seeds), the required outputs, and
+  the scripted revision (beta prior SD from 1 to 0.25). Same specification as
+  the hosted pilot's brief, reduced to the workflow loop.
 - **`CARD.md`:** the in-context grammar. One page of IR structure plus one
   complete worked example of a different model (not the clinic model), plus the
   verb usage lines and the error format. Derived from
@@ -266,10 +304,9 @@ Code 2.1.267 is installed.
 | `gpt-5.6-luna` | Pi | same |
 | `claude-fable-5-1` | Claude Code, non-interactive `claude -p` | model pinned by id, cwd set to the sandbox, no project `CLAUDE.md`, record the permission mode and effort setting |
 
-Running several agents turns the MVP from "can a capable agent do this" into
-"how capable does an agent need to be", which is a more useful result for the
-card and error design. Two confounds are accepted and must be reported, not
-hidden:
+Running several agents turns the question from "can a capable agent do this"
+into "how capable does an agent need to be", which is the H2 gradient. Two
+confounds are accepted and must be reported, not hidden:
 
 - **Harness differs with model for Fable.** Claude Code and Pi expose
   different tools and prompts. The within-Pi comparison across the four OpenAI
@@ -282,26 +319,18 @@ hidden:
   verified empty on 2026-09-09. Record both checks in the manifest. This does
   not remove the author-advantage confound; it only bounds it.
 
-### Arms
+### Stage D arms, if commissioned
 
-| Arm | Authoring | Where Python runs | Sessions per agent | Total |
-|---|---|---|---:|---:|
-| IR-direct | Agent writes `model.ir.json` from the card | Nowhere | 3 | 15 |
-| eDSL-producer | Agent writes Bayeswire Python on a producer host, serializes, ships IR to the sandbox | Producer only | 3 | 15 |
-| NumPyro reference | Agent implements the same task with NumPyro in the installed environment, hosted pilot brief | Installed environment | 1 | 5 |
+| Arm | Authoring | Where Python runs | Sessions per agent |
+|---|---|---|---:|
+| eDSL-producer | Agent writes Bayeswire Python on a producer host, serializes, ships IR to the sandbox | Producer only | 3 |
+| NumPyro reference | Agent implements the same task with NumPyro in the installed environment, hosted pilot brief | Installed environment | 1 |
 
-Thirty-five sessions at up to 20 minutes each. Three repetitions per agent and
-arm is the smallest count that separates a single lucky or unlucky run from a
-pattern; five agents give the breadth that five repetitions of one agent did
-not. The existing `gpt-6-astra` NumPyro result from the hosted pilot is kept
-as a sixth reference point, labelled as run under the earlier protocol.
-
-IR-direct is the primary arm because it is the untested path and the one the
-vision describes for the server-side agent. eDSL-producer is included because
-the Gemma probe's unfavorable eDSL evidence was a single local-model attempt and
-should not stand alone. The NumPyro reference is a fair comparison for the
-authoring-effort question only; it does not run in the restricted environment
-and is not a portability comparison.
+The eDSL arm's producer setup, documentation, transport tooling, and scoring
+are not yet specified. They are written into Stage D's own frozen protocol if
+Stage C commissions it. The existing `gpt-6-astra` NumPyro result from the
+hosted pilot remains a reference point regardless, labelled as run under the
+earlier protocol.
 
 ### The loop each session must complete
 
@@ -320,39 +349,75 @@ not scored.
 
 ### Measurements per session
 
+Recorded from the transcript and artifacts:
+
 - Attempt on which the IR first decodes, first samples, and first passes
   diagnostics.
 - Each engine error received and whether the following edit fixed the issue the
   error named (typed errors as repair instructions).
 - Tool calls, wall time, and tokens where the harness exposes them.
-- Whether any model equation was written outside the IR.
+  Descriptive only; no decision rule.
+- Any model mathematics written outside the authoritative model document.
 - Whether the revised fit was written to new files with the originals intact.
-- Whether the beta summary agrees with the NumPyro reference within
-  `4 * hypot(MCSE_A, MCSE_B)`, checked by the evaluator, not the agent.
+- Whether Python or any other interpreter was used, from the transcript.
 - Whether the session stopped honestly when blocked rather than fabricating
   output.
 
+Checked by the frozen evaluator, outside the sandbox (these feed rule R2):
+
+- **Model semantics.** The agent's IR, after engine canonicalization, matched
+  against the reference on: prior families and hyperparameters, constraints,
+  parameter dimensions, data bindings and shapes, the observed node and its
+  likelihood family, and the mean structure. Parameter names may differ;
+  matching is by role. The task specifies the parameterization, and only the
+  explicitly listed equivalent forms of the mean expression count (commutative
+  reorderings, a named or inlined mean expression). This is a fixture-specific
+  structural comparison, not a general symbolic-equivalence check.
+- **Fits.** Both fits: exactly 4 x 1000 retained draws per coordinate, finite
+  float64 values, positive `tau` and `sigma`, rank-normalized Rhat at most
+  1.01, bulk and tail ESS at least 400 per scalar coordinate, zero retained
+  divergences. Beta mean within `4 * hypot(MCSE_agent, MCSE_ref)` of the
+  NumPyro reference for the initial fit. Corroboration, not proof of the model.
+- **Predictions.** One replicate per retained draw with the fixture's
+  observation shape. The evaluator recomputes posterior predictive draws from
+  the agent's own posterior draws with the reference forward equation; per
+  observation, the agent's predictive mean must lie within
+  `4 * hypot(MCSE)` of that recomputation and the predictive SD ratio within
+  a tolerance frozen with the evaluator script (proposed 0.9 to 1.1). This
+  tests reuse correctness independently of posterior differences.
+- **Revision.** The revised IR differs from the initial IR only in beta's
+  prior scale, 1 to 0.25, after canonicalization. Original artifacts unchanged
+  by hash.
+- **Report.** Every number in `RESULT.md` is reproducible from the session's
+  own saved artifacts.
+
 ### Budgets
 
-- 20 minutes wall time and one session per attempt. No retries until a pass.
-  Every attempt is preserved.
-- Sample calls capped at 15 minutes; other verbs at 2 minutes.
+- Command caps are maxima, not allocations: `sample` at most 15 minutes,
+  other verbs at most 2 minutes. The session cap is set from Stage A's
+  measured reference loop so that sampling cannot consume the authoring and
+  repair budget: proposed `max(20 minutes, 3 x reference loop)`, frozen
+  before Stage B.
+- One session per attempt. No retries until a pass. Every attempt is
+  preserved.
 - Sessions run sequentially within a provider. Providers may run concurrently
   since the OpenAI models and Claude Code call different services. Timings are
-  descriptive only and carry no decision rule, so this concurrency is
-  acceptable; record what ran alongside what.
-- Within each agent, run the three IR-direct sessions first, then the three
-  eDSL-producer sessions, then the NumPyro reference. Fixed order, no
-  reordering after seeing results.
+  descriptive only, so this concurrency is acceptable; record what ran
+  alongside what.
+- Fixed order within Stage B: agents in the roster order, three sessions each.
+  No reordering after seeing results.
 
 ### Evidence discipline, reduced to what matters
 
 - New directory `experiments/mvp-agent-binary/`. The old pilots are untouched.
-- One `MANIFEST.json` recording SHA-256 of the executable, card, task, fixtures,
-  and this protocol section before the first session.
-- The evaluator's acceptance script is frozen before sessions start.
-- Missing engine capability is recorded, never patched mid-experiment.
+- One `MANIFEST.json` per stage recording SHA-256 of the executable, card,
+  task, fixtures, and that stage's protocol section before its first session.
+- The evaluator's acceptance script is frozen before Stage B starts.
+- Missing engine capability is recorded, never patched mid-stage.
 - The README reports every session, including failures, in one result matrix.
+- **Python-layer expansion is frozen for the duration of the experiment.** No
+  new Bayescycle, Bayesjax, or Bayeswire features until Stage C has reported.
+  Bug fixes needed by the evaluator are recorded as such.
 
 ## Prerequisite work before the MVP can run
 
@@ -381,56 +446,91 @@ are distinguishable.
    local `~/.cargo/bin` build. The earlier protocol proposed `v0.4.0`
    `x86_64-unknown-linux-musl`; the MVP can use whichever target matches the
    sandbox host as long as it is a checksummed release.
+5. **Stage A itself.** Run the full loop on the reference IR with the pinned
+   binary, record every output and the wall time of each verb, and validate
+   the new verb against the analytic fixture. This is rule R0 and it sets the
+   Stage B session budget.
 
-Nothing in the Python packages needs to change for the MVP to run.
+Nothing in the Python packages needs to change for the MVP to run, and nothing
+in them may be expanded while it runs.
 
 ## Decision rules
 
 Written before any session runs. A rule that is not written down here before
 execution does not count.
 
-**Engine capability (R0).** If the pinned executable cannot complete the loop on
-the evaluator's reference IR, the trial is blocked, not failed. Fix the engine,
-record the change, and start again.
+**Engine capability (R0, Stage A).** If the pinned executable cannot complete
+the loop on the evaluator's reference IR, or the analytic predictive moments
+fail their checks, the trial is blocked, not failed. Fix the engine, record the
+change, and start again. R0 also records the reference-loop time and must show
+that the loop leaves reasonable authoring and repair time inside the session
+budget.
 
-**Authoring (R1).** An agent passes IR-direct authoring if at least two of its
-three sessions produce IR that samples successfully within three engine-error
-repair rounds. If fewer than three of the five agents pass, the raw IR is not
-agent-operable from a one-page card. Then the eDSL-producer arm decides whether
-the authoring surface or the engine boundary is the problem. Per-agent results
-are reported as a gradient regardless of the aggregate verdict, since "which
-agents can do this" is itself the finding.
+**Authoring (R1, intermediate outcome).** An agent passes raw-IR authoring if
+at least two of its three Stage B sessions produce IR that decodes and samples
+within three engine-error repair rounds. If fewer than three of the five agents
+pass, raw IR is not agent-operable from a one-page card. This is an
+intermediate outcome about the interface, not a completion claim, and it is
+exploratory at three repetitions. Per-agent results are reported as a gradient
+regardless of the aggregate verdict.
 
-**Model reuse (R2).** If any session hand-writes a likelihood or predictive
-equation while the `posterior-predictive` verb exists and is on the card, the
-model-as-data benefit is not discoverable and the card or verb surface needs
-work before more workflow investment.
+**End-to-end (R2, the completion rule).** A session passes end to end only if
+every evaluator check in [Measurements per session](#measurements-per-session)
+passes: model semantics, both fits, predictions, revision, and report. An agent
+passes R2 with at least two of three sessions. R2, not R1, is what a pass
+statement rests on. A wrong hierarchical model with a plausible beta mean fails
+here even if it passed R1.
 
-**Honesty (R3).** Any session that reports a completed fit or prediction the
-evaluator cannot reproduce from the session's own files is a failure regardless
-of other scores.
+**Model reuse (R3).** No separate implementation of model mathematics for
+prediction after the authoritative model document has been authored. Authoring
+the likelihood in Python is what a producer does, so this rule is about a
+*second* implementation, not the first. A session that violates it fails R3 and
+is flagged as an interface warning. R3 violations are reported by frequency and
+each is inspected for cause; one violation does not by itself establish that
+the model-as-data benefit is undiscoverable.
 
-**What a pass licenses.** Only this: the named agents that passed, given one
-checksummed executable and a one-page card, ran the full workflow loop on a
-hierarchical Gaussian model without Python. It does not license "runs
-anywhere", "sqlite-small", "millisecond startup", WASM, safety, replay, or
-revision-integrity claims. Those stay in the backlog.
+**Honesty (R4).** "Reproduce" means the evaluator can reconstruct every
+reported summary from the session's own saved artifacts. It does not mean
+rerunning inference to identical draws. A session whose report contains numbers
+with no supporting artifact is a failure regardless of other scores. An ordinary
+technical failure, reported as such, is not dishonesty.
 
-**What follows a pass.** Rebuild the Python layer around what the agent
-actually needed. Candidates from the observations: a producer-side eDSL only if
-the eDSL arm was clearly better; provenance only as a side effect of the
-verbs' own outputs; no workflow CLI on top of the engine unless a session showed
-it was missed.
+**What a pass licenses.** Only this: the named agents that passed R2, given one
+checksummed executable and a one-page card, ran the full workflow loop on the
+clinic hierarchical Gaussian model with no Python used, as verified by
+transcript. It does not license "runs anywhere", "sqlite-small", "millisecond
+startup", WASM, safety, replay, revision-integrity, or general agent-capability
+claims. Those stay in the backlog.
 
-**What follows a failure on R1.** Decide explicitly between a more familiar
-authoring surface on the producer side and a redesigned IR. Do not commission
-another whole-stack comparison.
+**What follows Stage B (Stage C).** Classify every failure by cause before
+deciding on any investment. The classes and the investment each points to:
+
+| Failure cause observed | Points toward |
+|---|---|
+| Repeated or derived IR fields made inconsistent | A normalizing step, tested as a hypothesis. Accepting incomplete declarations is a distinct authoring contract, kept explicit and separate from canonical IR, not a silent relaxation of the wire format. |
+| Priors, hierarchy, or parameterization misunderstood | Task and card clarity; normalization will not help |
+| Unclear errors or documentation | Better error messages and card, before any new surface |
+| Wrong or missing prediction commands | Workflow discoverability in the card and verb surface |
+| No or few failures | Stage D comparisons, if the authoring-cost question still matters |
+
+The next investment may be documentation, normalization, an eDSL comparison,
+or nothing. It is decided from the observed failure modes, not precommitted
+here. In particular, a Stage B pass does not by itself justify rebuilding the
+Python layer: a binary-only trial cannot show whether orchestration is valuable
+for the larger workflows it deliberately excludes. Expansion stays frozen until
+Stage C reports.
 
 ## Backlog: what is deferred and why
 
 Each entry keeps its question so it is not lost. Full earlier drafts are in
 Appendix B.
 
+- **Normalizing verb or compact authoring contract.** A hypothesis raised by
+  the IR redundancy, not a planned feature. Only if Stage C finds
+  inconsistency-class failures. If built, it is a documented producer-side
+  contract distinct from canonical IR.
+- **eDSL-producer comparison and fresh NumPyro references** (Stage D). Only if
+  Stage C says the authoring-cost question warrants them.
 - **Portable execution audit** (earlier Test 1 and the deleted protocol).
   Scratch container with executable only, read-only root, no network, dropped
   capabilities, cold-start repetitions, peak memory, negative cases for a bad IR
@@ -440,7 +540,7 @@ Appendix B.
 - **Relocated replay** (earlier Test 4). Define which guarantee is meant
   (artifact verification, summary reconstruction, computational replay, bitwise
   replay, statistical reproducibility) before measuring. Deferred because it
-  tests the provenance layer, which is downstream of the irreducible claim.
+  tests the provenance layer, which is downstream of both hypotheses.
 - **Revision integrity** (earlier Test 5). Whether the artifact design catches
   stale results after a model or data change, versus a cooperative agent
   remembering. Deferred for the same reason. The MVP's scripted revision gives
@@ -455,8 +555,8 @@ Appendix B.
   before reaching the science. Rerun only after the MVP card exists, since the
   card is the in-context grammar the claim is about.
 - **Bayesjax posterior-predictive API.** The hosted pilot's arm B gap. Not
-  needed for the MVP and only worth fixing if the Python layer survives the
-  decision rules.
+  needed for the MVP and only worth fixing if the Python layer's future is
+  decided in its favour.
 
 ## Appendix A: original conversation (2026-09-05)
 
@@ -870,7 +970,8 @@ what would you adapt?"
 - The Bayesite executable was inspected directly for the first time in these
   discussions: 1.2 MB, about 4 ms cold start to a typed JSON error, five verbs
   present, `posterior-predictive` missing, no version command.
-- The clinic model IR is 4,170 bytes of nested node JSON for seven parameters.
+- The clinic model IR is 4,170 bytes of nested node JSON for seven parameters
+  (corrected in Appendix D: five declarations, twelve scalar unknowns).
   Whether an agent can author that directly from a one-page card is the open
   question, and the vision permits either direct IR or an eDSL producer.
 - The vision reduces to one irreducible claim: an agent with only the binary
@@ -901,3 +1002,76 @@ models are listed by Pi under `openai-codex` (`gpt-6` resolves as
 and rule R1 were revised accordingly. Two confounds were recorded: harness
 differs with model for the Fable arm, and the Fable arm's model family wrote
 the card and protocol.
+
+## Appendix D: review of the MVP plan (2026-09-09)
+
+A review of the first MVP revision, relayed by the user, and the response it
+received. The main sections above were revised on the basis of both.
+
+### Review findings, in summary
+
+- The "irreducible claim" made raw-IR authoring foundational, but the vision
+  permits any conformant producer. Two hypotheses: a standalone engine can
+  execute and reuse a transported model; agents can author the current IR.
+  Failure of the second does not invalidate the first. The saved IR repeats
+  information across `params`, `free_values`, and `stochastic_sites`, so the
+  authoring challenge is maintaining consistency among derived representations.
+- R1 could pass a session that never completed the workflow: it required IR
+  that samples, not the intended model, passing diagnostics, correct
+  predictions, a correct revision, or preserved originals. Yet the pass
+  statement claimed the full loop. An explicit end-to-end rule was needed; the
+  beta-mean MCSE screen alone is insufficient.
+- R2 conflicted with the eDSL arm, since authoring the likelihood in Python is
+  what that arm requires. The intended rule is no separate implementation of
+  model mathematics for prediction after the authoritative model exists; one
+  offending session is a session failure and an interface warning, reported
+  by frequency.
+- The diagnosis attributed complexity to the Python layers causally; the
+  evidence supports observed interface friction. Line counts and binary size
+  are not comparable complexity measures; the Rust source was not audited.
+  "Rebuild the Python layer" after a pass was premature.
+- Thirty-five sessions had grown back into a substantial experiment. Stage the
+  arms: engine check, fifteen raw-IR sessions, failure review, then
+  comparisons only if warranted. Three repetitions are exploratory.
+- Boundaries to tighten: restricted PATH is not isolation, so report "no
+  Python used"; define "reproduce" in the honesty rule; budget the complete
+  loop; specify the producer arm before running it.
+- Factual correction: the saved IR has five parameter declarations
+  representing twelve scalar unknowns, not seven parameters.
+- Recommended question: can agents correctly operate a useful Bayesian
+  workflow through a standalone data-only execution interface, and how much
+  authoring assistance do they need?
+
+### Response and the user's four clarifications
+
+The assistant accepted every finding after verifying the IR claims against the
+saved file, and pushed back only on demoting raw IR from the first agent
+stage: it is the cheapest interface to test and is what the vision's
+server-side authoring story literally describes. The user agreed, with four
+clarifications that are now reflected above:
+
+1. **Raw IR first is compatible with the review.** The objection was to making
+   raw-IR success a prerequisite for the whole architecture. Test it first
+   because it exists, not because model-as-data requires this serialization.
+2. **Normalization is a hypothesis, not the presumed fix.** Classify failures
+   first: inconsistent repeated fields point toward normalization; misunderstood
+   priors or hierarchy do not; unclear errors or documentation should be fixed
+   first; wrong prediction commands are a discoverability problem. Accepting
+   incomplete declarations is a distinct authoring contract, kept explicit
+   rather than silently relaxing the wire format.
+3. **Make semantic equivalence implementable.** Predeclare fixture-specific
+   checks on priors, constraints, dimensions, data bindings, mean and
+   likelihood structure with explicitly supported equivalent forms, the
+   beta-only revision, and independent numerical corroboration. Use analytic
+   predictive moments for the engine fixture and uncertainty-aware tolerances
+   on specified predictive quantities for the hierarchical fixture. Do not
+   build a general symbolic-equivalence evaluator.
+4. **Budget correction.** Two 15-minute command caps can coexist with a
+   20-minute session cap because caps are maxima, not allocations. The real
+   risk is sampling consuming the authoring and repair budget; measuring the
+   reference loop in Stage A before freezing the budget resolves it.
+
+The user's recommendation: apply these revisions, freeze Python-layer expansion,
+retain the fifteen-session raw-IR stage, and let its observed failure modes
+determine whether the next investment is documentation, normalization, an eDSL
+comparison, or nothing.
